@@ -469,6 +469,64 @@ def erosion_suture(suture, bone, bg):
 
 
 ######### For ero bones
+
+def find_seed_by_ero(volume_array, threshold , segments, ero_iter, 
+                    output_dir, 
+                    ero_shape = 'ball',
+                    SAVE_ALL_ERO= True):
+     # Capture the start time
+    start_time = datetime.now()
+    
+    volume_label = volume_array > threshold
+    
+    log_dict = {"Method": "find_seed_by_ero",
+                  "volume_array shape": list(volume_array.shape),
+                  "threshold": threshold,
+                  "segments": segments,
+                  "ero_shape": ero_shape,
+                  "Whole Volume": str(np.sum(volume_label))
+                  }
+    
+    for i_iter in range(0,ero_iter+1):
+        
+        if i_iter!=0:
+            volume_label = erosion_binary_img_on_sub(volume_label, kernal_size = 1)
+        
+        seed_file = os.path.join(output_dir , 
+                            f"seed_ero_{i_iter}_thre{threshold}_segs_{segments}.tif")
+        
+        seed, ccomp_sizes = get_ccomps_with_size_order(volume_label,segments)
+        tifffile.imwrite(seed_file, seed,
+                         compression ='zlib')
+        
+        args_dict = {
+            # "start_time": start_time.strftime("%Y-%m-%d %H:%M:%S"),
+            # "end_time": end_time.strftime("%Y-%m-%d %H:%M:%S"),
+            # "duration": str(duration),
+            f'size_top_{segments}_ccomp': ccomp_sizes.tolist(),
+            f'number_of_ccopms_found': len(ccomp_sizes.tolist()),
+            'output_seed_dir': output_dir
+        }
+        
+        log_dict[f"ero_iter{i_iter}"]=args_dict
+        # .append(args_dict)
+    
+        
+    # seed, ccomp_sizes = get_ccomps_with_size_order(volume_label,segments)
+    
+    # Capture the end time
+    end_time = datetime.now()
+    # Calculate the duration
+    duration = end_time - start_time   
+    
+    log_dict["start_time"] =   start_time.strftime("%Y-%m-%d %H:%M:%S") 
+    log_dict["end_time"] =   end_time.strftime("%Y-%m-%d %H:%M:%S")
+    log_dict["duration"] =   str(duration)
+     
+        
+    return log_dict
+
+
 def find_seed_by_ero_custom(volume_array, threshold , segments, ero_iter, 
                     output_dir, 
                     ero_shape = 'ball',

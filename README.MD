@@ -7,6 +7,8 @@ Here have three main parts.
 Use morphological transformations and connected components (initial segmentations for grow)
     1. `make_seeds.py` is the for generating seeds. Config file template: `make_seeds.yaml` 
     <br>  
+
+
         - workspace: The folder for the data
         - file_name: path to input image
         - num_threads: multiple threads
@@ -35,6 +37,9 @@ Use morphological transformations and connected components (initial segmentation
     2. `plot_mesh.py` Plot Generated meshes. <br>
     Currently under testing
     
+## BounTI multithread implementation
+`./BounTI/run_bounti_mp.py` is used to run BounTI and BounTI flood, with a list of initial thresholds. 
+
 
 ## Help functions:
 Merge classes in one image
