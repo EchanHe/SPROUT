@@ -26,15 +26,20 @@ Use morphological transformations and connected components (initial segmentation
     `make_grow_result.yaml`
 
 3. Visualization 
-    1. `make_mesh.py` Create meshes <br>
-    Can change `make_mesh.yaml` values to set the input images, and output directory
+    1. `make_mesh.py` Create a mesh for every class for the input seed/result<br>
+    Can change `make_mesh.yaml` values to set the input, and output directory
+    A folder of seeds/results
+    One seed/result
     <br>
     <br>
     2. `plot_mesh.py` Plot Generated meshes. <br>
     Currently under testing
     
 
-
+## Help functions:
+Merge classes in one image
+Merge classes from two images
+Remove classes
 
 ## Parallelization:
 `make_mesh.py`, `make_seeds.py`, `make_seeds_foram.py` currently support running in multiple processes. Please check your CPU and set the right `num_threads` in the configuration file
