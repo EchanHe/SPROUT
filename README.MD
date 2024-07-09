@@ -7,15 +7,17 @@ Here have three main parts.
 Use morphological transformations and connected components (initial segmentations for grow)
     1. `make_seeds.py` is the for generating seeds. Config file template: `make_seeds.yaml` 
     <br>  
-    - workspace: The folder for the data
-    - file_name: path to input image
-    - num_threads: multiple threads
-    - target_thresholds: 0 for binary segmentation. For images, it's a threshold for segmenting the images
-    - ero_iters: Iterations for erosion
-    - segments: Integer >=1, Top <segments> largest disconnected componenets
-    - output_seed_folder:
-    - output_log_file: Name of the output file name
-    - footprints: The way you want to erode your images, current supports "ball" and "cube" :Erosion all directions. 'ball_XY', 'ball_XZ', 'ball_YZ': Erosion on the Plane. 'X', 'Y', 'Z': Erosion on the axis.
+
+    
+        - workspace: The folder for the data
+        - file_name: path to input image
+        - num_threads: multiple threads
+        - target_thresholds: 0 for binary segmentation. For images, it's a threshold for segmenting the images
+        - ero_iters: Iterations for erosion
+        - segments: Integer >=1, Top <segments> largest disconnected componenets
+        - output_seed_folder:
+        - output_log_file: Name of the output file name
+        - footprints: The way you want to erode your images, current supports "ball" and "cube" :Erosion all directions. 'ball_XY', 'ball_XZ', 'ball_YZ': Erosion on the Plane. 'X', 'Y', 'Z': Erosion on the axis.
     <br>
     <br>
     2. `make_seeds_foram.py` is the algorithm for generating seeds for the binary segmentation of foram chambers. Fully automatic
