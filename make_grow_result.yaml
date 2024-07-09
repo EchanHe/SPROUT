@@ -1,0 +1,10 @@
+
+workspace: "C:\\Users\\Yichen\\OneDrive\\work\\codes\\nhm_bounti\\result\\foram_james"
+tif_file: 'seed_test/seed_ero_3_thre0_segs_20.tif'
+ori_path: "input/ai/final.20180802_VERSA_1905_ASB_OLK_st016_bl4_fo1_recon.tif"
+thresholds: 
+  - 0
+dilate_iters: 4
+touch_rule: "no"
+output_folder: "grow"
+save_interval: 1

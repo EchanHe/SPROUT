@@ -1,0 +1,31 @@
+# This is a comment
+
+GEN_WHOLE_MESH: False
+workspace: "C:\\Users\\Yichen\\OneDrive\\work\\codes\\nhm_bounti\\result\\foram_james"
+file_name: "input/ai/final.20180802_VERSA_1905_ASB_OLK_st016_bl4_fo1_recon.tif"
+num_threads: 4
+target_thresholds: 
+  - 0
+  # - 1
+  # - 2
+ero_iters: 
+  - 3
+segments: 20
+output_seed_folder: "seed_test"
+output_json_file: "seed_log.json"
+footprints: "ball" 
+
+# list_value:
+#   - "item1"
+#   - item2
+#   - item3
+
+#     "GEN_WHOLE_MESH": false,
+#     "workspace": "C:\\Users\\Yichen\\OneDrive\\work\\codes\\nhm_bounti_pipeline\\result\\procavia",
+#     "file_name": "input/procaviaH4981C_0001.tif.resampled_400_600.tif",
+#     "num_threads": 4,
+#     "target_thresholds": [4500],
+#     "ero_iters": [5],
+#     "segments": 20,
+#     "output_seed_folder": "seed_test",
+#     "output_json_file": "seed_log.json"

@@ -1,0 +1,16 @@
+# To plot multiple 
+# Need to specify the threshold and the file path to image
+MULTI_FILES: True
+workspace: "./result/foram_james"
+num_threads: 13
+input_folder: "seed_test"
+output_folder: "seed_test"
+
+# If you want to generate mesh for the original image
+# Need to specify the threshold and the file path to image
+WHOLE_MESH: True
+img_file: "./result/foram_james/input/ai/final.20180802_VERSA_1905_ASB_OLK_st016_bl4_fo1_recon.tif"
+threshold: 0
+output_whole_folder: "./result/foram_james/whole_mesh"
+
+
