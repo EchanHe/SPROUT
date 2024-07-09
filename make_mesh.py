@@ -185,6 +185,8 @@ if __name__ == "__main__":
 
     ################
 
+    #### For generating the whole mesh for a given threshold
+    #### Binary segmentation uses 0.
     if WHOLE_MESH:
         os.makedirs(output_whole_folder , exist_ok=True)
         volume = tifffile.imread(img_file)
@@ -192,6 +194,7 @@ if __name__ == "__main__":
                              output_whole_folder,
                              downsample_scale=10)
     
+    output_folder = os.path.join(workspace, output_folder)
     ###
     # MULTI_FILES = True                                       
     # num_threads = 13
@@ -202,7 +205,7 @@ if __name__ == "__main__":
         
         
         input_folder = os.path.join(workspace, input_folder)
-        output_folder = os.path.join(workspace, output_folder)
+        
         
         tif_files = glob.glob(os.path.join(input_folder, '*.tif'))
         
@@ -242,14 +245,13 @@ if __name__ == "__main__":
 
             print(f"{tif_file} has completed.")
 
-
+    # Only for 
     else:
             
         ### To change your input params ####
         # tif_path = "output_procavia/seg_6000_3000.tif"
         # output_dir = "output_procavia/mesh_seg_6000_3000"
         tif_path = os.path.join(workspace,tif_path)
-        output_folder = os.path.join(workspace, output_folder)
         
         os.makedirs(output_folder,exist_ok=True)
 
