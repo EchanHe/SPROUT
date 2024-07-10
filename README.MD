@@ -6,9 +6,6 @@ Here have three main parts.
 1. Generate seeds <br>
 Use morphological transformations and connected components (initial segmentations for grow)
     1. `make_seeds.py` is the for generating seeds. Config file template: `make_seeds.yaml` 
-    <br>  
-
-
         - workspace: The folder for the data
         - file_name: path to input image
         - num_threads: multiple threads
