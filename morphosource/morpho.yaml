@@ -1,0 +1,6 @@
+# For unzip zip files downloaded from morphosource
+input_folder: "seed_test"
+output_folder: "seed_test"
+
+
+
