@@ -1,0 +1,6 @@
+file_paths: 'result/foram_james/input/ai/*.tif'
+num_threads: 13
+output_folder: "seed_test"
+
+
+

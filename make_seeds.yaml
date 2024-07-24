@@ -2,17 +2,17 @@
 
 GEN_WHOLE_MESH: False
 workspace: "C:\\Users\\Yichen\\OneDrive\\work\\codes\\nhm_bounti\\result\\foram_james"
-file_name: "input/ai/final.20180802_VERSA_1905_ASB_OLK_st016_bl4_fo1_recon.tif"
-num_threads: 4
+file_name: "input/ai_v2/final.20180719_VERSA_1905_ASB_OLK_st014_bl4_fo1_recon.tif"
+num_threads: 1
 target_thresholds: 
   - 0
   # - 1
   # - 2
 ero_iters: 
-  - 3
-segments: 20
+  - 0
+segments: 25
 output_seed_folder: "seed_test"
-output_json_file: "seed_log.json"
+output_log_file: "seed_log.json"
 footprints: "ball" 
 
 # list_value:

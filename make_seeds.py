@@ -163,7 +163,7 @@ def gen_mesh(volume, thresholds, output_dir):
             output.export(output_path)
  
 if __name__ == "__main__":
-    file_path = 'test.yaml'
+    file_path = 'make_seeds.yaml'
     _, extension = os.path.splitext(file_path)
     print(f"processing config he file {file_path}")
     if extension == '.json':

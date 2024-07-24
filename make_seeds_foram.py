@@ -3,32 +3,48 @@ import numpy as np
 from tifffile import imread, imwrite
 import traceback
 import os,sys
-import BounTI
+
 import glob
+import threading
+import time
+import json
 
 # Add the lib directory to the system path
-lib_path = os.path.abspath('../util')
-sys.path.insert(0, lib_path)
-import suture_morpho
-import threading
+import suture_morph.suture_morpho as suture_morpho
 
-def separate_chambers(file_path):
+
+def separate_chambers(file_path,n_iters, no_split_limit =3, min_vol=10):
+    segments = 25
+    max_splits = segments
+    
     img = imread(file_path)
     img = img==255
 
-    seed, ccomp_sizes = BounTI.get_ccomps_with_size_order(img,25)
+    seed, _ = suture_morpho.get_ccomps_with_size_order(img,segments, min_vol = min_vol)
 
     bone_ids = np.unique(seed)
     bone_ids = [value for value in bone_ids if value != 0]
-
+    ori_bone_ids = bone_ids.copy()
+    max_seed_id = np.max(bone_ids)
+    
+    bone_ids_dict = {}
+    for value in bone_ids :
+        bone_ids_dict[value] = [value]
+        
+    split_log = {}
+    
     ero_img = img.copy()
-    n_iters = 30
+    
     no_consec_split_count = 0
 
     for n_iter in range(n_iters):
+        
+        split_log[n_iter] = {}
+        
         print(f"working on erosion {n_iter}")
         ero_img = suture_morpho.erosion_binary_img_on_sub(ero_img, kernal_size = 1)
-        ero_seed, ccomp_sizes = BounTI.get_ccomps_with_size_order(ero_img,25)
+        
+        ero_seed, _ = suture_morpho.get_ccomps_with_size_order(ero_img,segments)
 
         ero_bone_ids = np.unique(ero_seed)
         ero_bone_ids = [value for value in ero_bone_ids if value != 0]
@@ -38,34 +54,68 @@ def separate_chambers(file_path):
 
         
         has_split = False
+        ## Comparing each ccomp from eroded seed
+        ## to each ccomp from the original seed
         for bone_id in bone_ids:
             comp = seed == bone_id
 
             inter_count = 0
-            inter_ids = []
-            inter_props = []
+            inter_ids = np.array([])
+            inter_props = np.array([])
             
             
             for ero_bone_id in ero_bone_ids:
                 ero_comp = ero_seed == ero_bone_id
                 
-                inter = np.sum(np.logical_and(comp,ero_comp))
-                prop = round(np.sum(np.logical_and(comp,ero_comp)) / np.sum(comp),4)
+                # start_time = time.time()
+                # inter = np.sum(np.logical_and(comp,ero_comp))
+                # end_time = time.time()
+                # elapsed_time = end_time - start_time
+                # print(f"Elapsed time: {elapsed_time:.6f} seconds:value:{inter}")
+                # start_time = time.time()
+                inter = np.sum(comp[ero_comp])
+                # end_time = time.time()
+                # elapsed_time = end_time - start_time
+                # print(f"Elapsed time: {elapsed_time:.6f} seconds:value:{inter}")
+                # prop = round(np.sum(np.logical_and(comp,ero_comp)) / np.sum(comp),4)
                 # print(f"{bone_id} for ero {ero_bone_id} has intersect {inter}\nprop{prop}")
                 
                 
                 if inter>0:
                     inter_count+=1
-                    inter_ids.append(ero_bone_id)
-                    inter_props.append(round(np.sum(np.logical_and(comp,ero_comp)) / np.sum(comp),4))
+                    inter_ids = np.append(inter_ids , ero_bone_id)
+                    prop = round(inter / np.sum(comp),4)*100
+                    inter_props = np.append(inter_props, prop)
+
                     # prop = round(np.sum(np.logical_and(comp,ero_comp)) / np.sum(comp),4)
-                    
+            ## When a ccomps has been split into multiple ccomps in the next ero step.   
             if inter_count>1:
+                prop_thre = 0.1
+               
                 print(f'{bone_id} has been split to {inter_count} parts. Ids are {inter_ids}')
                 print(f"props are: {inter_props}")
+                print(f"Remove parts that have proportion smaller than prop_thre")
                 seed[seed == bone_id] =0
+                inter_ids = inter_ids[inter_props>prop_thre]
+                
+                new_ids = []
                 for inter_id in inter_ids:
-                    seed[ero_seed == inter_id] = np.max(np.unique(seed))+1
+                    seed[ero_seed == inter_id] = max_seed_id+1
+                    
+                    # split_list = bone_ids_dict[bone_id]
+                    # if len(split_list) <= max_splits:
+                    #     bone_ids_dict[bone_id].append(max_seed_id+1)
+                    for key,value in bone_ids_dict.items():
+                        if bone_id in value:
+                            if len(value) <= max_splits:
+                                bone_ids_dict[key].append(max_seed_id+1)
+                                new_ids.append(max_seed_id+1)
+                                break
+                                
+                    max_seed_id +=1
+                
+                split_log[n_iter][str(bone_id)] = str(new_ids)
+                    
                 has_split = True
                 
             # elif inter_count==0:
@@ -77,12 +127,12 @@ def separate_chambers(file_path):
             no_consec_split_count+=1
             
         
-        if no_consec_split_count>=3:
+        if no_consec_split_count>=no_split_limit:
             print(f"detect non split for {no_consec_split_count}rounds")
             print(f"break loop at {n_iter} iter")
             break
                 
-    return seed
+    return seed,bone_ids_dict, split_log
 
 def gen_mesh(volume, threshold, output_path):
 
@@ -90,7 +140,7 @@ def gen_mesh(volume, threshold, output_path):
     if os.path.isfile(output_path):
         return
     else:
-        output = BounTI.binary_stack_to_mesh(volume, threshold)
+        output = suture_morpho.binary_stack_to_mesh(volume, threshold)
         output.export(output_path)
 def foram_seed_mp(file_paths, output_folder):
     for file_path in file_paths:
@@ -104,25 +154,48 @@ def foram_seed_mp(file_paths, output_folder):
         imwrite(os.path.join(output_folder,base_name+'.tif'), seed, 
                 compression ='zlib')
 
+def write_json(filename, args_dict):
+    
+    # Check if the file exists and load existing data
+    if os.path.exists(filename):
+        with open(filename, 'r') as jsonfile:
+            results = json.load(jsonfile)
+    else:
+        results = []
+    
+    results.append(args_dict)
+    
+    # Write the results to the JSON file
+    with open(filename, 'w') as jsonfile:
+        json.dump(results, jsonfile, indent=4)
+
 if __name__ == "__main__":        
     # file_path = '/result/foram_james/input/ai/final.20180802_VERSA_1905_ASB_OLK_st016_bl4_fo1_recon.tif'    
 
-    file_paths = glob.glob('result/foram_james/input/ai/*.tif')
-    output_folder = 'result/foram_james/thre_ero_seed/'
-    num_threads = 5
+    # file_paths = glob.glob('result/foram_james/input/ai/*.tif')
+    # output_folder = 'result/foram_james/thre_ero_seed/'
+    # num_threads = 5
     
-    threads = []
-    sub_file_paths = [file_paths[i::num_threads] for i in range(num_threads)]
-    # Start a new thread for each sublist
-    for sublist in sub_file_paths:
-        thread = threading.Thread(target=foram_seed_mp, args=(sublist,output_folder))
-        threads.append(thread)
-        thread.start()
+    # threads = []
+    # sub_file_paths = [file_paths[i::num_threads] for i in range(num_threads)]
+    # # Start a new thread for each sublist
+    # for sublist in sub_file_paths:
+    #     thread = threading.Thread(target=foram_seed_mp, args=(sublist,output_folder))
+    #     threads.append(thread)
+    #     thread.start()
         
-    # Wait for all threads to complete
-    for thread in threads:
-        thread.join()
+    # # Wait for all threads to complete
+    # for thread in threads:
+    #     thread.join()
     
-
+    file_path = './result/foram_james/input/ai_v2/final.20180719_VERSA_1905_ASB_OLK_st014_bl4_fo1_recon.tif'
+    seed ,bone_ids_dict , split_log=  separate_chambers(file_path, n_iters=2)
+    base_name = os.path.basename(file_path)
+    imwrite(os.path.join('./result/foram_james/seed_ai_v2/',base_name+'.tif'), seed, 
+        compression ='zlib')
+    bone_ids_dict = {int(key): str(value) for key, value in bone_ids_dict.items()}
+    write_json('./result/foram_james/seed_ai_v2/log.json', bone_ids_dict)   
+    write_json('./result/foram_james/seed_ai_v2/split_log.json', split_log)   
+    
 # separate_chambers(file_path)
 

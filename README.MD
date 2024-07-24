@@ -21,6 +21,7 @@ Use morphological transformations and connected components (initial segmentation
     2. `make_seeds_foram.py` is the algorithm for generating seeds for the binary segmentation of foram chambers. Fully automatic
 
 
+
 2. Grow back to the full
     1. `make_grow_result.py` To grow the seeds to back to the original images with thresholds, or grow back to the binary segmentation<br>
     `make_grow_result.yaml`
@@ -33,9 +34,28 @@ Use morphological transformations and connected components (initial segmentation
     
     2. `plot_mesh.py` Plot Generated meshes. <br>
     Currently under testing
-    
+
+## Filter Seeds/Results
+This is used to filter out seeds that are not likely to be checked.
+
+
 ## BounTI multithread implementation
 `./BounTI/run_bounti_mp.py` is used to run BounTI and BounTI flood, with a list of initial thresholds. 
+
+## Avizo scripts
+### Visualisation tool
+1. Batch read in seeds/results
+2. Convert to 8-bit label
+3. Volume render & make mesh, and render mesh.
+
+Things TODO (might need to ask AVIZO Customer service)
+1. Set the correct voxel size in crop editor. As crop editor is a pop up menu
+2. How to visible and hide the display functions (ortho slice, vol ren, surface view)
+
+
+
+### Edit seeds tool
+
 
 
 ## Help functions:
@@ -46,4 +66,12 @@ Remove classes
 ## Parallelization:
 `make_mesh.py`, `make_seeds.py`, `make_seeds_foram.py` currently support running in multiple processes. Please check your CPU and set the right `num_threads` in the configuration file
 
+## Unzip a list of morphosource zip files
+`morphosource_unzip.ipynb` 
+`morphosource_unzip.py` .
+- Unzip all the `*.zip` files from a given folder (input folder) to a target folder
+- Save the unzip log. zip file path, unzip path, whether the unzip is success.
+Unzip all morphosource in a folder/
+
+Morphosource file structure.
 
