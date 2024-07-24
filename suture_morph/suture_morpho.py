@@ -226,7 +226,7 @@ def keep_ccomps(input, top_n=None , threshold=0):
     return output
 
 
-def get_ccomps_with_size_order(volume, segments, min_vol = None):
+def get_ccomps_with_size_order(volume, segments=None, min_vol = None):
     """Get the largest ccomp
 
     Args:
@@ -240,10 +240,19 @@ def get_ccomps_with_size_order(volume, segments, min_vol = None):
                                   return_num=False, connectivity=2)
     component_sizes = np.bincount(labeled_image.ravel())[1:] 
     
-    component_sizes_sorted = -np.sort(-component_sizes,)
+    
     
     component_labels = np.unique(labeled_image)[1:]
+    if min_vol is not None:
+        valid_components = component_sizes >= min_vol
+        component_labels = component_labels[valid_components]
+        component_sizes = component_sizes[valid_components]
+        
+    component_sizes_sorted = -np.sort(-component_sizes,)
+    if segments is None:
+        segments = len(component_sizes_sorted)
     # props = measure.regionprops(label_image)
+    
     largest_labels = component_labels[np.argsort(component_sizes[component_labels - 1])[::-1][:segments]]
     
     output = np.zeros_like(labeled_image)
@@ -705,7 +714,18 @@ def find_seg_by_morpho_trans(input_mask, threshold_binary,  dilate_iter,
     
     return result
 
+def binary_stack_to_mesh(input_volume , threshold, downsample_scale=20,
+                         face_color= [128]*4):
+    
+    input_volume = input_volume > threshold
+    verts, faces, normals, _ = marching_cubes(input_volume, level=0.5)
+    mesh = trimesh.Trimesh(vertices=verts, faces=faces, vertex_normals=normals)
+    
+    target_faces = mesh.faces.shape[0] // downsample_scale
+    simplified_mesh = mesh.simplify_quadric_decimation(target_faces)
 
+    simplified_mesh.visual.face_colors = face_color
+    return simplified_mesh
 
 # import numpy as np
 # import tifffile
