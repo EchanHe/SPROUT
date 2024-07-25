@@ -1,6 +1,8 @@
-file_paths: 'result/foram_james/input/ai/*.tif'
-num_threads: 13
-output_folder: "seed_test"
+input_folder: 'result/foram_james/input/ai_v2/'
+num_threads: 5
+output_folder: "seed_ai_v2"
+segments: 25
+n_iters: 5
 
 
 
