@@ -7,6 +7,42 @@ from pathlib import Path
 import time
 import traceback
 import numpy as np
+from skimage import measure
+
+def get_ccomps_with_size_order(volume, segments=None, min_vol = None):
+    """Get the largest ccomp
+
+    Args:
+        label (_type_): _description_
+        segments (_type_): _description_
+
+    Returns:
+        _type_: _description_
+    """
+    labeled_image = measure.label(volume, background=0, 
+                                  return_num=False, connectivity=2)
+    component_sizes = np.bincount(labeled_image.ravel())[1:] 
+    
+    
+    
+    component_labels = np.unique(labeled_image)[1:]
+    if min_vol is not None:
+        valid_components = component_sizes >= min_vol
+        component_labels = component_labels[valid_components]
+        component_sizes = component_sizes[valid_components]
+        
+    component_sizes_sorted = -np.sort(-component_sizes,)
+    if segments is None:
+        segments = len(component_sizes_sorted)
+    # props = measure.regionprops(label_image)
+    
+    largest_labels = component_labels[np.argsort(component_sizes[component_labels - 1])[::-1][:segments]]
+    
+    output = np.zeros_like(labeled_image)
+    for label_id, label in enumerate(largest_labels):
+        output[labeled_image == label] = label_id+1
+    
+    return output, component_sizes_sorted[:segments]
 
 def merge_masks_with_filter(mask1, mask2, ids_to_keep1, ids_to_keep2):
     # Ensure both masks are numpy arrays
@@ -104,30 +140,29 @@ class Edit(PyScriptObject):
         import _hx_core
         _hx_core._tcl_interp('startLogInhibitor')
 
-        # Input port: it will only handle HxUniformScalarField3:
-        # self.input = HxConnection(self, "input", "Input Volume")
-        # self.input.valid_types = ('HxUniformScalarField3')
-
-        # Input port: it will only handle HxUniformScalarField3:
-
-
-
-        # This port will number of segments size.
-        # self.n = HxPortIntSlider(self, "n", "Number of Segments")
-        # self.n.clamp_range = (1, 100)
-        # self.n.value = 14
-        
+       
         self.functions = HxPortRadioBox(self,"functions", "How to edit?")
         self.functions.radio_boxes = [
-            HxPortRadioBox.RadioBox(label="Merge ids on one image"),
-        HxPortRadioBox.RadioBox(label="Merge ids from two image")]
+            HxPortRadioBox.RadioBox(label="Split ids on label"),
+            HxPortRadioBox.RadioBox(label="Merge ids on one label"),
+            HxPortRadioBox.RadioBox(label="Merge ids from two label"),
+            HxPortRadioBox.RadioBox(label="Clean img by label ids")]
         self.functions.selected = 0
         
         
-        self.input_img = HxConnection(self, "input_img", "Input input_img")
-        self.input_seed1.valid_types = ('HxUniformLabelField3')
+        self.input_seed_split = HxConnection(self, "input_seed_clean", "Input seed")
+        self.input_seed_split.valid_types = ('HxUniformLabelField3')
         
-        self.delete_ids= HxPortText(self, "delete_ids", "IDs for making original images as background")
+        self.id_split= HxPortText(self, "id_split","ID for splitting")
+        self.n_split= HxPortText(self, "n_split","Split into n parts")
+        
+        self.input_img = HxConnection(self, "input_img", "Input input_img")
+        self.input_img.valid_types = ('HxUniformScalarField3')
+        self.input_seed_clean = HxConnection(self, "input_seed_clean", "Input seed")
+        self.input_seed_clean.valid_types = ('HxUniformLabelField3')
+        
+        self.id_clean= HxPortText(self, "id_clean","Label IDs")
+        # self.delete_ids= HxPortText(self, "delete_ids", "IDs for making original images as background")
         
         self.input_seed = HxConnection(self, "input_seed", "Input seed")
         self.input_seed.valid_types = ('HxUniformLabelField3')
@@ -147,15 +182,7 @@ class Edit(PyScriptObject):
        
         self.keep_id_2= HxPortText(self, "keep_id_2","IDs to Keep for seed 1")
         
-
-        
-        self.input_seed2 = HxConnection(self, "input_seed2", "Input seed 2")
-        self.input_seed2.valid_types = ('HxUniformLabelField3')
-        
-        self.keep_id_1= HxPortText(self, "keep_id_1", "IDs to Keep for seed 1")
-       
-        self.keep_id_2= HxPortText(self, "keep_id_2","IDs to Keep for seed 1")
-        
+    
 
         self.do_it = HxPortDoIt(self, "apply", "Apply")
 
@@ -294,22 +321,39 @@ class Edit(PyScriptObject):
        
         self.keep_id_2.visible = visible    
     
+    def toggle_clean(self, visible):
+        self.input_img.visible = visible    
+        self.id_clean.visible = visible   
+        self.input_seed_clean.visible = visible  
+        
+    def toggle_split(self, visible):
+        self.input_seed_split.visible = visible    
+        self.id_split.visible = visible   
+        self.n_split.visible = visible  
+    
     def update(self):
 
         
         if self.functions.selected ==0:
+            self.toggle_split(True)
+            self.toggle_one_img(False)
+            self.toggle_two_img(False)
+            self.toggle_clean(False)
+        elif self.functions.selected ==1:
+            self.toggle_split(False)
             self.toggle_one_img(True)
             self.toggle_two_img(False)
-        elif self.functions.selected ==1:
+            self.toggle_clean(False)
+        elif self.functions.selected ==2:
+            self.toggle_split(False)
             self.toggle_one_img(False)
             self.toggle_two_img(True)
-        
-        # if self.load_mode.selected == 0:
-        #     self.input_multi_files.enabled = False
-        #     self.input_dir.enabled = True
-        # elif self.load_mode.selected == 1:
-        #     self.input_multi_files.enabled = True
-        #     self.input_dir.enabled = False
+            self.toggle_clean(False)
+        elif self.functions.selected ==3:
+            self.toggle_split(False)
+            self.toggle_one_img(False)
+            self.toggle_two_img(False)
+            self.toggle_clean(True)
         
     
         pass
@@ -321,7 +365,7 @@ class Edit(PyScriptObject):
             return
 
 
-        if self.functions.selected ==0:
+        if self.functions.selected ==1:
             str_dst_ids = self.dst_ids.text
             str_src_ids = self.src_ids.text
             
@@ -339,8 +383,8 @@ class Edit(PyScriptObject):
             print(f"Target id: {dst_ids}")
             
             # Is there an input data connected?
-            if self.input_seed1.source() is None:
-                "Please select the input"
+            if self.input_seed.source() is None:
+                print("Please select the input")
                 return
             
             input_1 = self.input_seed.source()
@@ -354,11 +398,11 @@ class Edit(PyScriptObject):
             result.name = input_1.name + "Merged.Segmentation"
             result.bounding_box = input_1.bounding_box
             result.set_array(np.array(output, dtype = np.uint8))
-        elif self.functions.selected ==1:
+        elif self.functions.selected ==2:
             str_keep_id_1 = self.keep_id_1.text
             str_keep_id_2 = self.keep_id_2.text
             
-            if not (is_valid_src_ids_list(str_keep_id_1) or is_valid_src_ids_list(str_keep_id_2)):
+            if not (is_valid_src_ids_list(str_keep_id_1)) or not (is_valid_src_ids_list(str_keep_id_2)):
                 print(f"Id format is not valid, please input one more multi class id and separate by comma\n" \
                     "like \'1\' or \'1, 2, 3, 4\'  ")
                             
@@ -386,31 +430,68 @@ class Edit(PyScriptObject):
             result.name = input_1.name + "two_img_merge.Segmentation"
             result.bounding_box = input_1.bounding_box
             result.set_array(np.array(output, dtype = np.uint8))
-        # if self.functions.selected ==0:
             
-        #     if self.load_mode.selected == 0:
-        #         print(f"reading files from: {self.input_dir.filenames}")
-                
-        #         if not is_valid_path(self.input_dir.filenames):
-        #             print("File path not valid, please reinput")
-        #             hx_message.info("File path not valid, please reinput")
-        #         else:  
-        #             file_paths = glob.glob(os.path.join(self.input_dir.filenames,"*.tif"))
-        #             hx_message.info(f"reading {len(file_paths)} files from: {self.input_dir.filenames}")
-        #     elif self.load_mode.selected == 1:
-        #         file_paths= self.input_multi_files.filenames
-                
+        elif self.functions.selected ==3:
+            str_id_clean = self.id_clean.text
             
-        #     self.load_files(file_paths)
-        #     self.to_label()
-        # elif self.functions.selected ==1:
-        #     if self.inputL.source() is None:
-        #         hx_message.info(f"Please select an input label")
-        #         return
-        #     labeldata = self.inputL.source()
+            if not (is_valid_src_ids_list(str_id_clean)):
+                print(f"Id format is not valid, please input one more multi class id and separate by comma\n" \
+                    "like \'1\' or \'1, 2, 3, 4\'  ")
+                            
+            id_clean = string_to_integer_list(str_id_clean)
+            
+            print(f"Ids to Clean: {id_clean}")
+            
+            # Is there an input data connected?
+            if (self.input_img.source() is None) or (self.input_seed_clean.source() is None):
+                print("Please select the input")
+                return
+            
+            input_img = self.input_img.source()
+            np_input_img = input_img.get_array()
+            
+            input_seed_clean = self.input_seed_clean.source().get_array()
+            np_input_seed_clean = input_seed_clean.get_array()
+            output = np.where(np.isin(np_input_seed_clean, id_clean), 0, np_input_img)
+
+
+            result = hx_project.create('HxUniformScalarField3')
+            result.name = input_img.name + "clean.img"
+            result.bounding_box = input_img.bounding_box
+            # To do get the dtype
+            result.set_array(np.array(output, dtype = np.uint8))
+        elif self.functions.selected == 1:
+            str_id_split = self.id_split.text
+            str_n_split =self.n_split.text
+            
+            if not (is_valid_src_ids_list(str_id_split)) or not (is_valid_src_ids_list(str_n_split)):
+                print(f"Id format is not valid, please input one more multi class id and separate by comma\n" \
+                    "like \'1\' or \'1, 2, 3, 4\'  ")
+                            
+            id_split = string_to_integer_list(id_split)
+            n_split = string_to_integer_list(n_split)
+            
+            if len(id_split) != len(n_split):
+                print("Please make sure split ids, and n split should have the same length")
+            
+            input_seed = self.input_seed_split.source()
+            np_input_seed = input_seed.get_array()
+            
+            for to_check_id,n_ccomp in zip(id_split, n_split):
     
-        #     if self.vis_mode.selected == 0:
-        #         self.view_obj_vol_ren(labeldata)
-        #     elif self.vis_mode.selected == 1:
-        #         self.view_obj_mesh(labeldata)
-    
+                binary_img = np_input_seed == to_check_id
+                
+                max_id = np.max(np_input_seed)
+                # print(f"max_id:{max_id}")
+                seed, ccomp_sizes = get_ccomps_with_size_order(binary_img, n_ccomp)
+                print(f"size of split comps:{ccomp_sizes}")
+            
+                seed_offset = np.where(seed != 0, seed + max_id, 0)
+                print(np.sum(np_input_seed == to_check_id))
+
+                np_input_seed = np.where(np_input_seed != to_check_id, np_input_seed, seed_offset)
+
+            result = hx_project.create('HxUniformLabelField3')
+            result.name = input_seed.name + "split.Segmentation"
+            result.bounding_box = input_seed.bounding_box
+            result.set_array(np.array(output, dtype = np.uint8))

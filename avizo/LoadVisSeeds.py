@@ -134,9 +134,11 @@ class LoadVisSeeds(PyScriptObject):
         Returns:
             _type_: _description_
         """
+        self.files = []
+        self.converts = []
 
         import time
-
+        print(f"Loading {len(file_paths)} file")
         with hx_progress.progress(len(file_paths), f"Loading {len(file_paths)} file") as progress:
             for file_path in file_paths:
                 progress.increase_progress_step()
@@ -183,7 +185,7 @@ class LoadVisSeeds(PyScriptObject):
 
         ## Remove all the original images and covnert data type
         del_all_objs(self.files)
-        del_all_objs(self.converts)    
+        del_all_objs(self.converts)
         
     def view_obj_vol_ren(self, obj):
         """Visualise an object using volume rendering
@@ -310,10 +312,23 @@ class LoadVisSeeds(PyScriptObject):
                     hx_message.info(f"reading {len(file_paths)} files from: {self.input_dir.filenames}")
             elif self.load_mode.selected == 1:
                 file_paths= self.input_multi_files.filenames
+                print(file_paths, type(file_paths))
+                if isinstance(file_paths, str):
+                    file_paths = [file_paths]
                 
             
             self.load_files(file_paths)
             self.to_label()
+            
+            
+  
+            
+            # self.files = []
+            # self.converts = []
+            
+            # self.input_dir.filenames = ""
+            # self.input_multi_files.filenames = ""
+            
         elif self.functions.selected ==1:
             if self.inputL.source() is None:
                 hx_message.info(f"Please select an input label")
