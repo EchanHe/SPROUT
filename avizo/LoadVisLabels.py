@@ -25,7 +25,7 @@ def del_all_objs(objs):
     """
     for obj in objs:
         hx_project.remove(obj)
-class LoadVisFiles(PyScriptObject):
+class LoadVisLabels(PyScriptObject):
     def __init__(self):
         
         self.segs = []
