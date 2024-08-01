@@ -150,7 +150,7 @@ class Edit(PyScriptObject):
         self.functions.selected = 0
         
         
-        self.input_seed_split = HxConnection(self, "input_seed_clean", "Input seed")
+        self.input_seed_split = HxConnection(self, "input_seed_split", "Input seed")
         self.input_seed_split.valid_types = ('HxUniformLabelField3')
         
         self.id_split= HxPortText(self, "id_split","ID for splitting")
@@ -450,8 +450,10 @@ class Edit(PyScriptObject):
             input_img = self.input_img.source()
             np_input_img = input_img.get_array()
             
-            input_seed_clean = self.input_seed_clean.source().get_array()
+            input_seed_clean = self.input_seed_clean.source()
             np_input_seed_clean = input_seed_clean.get_array()
+            print(id_clean, np.unique(np_input_seed_clean))
+            print(np.sum(np.isin(np_input_seed_clean, id_clean)))
             output = np.where(np.isin(np_input_seed_clean, id_clean), 0, np_input_img)
 
 
@@ -459,8 +461,8 @@ class Edit(PyScriptObject):
             result.name = input_img.name + "clean.img"
             result.bounding_box = input_img.bounding_box
             # To do get the dtype
-            result.set_array(np.array(output, dtype = np.uint8))
-        elif self.functions.selected == 1:
+            result.set_array(np.array(output, dtype = np_input_img.dtype))
+        elif self.functions.selected == 0:
             str_id_split = self.id_split.text
             str_n_split =self.n_split.text
             
@@ -468,12 +470,14 @@ class Edit(PyScriptObject):
                 print(f"Id format is not valid, please input one more multi class id and separate by comma\n" \
                     "like \'1\' or \'1, 2, 3, 4\'  ")
                             
-            id_split = string_to_integer_list(id_split)
-            n_split = string_to_integer_list(n_split)
+            id_split = string_to_integer_list(str_id_split)
+            n_split = string_to_integer_list(str_n_split)
             
             if len(id_split) != len(n_split):
                 print("Please make sure split ids, and n split should have the same length")
             
+            print(f"Split ids: {id_split}")
+            print(f"Split into N parts: {n_split}")
             input_seed = self.input_seed_split.source()
             np_input_seed = input_seed.get_array()
             
@@ -494,4 +498,5 @@ class Edit(PyScriptObject):
             result = hx_project.create('HxUniformLabelField3')
             result.name = input_seed.name + "split.Segmentation"
             result.bounding_box = input_seed.bounding_box
-            result.set_array(np.array(output, dtype = np.uint8))
+            result.set_array(np.array(np_input_seed, 
+                                      dtype = np.uint8))
