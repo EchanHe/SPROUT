@@ -1,16 +1,22 @@
 # To plot multiple 
 # Need to specify the threshold and the file path to image
+
+num_threads: 15
+
 MULTI_FILES: True
-workspace: "./result/foram_james"
-num_threads: 13
-input_folder: "seed_ai_v2"
-output_folder: "seed_ai_v2"
+workspace: "./result/dog_lucy/seeds/Beagle_232558_34YWQWIV_8bits.tif/ori"
+input_folder: ""
+output_folder: ""
 
 # If you want to generate mesh for the original image
 # Need to specify the threshold and the file path to image
 WHOLE_MESH: False
-img_file: "./result/foram_james/input/ai/final.20180802_VERSA_1905_ASB_OLK_st016_bl4_fo1_recon.tif"
-threshold: 0
-output_whole_folder: "./result/foram_james/whole_mesh"
+# img_file: "./result/foram_james/input/ai/final.20180802_VERSA_1905_ASB_OLK_st016_bl4_fo1_recon.tif"
+# threshold: 0
+# output_folder: "./result/foram_james/whole_mesh"
 
+# # If just make meshes for a single fie
+SINGLE: False
+# tif_file: "./result/foram_james/grow/seed_ero_3_thre0_segs_20.tif_dilate_1_thre_0.tif"
+# output_folder: "./result/foram_james/test"
 
