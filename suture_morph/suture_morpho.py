@@ -291,7 +291,19 @@ def erosion_binary_img_on_sub(input, kernal_size = 1, footprint='ball'):
                 subset_3d = binary_erosion(subset_3d, fp_Y)
             elif footprint =='Z':
                 subset_3d = binary_erosion(subset_3d, fp_Z)
-                        
+            elif footprint =='2XZ_1Y':
+                subset_3d = binary_erosion(subset_3d, ball_fp_XZ)
+                subset_3d = binary_erosion(subset_3d, ball_fp_XZ)
+                subset_3d = binary_erosion(subset_3d, fp_Y)
+            elif footprint =='2XY_1Z':
+                subset_3d = binary_erosion(subset_3d, ball_fp_XY)
+                subset_3d = binary_erosion(subset_3d, ball_fp_XY)
+                subset_3d = binary_erosion(subset_3d, fp_Z)
+            elif footprint =='2YZ_1X':
+                subset_3d = binary_erosion(subset_3d, ball_fp_YZ)
+                subset_3d = binary_erosion(subset_3d, ball_fp_YZ)
+                subset_3d = binary_erosion(subset_3d, fp_X)
+            
             input[min_z:max_z+1, min_y:max_y+1, min_x:max_x+1] = subset_3d
     else:
         if footprint == 'disk':
@@ -349,11 +361,13 @@ def closing_binary_img_on_sub(input, margin, kernal_size, is_round=True):
 def closing_binary_img_on_sub_one_step_iter(input, iterations, footprint='ball'):
     if footprint =='ball' :
         kernal_size=1
+        is_round = True
     elif footprint =='cube':
         kernal_size=3
+        is_round = False
 
     for i in range(iterations):
-        input = dilation_binary_img_on_sub(input, margin=2,kernal_size=kernal_size, footprint=footprint)
+        input = dilation_binary_img_on_sub(input, margin=2,kernal_size=kernal_size,is_round=is_round)
         
     for i in range(iterations):    
         input = erosion_binary_img_on_sub(input,kernal_size=kernal_size, footprint=footprint)
@@ -394,7 +408,7 @@ def find_gaps_between_two(input_1, input_2, background = None):
     
     inter_dilation = np.logical_and(input_1, input_2)
     if np.sum(inter_dilation)==0:
-        print("No intersection have been found")
+        # print("No intersection have been found")
         return None
     
     ## Method2: Apply close to the segmetnation of both input1 and 2.

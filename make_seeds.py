@@ -1,10 +1,9 @@
 import tifffile
 
-import skimage
 import numpy as np
 import threading
 import os, sys
-
+from datetime import datetime
 import itertools
 
 lock = threading.Lock()
@@ -114,7 +113,8 @@ def find_seg_by_ero_v2(volume, input_threshold_ero_iter_pairs , segments):
             # filename = f'output/json/Bount_ori_run_log_{init_threshold}_{target_threshold}.json'
             write_json(output_json_path, log_dict)   
 
-def find_seed_by_ero_mp(volume, input_threshold_ero_iter_pairs , segments , footprints = 'default'):
+def find_seed_by_ero_mp(volume, input_threshold_ero_iter_pairs , segments , 
+                        output_seed_folder, output_json_path,  footprints = 'default',):
     """The function for find_seed_by_ero using multi threads
 
     Args:
@@ -161,7 +161,71 @@ def gen_mesh(volume, thresholds, output_dir):
         else:
             output = BounTI.binary_stack_to_mesh(volume, threshold)
             output.export(output_path)
- 
+
+def main(**kwargs):
+    
+    ero_iters = kwargs.get('ero_iters', None)
+    target_thresholds = kwargs.get('target_thresholds', None)  
+    segments = kwargs.get('segments', None)  
+    footprints = kwargs.get('footprints', None)  
+    
+    workspace = kwargs.get('workspace', None)
+    file_name = kwargs.get('file_name', None)
+    output_log_file = kwargs.get('output_log_file', None) 
+    output_seed_folder = kwargs.get('output_seed_folder', None) 
+    
+    num_threads = kwargs.get('num_threads', 1) 
+    
+    start_time = datetime.now()
+    
+    
+    output_seed_folder =os.path.join(workspace, output_seed_folder)
+    output_json_path = os.path.join(output_seed_folder,output_log_file)
+    file_path = os.path.join(workspace, file_name)
+    os.makedirs(output_seed_folder , exist_ok=True)
+    
+    print(f"""{start_time.strftime("%Y-%m-%d %H:%M:%S")}
+    Making erosion seeds for 
+        Img: {file_path}
+        Threshold for Img {target_thresholds}
+        Erode {ero_iters} iterations
+        Keeping {segments} components
+        Erosion footprints {footprints}
+        Using {num_threads} threads
+            """)
+    
+    threshold_ero_iter_pairs = list(itertools.product(target_thresholds, ero_iters))
+
+    volume = tifffile.imread(file_path)
+    
+   
+    sublists = [threshold_ero_iter_pairs[i::num_threads] for i in range(num_threads)]
+
+    # Create a list to hold the threads
+    threads = []
+
+
+    # Start a new thread for each sublist
+    for sublist in sublists:
+        # thread = threading.Thread(target=find_seg_by_ero_v2, args=(volume,sublist, segments ))
+        thread = threading.Thread(target=find_seed_by_ero_mp, args=(volume,sublist, segments,
+                                                                    output_seed_folder, output_json_path, footprints ))
+        threads.append(thread)
+        thread.start()
+        
+    # Wait for all threads to complete
+    for thread in threads:
+        thread.join()
+
+    end_time = datetime.now()
+    running_time = end_time - start_time
+    total_seconds = running_time.total_seconds()
+    minutes, _ = divmod(total_seconds, 60)
+    print(f"Running time:{minutes}")
+    
+    return (output_seed_folder,output_log_file)
+    
+    
 if __name__ == "__main__":
     file_path = 'make_seeds.yaml'
     _, extension = os.path.splitext(file_path)
@@ -197,40 +261,41 @@ if __name__ == "__main__":
     file_path = os.path.join(workspace, file_name)
     os.makedirs(output_seed_folder , exist_ok=True)
 
+
+    start_time = datetime.now()
+    print(f"""{start_time.strftime("%Y-%m-%d %H:%M:%S")}
+    Making erosion seeds for 
+        Img: {file_path}
+        Threshold for Img {target_thresholds}
+        Erode {ero_iters} iterations
+        Keeping {segments} components
+        Erosion footprints {footprints}
+            """)
+    
+
+
     threshold_ero_iter_pairs = list(itertools.product(target_thresholds, ero_iters))
 
     volume = tifffile.imread(file_path)
+    
     
     
     # find_seg_by_ero(volume, 4500, 25,[2])
     # sys.exit(0)
     # find_seg_by_ero_v2(volume, threshold_ero_iter_pairs , segments)
     
-    if GEN_WHOLE_MESH:
-        output_whole_dir = os.path.join(workspace,"whole_mesh")
-        os.makedirs(output_whole_dir , exist_ok=True)
-        threads = []
-        sub_thresholds = [target_thresholds[i::num_threads] for i in range(num_threads)]
-        # Start a new thread for each sublist
-        for sublist in sub_thresholds:
-            thread = threading.Thread(target=gen_mesh, args=(volume,sublist,output_whole_dir))
-            threads.append(thread)
-            thread.start()
-            
-        # Wait for all threads to complete
-        for thread in threads:
-            thread.join()
-        print(f"Whole meshes generated at {output_whole_dir}")
-    
+   
     sublists = [threshold_ero_iter_pairs[i::num_threads] for i in range(num_threads)]
 
     # Create a list to hold the threads
     threads = []
 
+
     # Start a new thread for each sublist
     for sublist in sublists:
         # thread = threading.Thread(target=find_seg_by_ero_v2, args=(volume,sublist, segments ))
-        thread = threading.Thread(target=find_seed_by_ero_mp, args=(volume,sublist, segments, footprints ))
+        thread = threading.Thread(target=find_seed_by_ero_mp, args=(volume,sublist, segments,
+                                                                    output_seed_folder,output_json_path, footprints ))
         threads.append(thread)
         thread.start()
         
@@ -238,5 +303,26 @@ if __name__ == "__main__":
     for thread in threads:
         thread.join()
 
-    print(f"All threads have completed. Log is saved at {output_json_path},seeds are saved at {output_seed_folder}")
+    # print(f"All threads have completed. Log is saved at {output_json_path},seeds are saved at {output_seed_folder}")
 
+    # if GEN_WHOLE_MESH:
+    #     output_whole_dir = os.path.join(workspace,"whole_mesh")
+    #     os.makedirs(output_whole_dir , exist_ok=True)
+    #     threads = []
+    #     sub_thresholds = [target_thresholds[i::num_threads] for i in range(num_threads)]
+    #     # Start a new thread for each sublist
+    #     for sublist in sub_thresholds:
+    #         thread = threading.Thread(target=gen_mesh, args=(volume,sublist,output_whole_dir))
+    #         threads.append(thread)
+    #         thread.start()
+            
+    #     # Wait for all threads to complete
+    #     for thread in threads:
+    #         thread.join()
+    #     print(f"Whole meshes generated at {output_whole_dir}")
+    
+    end_time = datetime.now()
+    running_time = end_time - start_time
+    total_seconds = running_time.total_seconds()
+    minutes, _ = divmod(total_seconds, 60)
+    print(f"Running time:{minutes}")

@@ -1,10 +1,17 @@
 
-workspace: "C:\\Users\\Yichen\\OneDrive\\work\\codes\\nhm_bounti\\result\\foram_james"
-tif_file: 'seed_test/seed_ero_3_thre0_segs_20.tif'
-ori_path: "input/ai/final.20180802_VERSA_1905_ASB_OLK_st016_bl4_fo1_recon.tif"
+workspace: "C:\\Users\\Yichen\\OneDrive\\work\\codes\\nhm_bounti\\result\\dog_lucy"
+img_path: 'input\\Beagle_220783_8bits.tif'
+seg_path: "seeds\\Beagle_220783_8bits.tif\\Beagle_220783_8bits.tif_sorted.tif"
 thresholds: 
-  - 0
-dilate_iters: 4
+  - 121
+
+img_path: 'input\\Beagle_232558_34YWQWIV_8bits.tif'
+seg_path: "seeds\\Beagle_232558_34YWQWIV_8bits.tif\\Beagle_232558_34YWQWIV_8bits.tif_sorted.tif"
+thresholds: 
+  - 68
+
+dilate_iters: 
+  - 30
 touch_rule: "no"
 output_folder: "grow"
-save_interval: 1
+save_interval: 10

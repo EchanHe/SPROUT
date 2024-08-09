@@ -1,0 +1,13 @@
+
+workspace: "C:\\Users\\Yichen\\OneDrive\\work\\codes\\nhm_bounti\\result\\foram_james"
+img_path: 'input\\ai_v2\\final.20180719_VERSA_1905_ASB_OLK_st014_bl4_fo1_recon.tif'
+seg_path: "seeds/combine/combined_sorted.tif"
+thresholds: 
+  - 0
+dilate_iters: 
+  - 10
+touch_rule: "no"
+output_folder: "grow"
+save_interval: 
+  - 2
+num_threads: 10
