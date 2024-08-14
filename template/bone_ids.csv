@@ -1,0 +1,2 @@
+seg_file,specimen,img_file,frontal_L,frontal_R,parietal_L,parietal_R,occipital,jugal_L,jugal_R,squamosal_L,squamosal_R,maxillary_L,maxillary_R,premaxillary_L,premaxillary_R,nasal_L,nasal_R,interparietal,palatine_L,palatine_R
+./result/procavia/seg/Procavia_capensis_parcellation.tif,procavia,./result/procavia/input/procaviaH4981C_0001.tif.resampled.tif,10,11,5,7,14,40,13,42,6,33,4,2,25,34,26,9,8,19
