@@ -52,16 +52,25 @@ def merge_masks_with_filter(mask1, mask2, ids_to_keep1, ids_to_keep2):
     # Create a mask to filter out unwanted IDs
     mask1_filtered = np.where(np.isin(mask1, ids_to_keep1), mask1, 0)
     mask2_filtered = np.where(np.isin(mask2, ids_to_keep2), mask2, 0)
-
+    
+    print(f"np.unique(mask1): {np.unique(mask1)}")
+    print(f"np.unique(mask2): {np.unique(mask2)}")
+    print(f"np.unique(mask1_filtered): {np.unique(mask1_filtered)}")
+    print(f"np.unique(mask2_filtered): {np.unique(mask2_filtered)}")
+    
     # Find the maximum ID in the filtered masks
     max_id1 = np.max(mask1_filtered)
     offset = max_id1
+
+    print(f"max_id1: {max_id1}")
 
     # Offset the IDs in the second mask
     mask2_filtered_offset = np.where(mask2_filtered != 0, mask2_filtered + offset, 0)
 
     # Combine the masks
     merged_mask = np.where(mask1_filtered != 0, mask1_filtered, mask2_filtered_offset)
+    
+    print(f"np.unique(merged_mask) {np.unique(merged_mask)}")
 
     return merged_mask
 
@@ -131,6 +140,7 @@ def string_to_integer_list(s):
     except:
         raise ValueError("Invalid input string")
 
+
 class Edit(PyScriptObject):
     def __init__(self):
         
@@ -189,7 +199,9 @@ class Edit(PyScriptObject):
         _hx_core._tcl_interp('stopLogInhibitor')
 
 
-
+        # self.data.visible = False
+        # self.filename.visible = False
+        
 
 
     def load_files(self, file_paths):
@@ -311,7 +323,11 @@ class Edit(PyScriptObject):
         
         self.src_ids.visible = visible    
         
-        self.dst_ids.visible = visible    
+        self.dst_ids.visible = visible  
+        
+        if visible == False:
+            self.input_seed.disconnect()
+            
     
     def toggle_two_img(self, visible):
         
@@ -320,19 +336,46 @@ class Edit(PyScriptObject):
         self.keep_id_1.visible = visible    
        
         self.keep_id_2.visible = visible    
+        
+        if visible == False:
+            self.input_seed1.disconnect()
+            self.input_seed2.disconnect()
     
     def toggle_clean(self, visible):
         self.input_img.visible = visible    
         self.id_clean.visible = visible   
         self.input_seed_clean.visible = visible  
         
+        if visible == False:
+            self.input_seed_clean.disconnect()
+            
+        
     def toggle_split(self, visible):
         self.input_seed_split.visible = visible    
         self.id_split.visible = visible   
         self.n_split.visible = visible  
+        
+        if visible == False:
+            self.input_seed_split.disconnect()
+    
+    def addon_clean(self):
+        try:
+            if self.data.visible:
+                self.data.visible = False
+            if self.ports.startStop.visible:
+                self.ports.startStop.visible = False
+            if self.ports.showConsole.visible:
+                self.ports.showConsole.buttons[0].hit = True
+                self.fire()
+                self.ports.showConsole.visible = False
+        except Exception as e:
+            print(f"Waiting for ports being created {e}")
+
     
     def update(self):
-
+        self.addon_clean()
+        # print(self)
+        
         
         if self.functions.selected ==0:
             self.toggle_split(True)
@@ -370,11 +413,16 @@ class Edit(PyScriptObject):
             str_src_ids = self.src_ids.text
             
             if not is_valid_src_ids_list(str_src_ids):
-                print(f"Src_ids is not valid, please input one more multi class id and separate by comma\n" \
-                    "like \'1\' or \'1, 2, 3, 4\'  ")
+                hx_message.warning(f"Src_ids is not valid, please input one more multi class id and separate by comma\n" \
+                    "like \'1\' or \'1, 2, 3, 4\' ")
+                return
+                # print(f"Src_ids is not valid, please input one more multi class id and separate by comma\n" \
+                #     "like \'1\' or \'1, 2, 3, 4\'  ")
             
             if not is_valid_dst_ids_list(str_dst_ids):
-                print(f"dst_ids is not valid, please input one class id")
+                hx_message.warning(f"dst_ids is not valid, please input one class id")
+                return
+                # print(f"dst_ids is not valid, please input one class id")
                 
             dst_ids = string_to_integer_list(str_dst_ids)
             src_ids = string_to_integer_list(str_src_ids)
@@ -384,7 +432,7 @@ class Edit(PyScriptObject):
             
             # Is there an input data connected?
             if self.input_seed.source() is None:
-                print("Please select the input")
+                hx_message.warning("Please select the input")
                 return
             
             input_1 = self.input_seed.source()
@@ -402,19 +450,9 @@ class Edit(PyScriptObject):
             str_keep_id_1 = self.keep_id_1.text
             str_keep_id_2 = self.keep_id_2.text
             
-            if not (is_valid_src_ids_list(str_keep_id_1)) or not (is_valid_src_ids_list(str_keep_id_2)):
-                print(f"Id format is not valid, please input one more multi class id and separate by comma\n" \
-                    "like \'1\' or \'1, 2, 3, 4\'  ")
-                            
-            keep_id_1 = string_to_integer_list(str_keep_id_1)
-            keep_id_2 = string_to_integer_list(str_keep_id_2)
-            
-            print(f"Ids to keep for seed 1: {keep_id_1}")
-            print(f"Ids to keep for seed 2: {keep_id_2}")
-            
             # Is there an input data connected?
             if (self.input_seed1.source() is None) or (self.input_seed2.source() is None):
-                print("Please select the input")
+                hx_message.warning("Please select the input")
                 return
             
             input_1 = self.input_seed1.source()
@@ -423,11 +461,48 @@ class Edit(PyScriptObject):
             input_2 = self.input_seed2.source()
             np_input_2 = input_2.get_array()
             
+            # if str_keep_id_1 == 'all':
+            #     keep_id_1 = np.unique(np_input_1)
+            #     keep_id_1 =  np.array([x for x in keep_id_1 if x !=0])
+            
+          
+            if str_keep_id_1 == 'all':
+                keep_id_1 = np.unique(np_input_1)
+                keep_id_1 =  np.array([x for x in keep_id_1 if x !=0])
+            elif is_valid_src_ids_list(str_keep_id_1):
+                keep_id_1 = string_to_integer_list(str_keep_id_1)
+            else:
+                hx_message.warning(f"Id 1 format is not valid, please input one more multi class id and separate by comma\n" \
+                    "like \'1\' or \'1, 2, 3, 4\'  \nOr use input string \"all\" if want to use all ids")
+                return
+            
+            if str_keep_id_2 == 'all':
+                keep_id_2 = np.unique(np_input_2)
+                keep_id_2 =  np.array([x for x in keep_id_2 if x !=0])
+            elif is_valid_src_ids_list(str_keep_id_2):
+                keep_id_2 = string_to_integer_list(str_keep_id_2)
+            else:
+                hx_message.warning(f"Id 2 format is not valid, please input one more multi class id and separate by comma\n" \
+                    "like \'1\' or \'1, 2, 3, 4\'  \nOr use input string \"all\" if want to use all ids")
+                return
+                
+            # if not (is_valid_src_ids_list(str_keep_id_1)) or not (is_valid_src_ids_list(str_keep_id_2)):
+            #     hx_message.warning(f"Id format is not valid, please input one more multi class id and separate by comma\n" \
+            #         "like \'1\' or \'1, 2, 3, 4\'  ")
+            
+            # keep_id_1 = string_to_integer_list(str_keep_id_1)
+            # keep_id_2 = string_to_integer_list(str_keep_id_2)
+            
+            print(f"Ids to keep for seed 1: {keep_id_1}")
+            print(f"Ids to keep for seed 2: {keep_id_2}")
+            
+            
+            
             output = merge_masks_with_filter(np_input_1, np_input_2,keep_id_1,keep_id_2)
 
 
             result = hx_project.create('HxUniformLabelField3')
-            result.name = input_1.name + "two_img_merge.Segmentation"
+            result.name = input_1.name + "_two_img_merge.Segmentation"
             result.bounding_box = input_1.bounding_box
             result.set_array(np.array(output, dtype = np.uint8))
             
@@ -435,8 +510,9 @@ class Edit(PyScriptObject):
             str_id_clean = self.id_clean.text
             
             if not (is_valid_src_ids_list(str_id_clean)):
-                print(f"Id format is not valid, please input one more multi class id and separate by comma\n" \
+                hx_message.warning(f"Id format is not valid, please input one more multi class id and separate by comma\n" \
                     "like \'1\' or \'1, 2, 3, 4\'  ")
+                return
                             
             id_clean = string_to_integer_list(str_id_clean)
             
@@ -444,7 +520,7 @@ class Edit(PyScriptObject):
             
             # Is there an input data connected?
             if (self.input_img.source() is None) or (self.input_seed_clean.source() is None):
-                print("Please select the input")
+                hx_message.warning("Please select the input")
                 return
             
             input_img = self.input_img.source()
@@ -467,18 +543,24 @@ class Edit(PyScriptObject):
             str_n_split =self.n_split.text
             
             if not (is_valid_src_ids_list(str_id_split)) or not (is_valid_src_ids_list(str_n_split)):
-                print(f"Id format is not valid, please input one more multi class id and separate by comma\n" \
+                hx_message.warning(f"Id format is not valid, please input one more multi class id and separate by comma\n" \
                     "like \'1\' or \'1, 2, 3, 4\'  ")
+                return
                             
             id_split = string_to_integer_list(str_id_split)
             n_split = string_to_integer_list(str_n_split)
             
             if len(id_split) != len(n_split):
-                print("Please make sure split ids, and n split should have the same length")
+                hx_message.warning("Please make sure split ids, and n split should have the same length")
+                return
             
             print(f"Split ids: {id_split}")
             print(f"Split into N parts: {n_split}")
             input_seed = self.input_seed_split.source()
+            
+            # print_input_info(self.input_seed_split)
+
+            
             np_input_seed = input_seed.get_array()
             
             for to_check_id,n_ccomp in zip(id_split, n_split):

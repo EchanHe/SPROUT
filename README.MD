@@ -1,7 +1,10 @@
-## A pipeline for generating segmentaions on micro-CT scans
+# A pipeline for generating segmentaions on micro-CT scans
 
 The code is highly inspired by Bounti.
 It is used to separate parts for 3D scans
+
+## Main workflow
+
 Here have three main parts.
 1. Generate seeds <br>
 Use morphological transformations and connected components (initial segmentations for grow)
@@ -39,13 +42,13 @@ Use morphological transformations and connected components (initial segmentation
     One seed/result
     <br>
     <br>
-    Output includes components `ply` meshes with its segmentation id. e.g. `1.ply`, `2.ply`. A `merged.ply` with all the meshes combined. And files called `mergedx_to_y`, merged mesh with only including the mesh colours for every 10 classes.
+    Output includes components `ply` meshes with its segmentation id. e.g. `1.ply`, `2.ply`. A `merged.ply` with all the meshes combined. And files called `merged_n_to_m`, merged mesh with only including the mesh colours for every 10 classes from n to m.
 
     
     2. `plot_mesh.py` Plot Generated meshes. <br>
     Currently under testing
 
-    The current colourmap has 10 colours, mesh colours follow its order, and recur using them after more than 11. ![Color Map](./src/colourmap.png)
+    The current colourmap has 10 colours, mesh colours follow its order mapping the segmentation class 1-10, and recur using them after more than 11. ![Color Map](./src/colourmap.png)
 
 4. Suture generation
     
@@ -77,53 +80,49 @@ Use morphological transformations and connected components (initial segmentation
 ## Filter Seeds/Results using segmentation stats
 This is used to filter out seeds that are not likely to be checked.
 
-## TODO:
-2024/08/03
-- Visualiasaion: Same x colour for visluse, Done
-- To add different pattern (texture or material) for visualisation. Some have been implemented in `./make_mesh.py`
-- Make a mesh that have unique colours (Combined), Done
-- Upgrade mesh visualisation. Ask marco what could be done.
-- UV on mapping texuture, testing code in `check_seeds.ipynb`
+### Editing tool
+- For a given label, merge multiple classes into one class. 
+- For two labels, merge two labels, using input classes for these two labels
+- Give a class, get all disconnected components, and keep the top-n (user defined) largest components
 
-- stats , working on the `./seeds_stats.py`, and based on the method in `./
-make_seeds_foram.py`
+## Help functions & Segmentation Editing:
+Merge classes in one image
+Merge classes from two images
+Filter or remove segmentation classes. Input: a list of classes
 
-seed makeing, more option on loop, footprints, 
-also allow cleaning on the seeds
 
-AVIZO addon test
-
- 
-## BounTI multithread implementation
-`./BounTI/run_bounti_mp.py` is used to run BounTI and BounTI flood, with a list of initial thresholds. 
 
 ## Avizo scripts
 Addon scripts are saved in `avizo` folder. 
-Change the extension from `py` to `pyscro`, and drag into Avizo project view to use
+Change the extension from `py` to `pyscro`, and drag into AVIZO's `Project View` to use it.
 
 `LoadVisFiles.py`  
 - Load and convert 8-bit labels into Avizo in batch.
 - Allow users to visualise the labels in voxel or mesh
+- Print the the relation between material names and the actual segmentation classes
+
+TO CHECK: For the mat names and seg cls. The numbers in names (`data.parameters['materials']`) won't match the seg cls numbers (`np.unique(data.get_array())`). We assume for 0-n in array match the materials[0] to materials[1].
 
 `Edit.py` 
-- For a given label, merge multiple classes into one class. 
-- For two labels, merge two labels, using input classes for these two labels
+- Same tasks as describe in the Editing tools section
 
-### TODO (might need to ask AVIZO Customer service)
-1. Set the correct voxel size in crop editor. As crop editor is a pop up menu
+`GenSutures.py`
+- Use bone-suture mappings and bone ids to generate sutures from bone pairs
+- Generate data include: pairs, individual suture and all sutures
+- Save the all sutures as a tif file to a given folder
+
+TODO
+- can not save meshes in batch. As trimesh is not updated.
+- can not save tif in batch with good compression, as tifffile need updates
 
 
-### Edit seeds tool
+## BounTI multithread implementation
+`./BounTI/run_bounti_mp.py` is used to run BounTI and BounTI flood, with a list of initial thresholds. 
 
 
-
-## Help functions:
-Merge classes in one image
-Merge classes from two images
-Remove classes
 
 ## Parallelization:
-`make_mesh.py`, `make_seeds.py`, `make_seeds_foram.py` currently support running in multiple processes. Please check your CPU and set the right `num_threads` in the configuration file
+`make_mesh.py`, `make_seeds.py`, `make_seeds_foram.py`, `make_sutures` currently support running in multiple processes. Please check your CPU and set the right `num_threads` in the configuration file
 
 ## Unzip a list of morphosource zip files
 `morphosource_unzip.ipynb` 
@@ -134,3 +133,45 @@ Unzip all morphosource in a folder/
 
 Morphosource file structure.
 
+
+## TODO:
+2024/08/03
+- To add different pattern (texture or material) for visualisation. Some have been implemented in `./make_mesh.py`
+- Make a mesh that have unique colours (Combined), Done
+- Upgrade mesh visualisation. Ask marco what could be done.
+- UV on mapping texuture, testing code in `check_seeds.ipynb`
+
+- stats , working on the `./seeds_stats.py`, and based on the method in `./
+make_seeds_foram.py`
+
+seed making, more option on loop, footprints, 
+also allow cleaning on the seeds
+
+Bug: make_mesh.py 379 about the number for merging meshes, it seems the class 10 will be in 11-20 than 1-10
+
+### AVIZO TODO
+- addon test:Use re-order and label functions from AVIZO.
+- Set the correct voxel size in crop editor. As crop editor is a pop up menu
+might need to ask AVIZO Customer service
+- Can not install trimesh. Need to think how to do it.
+
+
+
+TODO
+•	CSV and recipe maker
+•	Better seed generation and e.g. the saving split and disappear, Test new method, seeds all, XYZ
+•	
+•	Move files
+
+Loop, gene suture surface automatically
+
+Can generate separate and all-in-one tif sutures
+
+Need to figure out how to save sutures.
+Better naming on sutures, 
+and failed to concat csv in suture generations
+
+concat seems working. Maybe also have the suture size in df_output
+
+ccompos
+min_size problem
