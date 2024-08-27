@@ -9,35 +9,35 @@ It is used to separate parts for 3D scans
 ### 1. Generate seeds
 Use morphological transformations and connected components (initial segmentations for grow)
     
-    1. `make_seeds.py` is the for generating seeds. Config file template: `make_seeds.yaml` 
-        - workspace: The workspace folder. All below files and folders are based on the workspace
-        - file_name: path to input image
-        - num_threads: multiple threads, recommend to match the number of target_thresholds
-        - target_thresholds: For images, it's a threshold for segmenting the images. For binary segmentation, depending on the type, set 0 or 255 .
-        - ero_iters: Iterations for erosion
-        - segments: Integer >=1, The algorithm keeps top <segments> largest disconnected components
-        - output_seed_folder: The folder name of output seeds
-        - output_log_file: Name of the output file name
-        - footprints: The way you want to erode your images, current supports 'ball' and 'cube' :Erosion all directions. 'ball_XY', 'ball_XZ', 'ball_YZ': Erosion on the Plane. 'X', 'Y', 'Z': Erosion on the axis.
+1. `make_seeds.py` is the for generating seeds. Config file template: `make_seeds.yaml` 
+    - workspace: The workspace folder. All below files and folders are based on the workspace
+    - file_name: path to input image
+    - num_threads: multiple threads, recommend to match the number of target_thresholds
+    - target_thresholds: For images, it's a threshold for segmenting the images. For binary segmentation, depending on the type, set 0 or 255 .
+    - ero_iters: Iterations for erosion
+    - segments: Integer >=1, The algorithm keeps top <segments> largest disconnected components
+    - output_seed_folder: The folder name of output seeds
+    - output_log_file: Name of the output file name
+    - footprints: The way you want to erode your images, current supports 'ball' and 'cube' :Erosion all directions. 'ball_XY', 'ball_XZ', 'ball_YZ': Erosion on the Plane. 'X', 'Y', 'Z': Erosion on the axis.
 
     <br>
 
-    2. `make_seeds_all.py`, use the similar config except for `footprints`. As it generates seeds using 'ball', 'ball_XY', 'ball_XZ', 'ball_YZ'. And seeds are saved in subfolders with names match the footprint names.
+2. `make_seeds_all.py`, use the similar config except for `footprints`. As it generates seeds using 'ball', 'ball_XY', 'ball_XZ', 'ball_YZ'. And seeds are saved in subfolders with names match the footprint names.
 
-    3. `make_seeds_foram.py` is the algorithm for generating seeds for the binary segmentation of foram chambers. TODO: add more description
+3. `make_seeds_foram.py` is the algorithm for generating seeds for the binary segmentation of foram chambers. TODO: add more description
 
 
 ### 2. Grow
 
-    1. `make_grow_result.py` To grow the seeds to back to the original images with thresholds, or grow back to the binary segmentation<br>. Config file template: `make_grow_result.yaml`. 
-        - workspace: The workspace folder. All below files and folders are based on the workspace
-        - img_path: Input image
-        - seg_path: The path of the seed
-        - thresholds: A list of thresholds, normally from high to low. The algorithm will grow on higher thresholds first, then to lower.
-        - dilate_iters: A list of integer. The dilation iteration for each threshold
-        - touch_rule: Currently just set it as "stop"
-        - to_grow_ids: Can specify classes to grow.
-        - save_interval: Save the grow result for every <save_interval> interval
+1. `make_grow_result.py` To grow the seeds to back to the original images with thresholds, or grow back to the binary segmentation<br>. Config file template: `make_grow_result.yaml`. 
+    - workspace: The workspace folder. All below files and folders are based on the workspace
+    - img_path: Input image
+    - seg_path: The path of the seed
+    - thresholds: A list of thresholds, normally from high to low. The algorithm will grow on higher thresholds first, then to lower.
+    - dilate_iters: A list of integer. The dilation iteration for each threshold
+    - touch_rule: Currently just set it as "stop"
+    - to_grow_ids: Can specify classes to grow.
+    - save_interval: Save the grow result for every <save_interval> interval
 
     <br>
     <br>
@@ -48,46 +48,46 @@ Use morphological transformations and connected components (initial segmentation
 
 ### 3. Visualization
 
-    1. `make_mesh.py` Create a mesh for every class for the input seed/result<br>
-    Can change `make_mesh.yaml` values to set the input, and output directory
-    A folder of seeds/results
-    One seed/result
-    <br>
-    <br>
-    Output includes components `ply` meshes with its segmentation id. e.g. `1.ply`, `2.ply`. A `merged.ply` with all the meshes combined. And files called `merged_n_to_m`, merged mesh with only including the mesh colours for every 10 classes from n to m.
+1. `make_mesh.py` Create a mesh for every class for the input seed/result<br>
+Can change `make_mesh.yaml` values to set the input, and output directory
+A folder of seeds/results
+One seed/result
+<br>
+<br>
+Output includes components `ply` meshes with its segmentation id. e.g. `1.ply`, `2.ply`. A `merged.ply` with all the meshes combined. And files called `merged_n_to_m`, merged mesh with only including the mesh colours for every 10 classes from n to m.
 
     
-    2. `plot_mesh.py` Plot Generated meshes. <br>
-    TODO: Currently under testing
+2. `plot_mesh.py` Plot Generated meshes. <br>
+TODO: Currently under testing
 
-    The current colourmap has 10 colours, mesh colours follow its order mapping the segmentation class 1-10, and recur using them after more than 11. ![Color Map](./src/colourmap.png)
+The current colourmap has 10 colours, mesh colours follow its order mapping the segmentation class 1-10, and recur using them after more than 11. ![Color Map](./src/colourmap.png)
 
 ### 4. Suture generation
     
-    1. `make_sutures.py`. 
+1. `make_sutures.py`. 
 
-    Input: two CSV. 
-        1. One contains segmentation file names, and segmentation class id to each bone names. E.g., `./template/bone_ids.csv`
-        2. Another spreadsheet have three columns. E.g., `./template/suture_bone_mapping.csv`
-            (1) the suture names(col: result), 
-            (2) the first bone making the suture (col:part_1)
-            (3) the second bone making the suture (col:part_2). 
+Input: two CSV. 
+    1. One contains segmentation file names, and segmentation class id to each bone names. E.g., `./template/bone_ids.csv`
+    2. Another spreadsheet have three columns. E.g., `./template/suture_bone_mapping.csv`
+        (1) the suture names(col: result), 
+        (2) the first bone making the suture (col:part_1)
+        (3) the second bone making the suture (col:part_2). 
 
-    Output: 
-    For each scan:
-        1. Separated suture segmentation are generated in a folder (0: background, 1: sutures).
-        2. Merged sutures segmentation.
-        3. CSV file of suture names, parts, output detail, merged suture ID
+Output: 
+For each scan:
+    1. Separated suture segmentation are generated in a folder (0: background, 1: sutures).
+    2. Merged sutures segmentation.
+    3. CSV file of suture names, parts, output detail, merged suture ID
 
-    A Merged CSV of the CSV file for each scan.
+A Merged CSV of the CSV file for each scan.
     
+### Pipelines
 
-4. Pipelines
-    1. Seed generation and making meshes. Run `./PipelineSeedMesh.py`, and an example config file is `./PipelineSeedMesh.yaml`
+1. Seed generation and making meshes. Run `./PipelineSeedMesh.py`, and an example config file is `./PipelineSeedMesh.yaml`
 
-    2. Growing and making meshes. Run `./PipelineGrowMesh.py`, and an example config file is `./PipelineGrowMesh.yaml`
+2. Growing and making meshes. Run `./PipelineGrowMesh.py`, and an example config file is `./PipelineGrowMesh.yaml`
 
-    2. Seed generation, growing and making meshes. Run `PipelineSeedGrowMesh.py`, currently is used for foram chamber separation.
+2. Seed generation, growing and making meshes. Run `PipelineSeedGrowMesh.py`, currently is used for foram chamber separation.
 
 ### Filter Seeds/Results using segmentation stats
 TODO This is used to filter out seeds that are not likely to be checked.
