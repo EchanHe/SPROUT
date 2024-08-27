@@ -14,6 +14,13 @@ def load_config_yaml(config, parent_key=''):
             
 file_path = 'PipelineGrowMesh.yaml'
 _, extension = os.path.splitext(file_path)
+
+with open(file_path, 'r') as file:
+    data = yaml.safe_load(file)
+
+# Safely get values from the YAML data
+to_grow_ids = data.get('to_grow_ids', None)
+
 print(f"processing config he file {file_path}")
 if extension == '.yaml':
     with open(file_path, 'r') as file:
@@ -31,7 +38,8 @@ output = make_grow_result.main(
     workspace = workspace,
     img_path = img_path,
     seg_path = seg_path,
-    output_folder = output_folder
+    output_folder = output_folder,
+    to_grow_ids = to_grow_ids
 )
 
 mesh_folder = output_folder = os.path.join(workspace, output_folder)

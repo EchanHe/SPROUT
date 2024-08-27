@@ -6,9 +6,10 @@ from datetime import datetime
 from skimage.measure import marching_cubes
 import json ,yaml
 import numpy as np
+import pandas as pd
 
 
-import suture_morph.suture_morpho as suture_morpho
+import suture_morph.suture_morpho as suture_morpho 
 
 # Function to recursively create global variables from the config dictionary
 def load_config_yaml(config, parent_key=''):
@@ -39,11 +40,16 @@ def main(**kwargs):
     img_path = kwargs.get('img_path', None)
     seg_path = kwargs.get('seg_path', None) 
     output_folder = kwargs.get('output_folder', None) 
+    to_grow_ids = kwargs.get('to_grow_ids', None) 
     
+    is_sort = kwargs.get('is_sort', False) 
+    
+    min_diff = kwargs.get('min_diff', 50) 
+    tolerate_iters = kwargs.get('tolerate_iters', 3) 
     # Test if the grown result and input's diff is more than this. Default is 10.
-    min_diff = 50
+    # min_diff = 50
     # The number of iters for diff is less than diff_threshold
-    tolerate_iters = 3
+    
     
     
     assert len(thresholds) == len(dilate_iters), f"thresholds and dilate_iters must have the same length, but got {len(thresholds)} and {len(dilate_iters)}."
@@ -51,14 +57,17 @@ def main(**kwargs):
         assert len(thresholds) == len(save_interval), f"Save interval list should have the same length as well"
 
     
-    img_path = os.path.join(workspace, 
-                            img_path)
-    seg_path = os.path.join(workspace, seg_path)
+    if workspace is not None:
+        img_path = os.path.join(workspace, 
+                                img_path)
+        seg_path = os.path.join(workspace, seg_path)
+        output_folder = os.path.join(workspace, output_folder)
+    
     base_name = os.path.basename(seg_path)
     input_mask = tifffile.imread(seg_path)
     ori_img = tifffile.imread(img_path)
 
-    output_folder = os.path.join(workspace, output_folder)
+
     os.makedirs(output_folder , exist_ok=True)
     
     # Record the start time
@@ -70,8 +79,11 @@ def main(**kwargs):
         Seed {seg_path} to grow {dilate_iters} iterations
         Early stopping: min_diff = {min_diff} and tolerate_iters = {tolerate_iters}
             """)
+    
+    df_log = []
 
     result = input_mask.copy()
+    result = result.astype('uint8')
     for i, (threshold,dilate_iter) in enumerate(zip(thresholds,dilate_iters)):
         # Set the count for check diff for each growing threshold
         count_below_threshold = 0
@@ -84,15 +96,34 @@ def main(**kwargs):
         threshold_name = "_".join(str(s) for s in thresholds[:i+1])
         dilate_name = "_".join(str(s) for s in dilate_iters[:i+1])
         
+        
         print(f"threshold:{threshold} dilate_iter:{dilate_iter}.real_save_interval:{real_save_interval}")
         for i_dilate in range(1, dilate_iter+1):
             threshold_binary = ori_img > threshold
             
+            # Get the input size for the log
             input_size = np.sum(result!=0)
             
+            ## Making grow for one iteration
             result = suture_morpho.dilation_one_iter(result, threshold_binary ,
-                                            touch_rule = touch_rule)
+                                            touch_rule = touch_rule,
+                                            to_grow_ids=to_grow_ids)
+            
+            # Get the output size for the log
             output_size = np.sum(result!=0)
+            
+            output_path = os.path.join(output_folder, f'{base_name}_iter_{i_dilate}_dilate_{dilate_name}_thre_{threshold_name}.tif')
+            
+                
+            if i_dilate%real_save_interval==0 or count_below_threshold >= tolerate_iters:
+                df_log.append({'id': (i*dilate_iter)+i_dilate, 
+                            'grow_size': output_size,
+                            'full_size':np.sum(threshold_binary),
+                            'cur_threshold': threshold,
+                            "file_name": os.path.basename(output_path),
+                            'full_path': os.path.abspath(output_path),
+                            'cur_dilate_step': i_dilate,
+                            })
             
             ## Check if output size and input 's diff is bigger than min_diff
             if output_size - input_size < min_diff:
@@ -101,7 +132,7 @@ def main(**kwargs):
                 count_below_threshold = 0
             if count_below_threshold >= tolerate_iters:
                 print(f"\tBreaking at iteration {i_dilate} with Input size = {input_size} and Output_size = {output_size}")
-                output_path = os.path.join(output_folder, f'{base_name}_iter_{i_dilate}_dilate_{dilate_name}_thre_{threshold_name}.tif') 
+                 
                 print(f"\tGrown result has been saved {output_path}")
                 tifffile.imwrite(output_path, 
                 result,
@@ -110,7 +141,7 @@ def main(**kwargs):
             
             if i_dilate%real_save_interval==0:
                 # output_path = os.path.join(workspace, f'result/ai/dila_{dilate_iter}_{threshold}_rule_{touch_rule}.tif')
-                output_path = os.path.join(output_folder, f'{base_name}_iter_{i_dilate}_dilate_{dilate_name}_thre_{threshold_name}.tif')
+              
                 
                 print(f"\tGrown result has been saved {output_path}")
                 print(f"\tIter:{i_dilate}. Last Input size = {input_size} and Output_size = {output_size}")
@@ -124,6 +155,11 @@ def main(**kwargs):
     total_seconds = running_time.total_seconds()
     minutes, _ = divmod(total_seconds, 60)
     print(f"Running time:{minutes}")
+    
+    df_log = pd.DataFrame(df_log)
+    
+        
+    df_log.to_csv(os.path.join(output_folder, f'{base_name}.csv'), index = False)
 
 
 if __name__ == "__main__":
@@ -140,7 +176,9 @@ if __name__ == "__main__":
     elif extension == '.yaml':
         with open(file_path, 'r') as file:
             config = yaml.safe_load(file)
+            to_grow_ids = config.get('to_grow_ids', None)
         load_config_yaml(config)
+    
     
     # workspace = r'C:\Users\Yichen\OneDrive\work\codes\nhm_bounti_pipeline\result\procavia'
     
@@ -171,7 +209,8 @@ if __name__ == "__main__":
         workspace = workspace,
         img_path = img_path,
         seg_path = seg_path,
-        output_folder = output_folder
+        output_folder = output_folder,
+        to_grow_ids = to_grow_ids
          )
     
     # assert len(thresholds) == len(dilate_iters), f"thresholds and dilate_iters must have the same length, but got {len(thresholds)} and {len(dilate_iters)}."

@@ -1,5 +1,16 @@
 result/*
 json_configs/*
+old_codes/*
+.vscode/*
+
+avizo/*
+!avizo/GenSutures.py
+!avizo/Edit.py
+!avizo/LoadVisLabels.py
+!avizo/make_sutures_avizo_recipe.hxisp
+
+test_*.py
+test_*.ipynb
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

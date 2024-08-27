@@ -4,7 +4,6 @@ import trimesh
 import os, glob
 import tifffile
 import threading
-import json
 from datetime import datetime
 import matplotlib.pyplot as plt
 import json, yaml
@@ -31,19 +30,20 @@ def load_config_json(file_path):
         globals()[key] = value
 
 
-def stack_to_mesh(bone_id_list , output_dir, downsample_scale=10):
+def stack_to_mesh(bone_id_list , output_dir, downsample_scale=10,step_size = 1):
   
     for id in bone_id_list:
         temp = (volume_array ==id).astype('uint8')
             # # Use marching cubes to obtain the surface mesh
-        verts, faces, normals, values = marching_cubes(temp, level=0.5)
+        verts, faces, normals, values = marching_cubes(temp, level=0.5, step_size=step_size)
         # Step 3: Create a Trimesh object
         mesh = trimesh.Trimesh(vertices=verts, faces=faces, vertex_normals=normals)
         
         # Simplify the mesh
         # Set target number of faces (e.g., reduce to 50% of the original number of faces)
-        target_faces = mesh.faces.shape[0] // downsample_scale
-        simplified_mesh = mesh.simplify_quadric_decimation(target_faces)
+        if downsample_scale>1:
+            target_faces = mesh.faces.shape[0] // downsample_scale
+            mesh = mesh.simplify_quadric_decimation(target_faces)
         
         if id==0:
             color = [255, 255, 255, 255]
@@ -56,22 +56,12 @@ def stack_to_mesh(bone_id_list , output_dir, downsample_scale=10):
         else:
             color = colors[(id-1)%len(colors)]
         
-        simplified_mesh.visual.vertex_colors = color
+        mesh.visual.vertex_colors = color
         # Step 4: Save the mesh to a file
         
-        simplified_mesh.export(os.path.join(output_dir, "{}.ply".format(id)))
+        mesh.export(os.path.join(output_dir, "{}.ply".format(id)))
 
-def binary_stack_to_mesh(input_volume , threshold, output_dir, downsample_scale=10):
-    
-    input_volume = input_volume > threshold
-    verts, faces, normals, _ = marching_cubes(input_volume, level=0.5)
-    mesh = trimesh.Trimesh(vertices=verts, faces=faces, vertex_normals=normals)
-    
-    target_faces = mesh.faces.shape[0] // downsample_scale
-    simplified_mesh = mesh.simplify_quadric_decimation(target_faces)
 
-    simplified_mesh.visual.vertex_colors = [128,128,128,128]
-    simplified_mesh.export(os.path.join(output_dir, f"{threshold}.ply".format(id)))
 
 def split_ints_by_deli(numbers, deli):
     # Sort the list
@@ -328,7 +318,9 @@ def merge_plys(ply_files,output_path, keep_color=True,keep_color_files=None):
 
 def make_mesh_for_tiff(tif_file,output_folder,
                        num_threads,no_zero = True,
-                       colormap = "color10"):
+                       colormap = "color10",
+                       downsample_scale = 10,
+                       step_size = 1):
     print(f"Creating meshes for {tif_file}")
     # Extract the base name without extension
     base_name = os.path.basename(tif_file)
@@ -360,7 +352,7 @@ def make_mesh_for_tiff(tif_file,output_folder,
 
     # Start a new thread for each sublist
     for sublist in sublists:
-        thread = threading.Thread(target=stack_to_mesh, args=(sublist,output_sub_dir,))
+        thread = threading.Thread(target=stack_to_mesh, args=(sublist,output_sub_dir,downsample_scale,step_size))
         threads.append(thread)
         thread.start()
         
@@ -375,15 +367,18 @@ def make_mesh_for_tiff(tif_file,output_folder,
     
     merge_plys(ply_files,merge_ply_output_path)
     
+    # Merge coloured mesh on a range using deli
     deli=len(colors)
     for end in range(deli, max(id_list) + deli + 1, deli):
-        start = end - deli
-        # print(start, end)
-        array_ids = np.logical_and(id_list>=start, id_list<end)
+        start = (end - deli)+1
+
+        # Get the segmentation class for colour.
+        # While rest has no colour
+        array_ids = np.logical_and(id_list>=start, id_list<=end)
         # print(ply_files[array_ids])
         keep_color_files = ply_files[array_ids]
         if keep_color_files.size!=0:
-            merge_ply_output_path = os.path.join(output_sub_dir,f"merged{start+1}_to_{end}.ply")
+            merge_ply_output_path = os.path.join(output_sub_dir,f"merged_{start+1}_to_{end}.ply")
             merge_plys(ply_files,merge_ply_output_path,keep_color_files=keep_color_files)
 
     print(f"{tif_file} has completed.\n")
@@ -402,6 +397,11 @@ if __name__ == "__main__":
             config = yaml.safe_load(file)
         load_config_yaml(config)
 
+    with open(file_path, 'r') as file:
+        data = yaml.safe_load(file)
+        downsample_scale = data.get('downsample_scale', 10)
+        step_size = data.get('step_size', 1)
+    
     
     start_time = datetime.now()
     print(f"""{start_time.strftime("%Y-%m-%d %H:%M:%S")}
@@ -430,7 +430,10 @@ if __name__ == "__main__":
         tif_files = glob.glob(os.path.join(input_folder, '*.tif'))
         
         for tif_file in tif_files:
-            make_mesh_for_tiff(tif_file,output_folder, num_threads,no_zero = True)
+            make_mesh_for_tiff(tif_file,output_folder,
+                               num_threads,no_zero = True,
+                               downsample_scale=downsample_scale,
+                               step_size=step_size)
 
 
     # Only for 
@@ -441,15 +444,13 @@ if __name__ == "__main__":
         
         os.makedirs(output_folder,exist_ok=True)
 
-        make_mesh_for_tiff(tif_file,output_folder, num_threads,no_zero = True)   
+        make_mesh_for_tiff(tif_file,output_folder, num_threads,
+                           no_zero = True,
+                           downsample_scale=downsample_scale,
+                           step_size=step_size)   
         
 
-    if WHOLE_MESH:
-        os.makedirs(output_folder , exist_ok=True)
-        volume = tifffile.imread(img_file)
-        binary_stack_to_mesh(volume , threshold,
-                             output_folder,
-                             downsample_scale=10)
+
         
         
 #### Old codes for multi files

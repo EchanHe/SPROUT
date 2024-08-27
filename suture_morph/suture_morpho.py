@@ -375,7 +375,9 @@ def closing_binary_img_on_sub_one_step_iter(input, iterations, footprint='ball')
         
 
 
-def find_gaps_between_two(input_1, input_2, background = None):
+def find_gaps_between_two(input_1, input_2, background = None,
+                          max_width = 7,
+                          Close_size = 7):
        
     
     ### Goal: Close holes
@@ -397,21 +399,23 @@ def find_gaps_between_two(input_1, input_2, background = None):
 
     ## Method1: Apply dilation to Input 1 and 2, 
     ## and find the intersection between two inputs
-    dilation_iter = 7
-    dilation_size=1
+    dilation_iter = max_width
+    dilation_size = 1
 
     for i in range(dilation_iter):
         # prev_suture_inter_sum = suture_inter_sum
         input_1 = dilation_binary_img_on_sub(input_1, margin=2, kernal_size=dilation_size)
         input_2 = dilation_binary_img_on_sub(input_2, margin=2, kernal_size=dilation_size)
         
+        if i == 0:
+            inter_1_dilation = np.logical_and(input_1, input_2)
     
     inter_dilation = np.logical_and(input_1, input_2)
     if np.sum(inter_dilation)==0:
         # print("No intersection have been found")
         return None
     
-    ## Method2: Apply close to the segmetnation of both input1 and 2.
+    ## Method2: Apply close to the segmentation of both input1 and 2.
     ## In order to find if it is possible to close any gap between 1 and 2
     # close_size = 11   
     # margin = ((close_size-1)//2) +1
@@ -419,7 +423,7 @@ def find_gaps_between_two(input_1, input_2, background = None):
     # combined_for_closing = closing_binary_img_on_sub(input_for_closing,margin=margin, kernal_size=close_size)
 
     input_for_closing = combined.copy()
-    close_iters = 7
+    close_iters = Close_size
     combined_for_closing = closing_binary_img_on_sub_one_step_iter(input_for_closing,close_iters)
 
     inter_dilation_and_closing = np.logical_and(inter_dilation,
@@ -442,14 +446,116 @@ def find_gaps_between_two(input_1, input_2, background = None):
     ### Goal: Refine the intersection
     ### (1) Use Results from Find intersection 1 and 2
     ### (2) Remove result areas that are parts of input1 and input2
-    
     inter_dilation_and_closing[combined==True]=False
+    
+    # Set anything belong to the background (not the classes that form the sutures) to False
     if background is not None:
         inter_dilation_and_closing[background==True]=False
         
     if np.sum(inter_dilation_and_closing)==0:
         print("No intersection have been found")
         return None
+
+    ### Make sutures better
+    # If the intersection is very thin (bones are too close), use dilation to increase the suture sizes a little.
+    
+    ### Clean potential noises
+    # Using ccomps, either by numbers or the size of comps
+    # Also another way is to detect the neighbour pixel, if they are all other 
+    
+    
+    return inter_dilation_and_closing
+
+
+
+def find_gaps_between_two_avizo_version(input_1, input_2, background = None,
+                          max_width = 7,
+                          Close_size = 7):
+       
+    
+    ### Goal: Close holes
+    ## Method: Apply close to Input 1 and 2
+    # close_size = 9
+    # margin = ((close_size-1)//2) +1
+    
+    # input_1 = closing_binary_img_on_sub(input_1,margin=margin, kernal_size=close_size)
+    # input_2 = closing_binary_img_on_sub(input_2,margin=margin, kernal_size=close_size)
+    
+    # close_iters = 4
+    
+    # input_1 = closing_binary_img_on_sub_one_step_iter(input_1,close_iters)
+    # input_2 = closing_binary_img_on_sub_one_step_iter(input_2,close_iters)
+    
+    combined = np.logical_or(input_1,input_2)   
+    ### Goal: find the link between Input 1 and 2
+
+
+    ## Method1: Apply dilation to Input 1 and 2, 
+    ## and find the intersection between two inputs
+    dilation_iter = max_width
+    dilation_size = 1
+
+    for i in range(dilation_iter):
+        # prev_suture_inter_sum = suture_inter_sum
+        input_1 = dilation_binary_img_on_sub(input_1, margin=2, kernal_size=dilation_size)
+        input_2 = dilation_binary_img_on_sub(input_2, margin=2, kernal_size=dilation_size)
+        
+        if i == 0:
+            inter_1_dilation = np.logical_and(input_1, input_2)
+    
+    inter_dilation = np.logical_and(input_1, input_2)
+    if np.sum(inter_dilation)==0:
+        # print("No intersection have been found")
+        return None
+    
+    ## Method2: Apply close to the segmentation of both input1 and 2.
+    ## In order to find if it is possible to close any gap between 1 and 2
+    # close_size = 11   
+    # margin = ((close_size-1)//2) +1
+    # input_for_closing = combined.copy()
+    # combined_for_closing = closing_binary_img_on_sub(input_for_closing,margin=margin, kernal_size=close_size)
+
+    input_for_closing = combined.copy()
+    close_iters = Close_size
+    combined_for_closing = closing_binary_img_on_sub_one_step_iter(input_for_closing,close_iters)
+
+    inter_dilation_and_closing = np.logical_and(inter_dilation,
+                                                combined_for_closing)
+    
+    ### Goal: Make the final result more smooth and grown
+    ## Dilation on the intersection a little
+    # if np.sum(inter_dilation_and_closing)==0:
+    #     print("No intersection have been found")
+    #     return None
+    
+    # dilation_iter = 1
+    # dilation_size=1
+    # for i in range(dilation_iter):
+    #     # prev_suture_inter_sum = suture_inter_sum
+    #     inter_dilation_and_closing = dilation_binary_img_on_sub(inter_dilation_and_closing, 
+    #                                                             margin=2, kernal_size=dilation_size)
+    
+    inter_dilation_and_closing = np.logical_or(inter_dilation_and_closing, inter_1_dilation)
+    ### Goal: Refine the intersection
+    ### (1) Use Results from Find intersection 1 and 2
+    ### (2) Remove result areas that are parts of input1 and input2
+    inter_dilation_and_closing[combined==True]=False
+    
+    # Set anything belong to the background (not the classes that form the sutures) to False
+    if background is not None:
+        inter_dilation_and_closing[background==True]=False
+        
+    if np.sum(inter_dilation_and_closing)==0:
+        print("No intersection have been found")
+        return None
+
+    ### Make sutures better
+    # If the intersection is very thin (bones are too close), use dilation to increase the suture sizes a little.
+    
+    ### Clean potential noises
+    # Using ccomps, either by numbers or the size of comps
+    # Also another way is to detect the neighbour pixel, if they are all other 
+    
     
     return inter_dilation_and_closing
 
@@ -612,13 +718,24 @@ def find_seed_by_ero_custom(volume_array, threshold , segments, ero_iter,
     return log_dict
 
 
+def ero_one_iter(input_mask, 
+                      segments, footprint = None):
+    volume_label = erosion_binary_img_on_sub(input_mask, 
+                                            footprint = footprint)
+    seed, ccomp_sizes = get_ccomps_with_size_order(volume_label,segments)
+    
+    return seed, ccomp_sizes
 ### For grow 
 
 def dilation_one_iter(input_mask, threshold_binary, 
                              touch_rule = 'stop',
-                             segments=None, ero_shape = 'ball'):
-    label_id_list = np.unique(input_mask)
-    label_id_list = label_id_list[label_id_list!=0]
+                             segments=None, ero_shape = 'ball',
+                             to_grow_ids = None):
+    if to_grow_ids is None:
+        label_id_list = np.unique(input_mask)
+        label_id_list = label_id_list[label_id_list!=0]
+    else:
+        label_id_list = to_grow_ids
     
     result = input_mask.copy()  
     for label_id in label_id_list:
@@ -635,12 +752,12 @@ def dilation_one_iter(input_mask, threshold_binary,
             # Check if there are any True values in the resulting array
             HAS_OVERLAY = np.any(overlay)
             
-            print(f"""
-                np.sum((result ==label_id)){np.sum((result ==label_id))},
-                np.sum(dilated_binary_label_id){np.sum(dilated_binary_label_id)},
-                np.sum(overlay){np.sum(overlay)},
-                np.sum(binary_non_label){np.sum(binary_non_label)}
-                """)
+            # print(f"""
+            #     np.sum((result ==label_id)){np.sum((result ==label_id))},
+            #     np.sum(dilated_binary_label_id){np.sum(dilated_binary_label_id)},
+            #     np.sum(overlay){np.sum(overlay)},
+            #     np.sum(binary_non_label){np.sum(binary_non_label)}
+            #     """)
             
             if HAS_OVERLAY:
                 dilated_binary_label_id[overlay] = False
@@ -727,6 +844,57 @@ def find_seg_by_morpho_trans(input_mask, threshold_binary,  dilate_iter,
         ## Save the results if there is needed         
     
     return result
+
+
+def reorder_segmentation(segmentation, min_size=None, sort_ids=True):
+    """
+    Reorder segmentation labels based on their size and optionally remove small segments.
+    
+    Parameters:
+    - segmentation: numpy array with class labels from 0 to n (0 is background).
+    - min_size: minimum size for a segment to be kept (optional).
+    - sort_ids: boolean indicating whether to sort class IDs by size (default: True).
+    
+    Returns:
+    - reordered_segmentation: numpy array with reordered class labels.
+    """
+    # Find unique classes excluding background
+    unique_classes = np.unique(segmentation)
+    unique_classes = unique_classes[unique_classes != 0]
+    
+    # Calculate the size of each segment
+    sizes = {cls: np.sum(segmentation == cls) for cls in unique_classes}
+
+    # Print the size of each class
+    print("Original Class Sizes:")
+    for cls, size in sizes.items():
+        print(f"Class {cls}: Size {size}")
+    
+    # Sort classes by size in descending order
+    sorted_classes = sorted(sizes, key=sizes.get, reverse=True)
+
+    # Filter out small segments if min_size is specified
+    if min_size is not None:
+        sorted_classes = [cls for cls in sorted_classes if sizes[cls] >= min_size]
+
+    # Determine new class IDs based on sorting preference
+    if sort_ids:
+        class_mapping = {old: new for new, old in enumerate(sorted_classes, start=1)}
+    else:
+        class_mapping = {old: old for old in sorted_classes}
+
+    # Create a new segmentation array with reordered class labels
+    reordered_segmentation = np.zeros_like(segmentation)
+    for old, new in class_mapping.items():
+        reordered_segmentation[segmentation == old] = new
+
+    # Print the mapping and reordered sizes
+    print("\nReordered Class Mapping and Sizes:")
+    for old, new in class_mapping.items():
+        print(f"Old Class {old} -> New Class {new}, Size: {sizes[old]}")
+
+    return reordered_segmentation, class_mapping
+
 
 def binary_stack_to_mesh(input_volume , threshold, downsample_scale=20,
                          face_color= [128]*4):

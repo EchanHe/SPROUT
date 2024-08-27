@@ -152,15 +152,60 @@ def find_seed_by_ero_mp(volume, input_threshold_ero_iter_pairs , segments ,
             write_json(output_json_path, log_dict)   
 
 
- 
-def gen_mesh(volume, thresholds, output_dir):
-    for threshold in thresholds:
-        output_path = os.path.join(output_dir, f"{threshold}.ply")
-        if os.path.isfile(output_path):
-            return
-        else:
-            output = BounTI.binary_stack_to_mesh(volume, threshold)
-            output.export(output_path)
+def find_seed_by_ero_mp_v2(volume, input_threshold_ero_iter_pairs , segments , 
+                        output_seed_folder, output_json_path,  footprints = 'default',):
+    """The function for find_seed_by_ero using multi threads
+
+    Args:
+        volume (_type_): _description_
+        input_threshold_ero_iter_pairs (_type_): _description_
+        segments (_type_): _description_
+    """
+    
+
+    
+    for threshold_ero_iter_pair in input_threshold_ero_iter_pairs:
+        threshold = threshold_ero_iter_pair[0]
+        ero_iter = threshold_ero_iter_pair[1]
+        
+        if footprints == 'ball' or footprints == 'default':
+            footprints = ['ball'] * ero_iter
+        
+        print(f"Saving every seeds for thresholds {threshold} for {ero_iter} erosion")
+        
+        volume_label = volume > threshold
+
+        
+        for ero_i in ero_iter:
+            seed, ccomp_sizes = suture_morpho.ero_one_iter(volume_label,
+                                                        segments, 
+                                                        footprint = footprints[ero_i])
+            
+            seed = seed.astype('uint8')
+            
+            seed_file = os.path.join(output_seed_folder , 
+                            f"seed_ero_{ero_i}_thre{threshold}_segs_{segments}.tif")
+            
+            tifffile.imwrite(seed_file, seed,
+                    compression ='zlib')
+            # log_dict = suture_morpho.find_seed_by_ero_custom(volume, threshold , segments, ero_iter,
+            #                                 output_dir =output_seed_folder,
+            #                                 footprints = footprints)
+        
+
+        
+        # seed = seed.astype('uint8')
+        # seed_file = os.path.join(output_seed_folder , 
+        #                     f"thre_ero_{ero_iter}iter_thre{threshold}.tif")
+        
+        # tifffile.imwrite(seed_file, 
+        #     seed)
+        
+        # log_dict['input_file'] = file_path
+        
+        with lock:
+            # filename = f'output/json/Bount_ori_run_log_{init_threshold}_{target_threshold}.json'
+            write_json(output_json_path, log_dict)   
 
 def main(**kwargs):
     
@@ -305,21 +350,6 @@ if __name__ == "__main__":
 
     # print(f"All threads have completed. Log is saved at {output_json_path},seeds are saved at {output_seed_folder}")
 
-    # if GEN_WHOLE_MESH:
-    #     output_whole_dir = os.path.join(workspace,"whole_mesh")
-    #     os.makedirs(output_whole_dir , exist_ok=True)
-    #     threads = []
-    #     sub_thresholds = [target_thresholds[i::num_threads] for i in range(num_threads)]
-    #     # Start a new thread for each sublist
-    #     for sublist in sub_thresholds:
-    #         thread = threading.Thread(target=gen_mesh, args=(volume,sublist,output_whole_dir))
-    #         threads.append(thread)
-    #         thread.start()
-            
-    #     # Wait for all threads to complete
-    #     for thread in threads:
-    #         thread.join()
-    #     print(f"Whole meshes generated at {output_whole_dir}")
     
     end_time = datetime.now()
     running_time = end_time - start_time

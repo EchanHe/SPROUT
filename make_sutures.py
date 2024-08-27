@@ -18,6 +18,38 @@ import logging
 import pandas as pd
 import csv
 import math
+import make_mesh
+
+def check_tiff_files(df):
+    """Do a quick check on whether all files in the df bone ids exist 
+
+    Args:
+        df (_type_): df bone ids
+    """
+    
+    # Iterate over the 'seg_file' column in the DataFrame
+    for idx, file_path in enumerate(df['seg_file']):
+        # Check if the file exists
+        print(file_path)
+        if os.path.isfile(file_path):
+            try:
+                # Attempt to open the file using tifffile.imread
+                img = tifffile.imread(file_path)
+                
+                print(f"File at index {idx} is valid and can be opened.")
+            except Exception as e:
+                print(f"File at index {idx} cannot be opened. Error: {e}")
+                raise
+            finally:
+                # Release the image variable
+                del img
+        else:
+            print(f"File at index {idx} does not exist.")
+            raise
+    
+    # Release variables (optional in Python, done automatically by garbage collection)
+    del df
+
 def is_island_id(value):
     if np.isnan(value) or (value is None) or (math.isnan(value)):
         return False
@@ -247,6 +279,9 @@ def find_sutures_mp(img, key_value_list, output_folder):
         bone_2_id =  df_output.loc[key,'part_2_value'] = value[1]
         
         # print(f"Finding gaps for {bone_1_id} and {bone_2_id}")
+        if bone_2_id == bone_1_id:
+            print(f"No gaps between {bone_1_id} and {bone_2_id}")
+            continue 
         
         bone_1 = img==bone_1_id
         bone_2 = img==bone_2_id
@@ -294,10 +329,13 @@ def find_sutures(img, key_value_list, output_folder):
         if is_island_id(bone_1_id) and is_island_id(bone_2_id):
         # print(f"Finding gaps for {bone_1_id} and {bone_2_id}")
         
-            bone_1 = img==bone_1_id
-            bone_2 = img==bone_2_id
-            
-            result = suture_morpho.find_gaps_between_two(bone_1,bone_2,background)
+            if bone_1_id == bone_2_id:
+                result =None
+            else:
+                bone_1 = img==bone_1_id
+                bone_2 = img==bone_2_id
+                
+                result = suture_morpho.find_gaps_between_two(bone_1,bone_2,background)
                 
             if result is None:
                 print(f"No gaps between {bone_1_id} and {bone_2_id}")
@@ -334,10 +372,12 @@ def find_sutures(img, key_value_list, output_folder):
 
 def merge_sutures(df):
     output = None
-    for index, row in df.iterrows():
+    for _, row in df.iterrows():
         path = row['output_path']
-        suture_id = row['merge_suture_id']
-        if path is not np.nan:
+        suture_id = row['result_id']
+        print(f"Merging {path}")
+
+        if isinstance(path, str):
             seg = tifffile.imread(path)
 
             if output is None:
@@ -350,13 +390,16 @@ def merge_sutures(df):
 
 if __name__ == "__main__":
 
-    df = pd.read_csv("./template/scan_bone_ids_multi.csv")
-    df_mapping = pd.read_csv("./template/suture_bone_mapping_mini.csv")
-           
-    SAVE_ISLANDS = False
-    n_threads = 5
+    df_id = pd.read_csv("./template/scan_bone_ids_multi.csv")
+    df_mapping = pd.read_csv("./template/suture_bone_mapping.csv")
     
-    # suture_dict = gen_suture_dict(df)
+    check_tiff_files(df_id)
+    # sys.exit(
+
+    SAVE_ISLANDS = False
+    n_threads = 20
+    
+    # suture_dict = gen_suture_dict(df_id)
     
     workspace = r'result/procavia/seg/'
     output_folder = "sutures_v2"
@@ -365,51 +408,71 @@ if __name__ == "__main__":
     
     
     df_output_list = []
-    for index, row in df.iterrows():
-        specimen = row['specimen']
-        
-        cur_output_folder = os.path.join(output_folder, specimen)
-        os.makedirs(cur_output_folder, exist_ok=True)
-        
-        df_output = (df_mapping.copy())
-        df_output.set_index("result", inplace=True)
-        df_output.loc[:,"input"] =os.path.abspath(row['seg_file'])
-        df_output.loc[:,"specimen"] = specimen
-        
-        suture_dict = gen_suture_dict_v2(row.to_dict(), df_mapping)
-        img = img_process.imread(row['seg_file'])
-              
-        main_list = list(suture_dict.items())
-        sublists = [main_list[i::n_threads] for i in range(n_threads)]
+    try:
+        for index, row in df_id.iterrows():
+            specimen = row['specimen']
+            print(f"working on {specimen}")
 
-        # Create a list to hold the threads
-        threads = []
-
-        # Start a new thread for each sublist
-        for sublist in sublists:
-            thread = threading.Thread(target=find_sutures_mp, args=(img, sublist, cur_output_folder,))
-            threads.append(thread)
-            thread.start()
+            cur_output_folder = os.path.join(output_folder, specimen)
+            os.makedirs(cur_output_folder, exist_ok=True)
             
-        # Wait for all threads to complete
-        for thread in threads:
-            thread.join()
-
-        print("All threads have completed.")
-        
-        output_csv_path = os.path.join(cur_output_folder,f"output_{specimen}.csv")
-        df_output['merge_suture_id'] = range(1, len(df_output) + 1)
-
-        merged_suture = merge_sutures(df_output)
-        tifffile.imwrite(os.path.join(output_folder,f"merged_suture_{specimen}.tif"),
-                merged_suture,
-                compression='zlib')
-
-        df_output.to_csv(output_csv_path)
-        df_output_list.append(df_output)
-        
-        
+            df_output = (df_mapping.copy())
+            df_output.set_index("result", inplace=True)
+            df_output.loc[:,"seg_file"] =os.path.abspath(row['seg_file'])
+            df_output.loc[:,"specimen"] = specimen
+            
+            for idx_map, row_map in df_mapping.iterrows():
     
+                df_output.loc[row_map['result'], 'part_1_value'] = int(row[row_map['part_1']])
+                df_output.loc[row_map['result'], 'part_2_value'] = int(row[row_map['part_2']])
+            
+            # suture_dict = gen_suture_dict_v2(row.to_dict(), df_mapping)
+            
+            
+            main_list = list(zip(df_output['part_1_value'], df_output['part_2_value']))
+            
+            # main_list = list(suture_dict.items())
+            
+            img = img_process.imread(row['seg_file'])
+            print(f"Detecting {len(main_list)} sutures")
+
+            sublists = [main_list[i::n_threads] for i in range(n_threads)]
+
+            # Create a list to hold the threads
+            threads = []
+
+            # Start a new thread for each sublist
+            for sublist in sublists:
+                thread = threading.Thread(target=find_sutures_mp, args=(img, sublist, cur_output_folder,))
+                threads.append(thread)
+                thread.start()
+                
+            # Wait for all threads to complete
+            for thread in threads:
+                thread.join()
+
+            print("All threads have completed.")
+            
+            output_csv_path = os.path.join(cur_output_folder,f"output_{specimen}.csv")
+            # df_output['merge_suture_id'] = range(1, len(df_output) + 1)
+
+            merged_suture = merge_sutures(df_output)
+            tifffile.imwrite(os.path.join(output_folder,f"merged_suture_{specimen}.tif"),
+                    merged_suture,
+                    compression='zlib')
+
+            df_output.to_csv(output_csv_path)
+            df_output_list.append(df_output)
+        
+    except Exception as e:
+        print(f" Error: {e}")
+
+        
+    try:
+        pd.concat(df_output_list, axis=0).to_csv(os.path.join(output_folder,"output_csv.csv"))
+    except Exception as e:
+        print(f"Error: {e}")
+
     
     pd.concat(df_output_list, axis=0).to_csv(os.path.join(output_folder,"output_csv.csv"))
     
@@ -417,7 +480,7 @@ if __name__ == "__main__":
 
     
     
-    # suture_dict = gen_suture_dict_v2(df.iloc[0].to_dict(), df_mapping)
+    # suture_dict = gen_suture_dict_v2(df_id.iloc[0].to_dict(), df_mapping)
     # sys.exit()
 
     

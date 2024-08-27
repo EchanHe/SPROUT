@@ -3,39 +3,51 @@
 The code is highly inspired by Bounti.
 It is used to separate parts for 3D scans
 
-## Main workflow
+## Usage
 
-Here have three main parts.
-1. Generate seeds <br>
+
+### 1. Generate seeds
 Use morphological transformations and connected components (initial segmentations for grow)
+    
     1. `make_seeds.py` is the for generating seeds. Config file template: `make_seeds.yaml` 
-        - workspace: The folder for the data
+        - workspace: The workspace folder. All below files and folders are based on the workspace
         - file_name: path to input image
-        - num_threads: multiple threads
-        - target_thresholds: 0 for binary segmentation. For images, it's a threshold for segmenting the images
+        - num_threads: multiple threads, recommend to match the number of target_thresholds
+        - target_thresholds: For images, it's a threshold for segmenting the images. For binary segmentation, depending on the type, set 0 or 255 .
         - ero_iters: Iterations for erosion
-        - segments: Integer >=1, Top <segments> largest disconnected componenets
-        - output_seed_folder:
+        - segments: Integer >=1, The algorithm keeps top <segments> largest disconnected components
+        - output_seed_folder: The folder name of output seeds
         - output_log_file: Name of the output file name
-        - footprints: The way you want to erode your images, current supports "ball" and "cube" :Erosion all directions. 'ball_XY', 'ball_XZ', 'ball_YZ': Erosion on the Plane. 'X', 'Y', 'Z': Erosion on the axis.
+        - footprints: The way you want to erode your images, current supports 'ball' and 'cube' :Erosion all directions. 'ball_XY', 'ball_XZ', 'ball_YZ': Erosion on the Plane. 'X', 'Y', 'Z': Erosion on the axis.
 
     <br>
 
-    2. `make_seeds_foram.py` is the algorithm for generating seeds for the binary segmentation of foram chambers. Fully automatic
+    2. `make_seeds_all.py`, use the similar config except for `footprints`. As it generates seeds using 'ball', 'ball_XY', 'ball_XZ', 'ball_YZ'. And seeds are saved in subfolders with names match the footprint names.
+
+    3. `make_seeds_foram.py` is the algorithm for generating seeds for the binary segmentation of foram chambers. TODO: add more description
 
 
+### 2. Grow
 
-2. Grow back to the full
-    1. `make_grow_result.py` To grow the seeds to back to the original images with thresholds, or grow back to the binary segmentation<br>
-    `make_grow_result.yaml`. 
-    <br>
-    <br>
-    For input is image, the code supports growing on a list of thresholds. Normally from high (can grow to less regions) to low (can grow to more regions). The reason of doing this is not making the grow straight on the final result (i.e., the optimal threshold), as it would often causing some parts will overgrown on other parts. Making graduate grow, it can lower the chances of the overgrown problem.
-    <br>
-    <br>
-    Supports early stopping. For a given grow loop (e.g., 10 iters), if there aren't a minimum increase (e.g., 100 voxel) on size after growing for a consecutive iterations (e.g., 3 consecutive iterations), 
+    1. `make_grow_result.py` To grow the seeds to back to the original images with thresholds, or grow back to the binary segmentation<br>. Config file template: `make_grow_result.yaml`. 
+        - workspace: The workspace folder. All below files and folders are based on the workspace
+        - img_path: Input image
+        - seg_path: The path of the seed
+        - thresholds: A list of thresholds, normally from high to low. The algorithm will grow on higher thresholds first, then to lower.
+        - dilate_iters: A list of integer. The dilation iteration for each threshold
+        - touch_rule: Currently just set it as "stop"
+        - to_grow_ids: Can specify classes to grow.
+        - save_interval: Save the grow result for every <save_interval> interval
 
-3. Visualization 
+    <br>
+    <br>
+    Growing from high (can grow to less regions) to low (can grow to more regions) can prevent growing straight on the final result (i.e., the optimal threshold), as it would often causing some parts will overgrown on other parts. Making graduate grow, it can lower the chances of the overgrown problem.
+    <br>
+    <br>
+    Supports early stopping. For a given grow iteration (e.g., 10 iters), if there aren't a minimum increase (default: 50 voxel) on size after growing for a consecutive iterations (default: 3 consecutive iterations), 
+
+### 3. Visualization
+
     1. `make_mesh.py` Create a mesh for every class for the input seed/result<br>
     Can change `make_mesh.yaml` values to set the input, and output directory
     A folder of seeds/results
@@ -46,16 +58,15 @@ Use morphological transformations and connected components (initial segmentation
 
     
     2. `plot_mesh.py` Plot Generated meshes. <br>
-    Currently under testing
+    TODO: Currently under testing
 
     The current colourmap has 10 colours, mesh colours follow its order mapping the segmentation class 1-10, and recur using them after more than 11. ![Color Map](./src/colourmap.png)
 
-4. Suture generation
+### 4. Suture generation
     
-    Run `./make_sutures.py`. 
+    1. `make_sutures.py`. 
 
     Input: two CSV. 
-
         1. One contains segmentation file names, and segmentation class id to each bone names. E.g., `./template/bone_ids.csv`
         2. Another spreadsheet have three columns. E.g., `./template/suture_bone_mapping.csv`
             (1) the suture names(col: result), 
@@ -64,7 +75,6 @@ Use morphological transformations and connected components (initial segmentation
 
     Output: 
     For each scan:
-
         1. Separated suture segmentation are generated in a folder (0: background, 1: sutures).
         2. Merged sutures segmentation.
         3. CSV file of suture names, parts, output detail, merged suture ID
@@ -77,23 +87,19 @@ Use morphological transformations and connected components (initial segmentation
 
     2. Growing and making meshes. Run `./PipelineGrowMesh.py`, and an example config file is `./PipelineGrowMesh.yaml`
 
-## Filter Seeds/Results using segmentation stats
-This is used to filter out seeds that are not likely to be checked.
+    2. Seed generation, growing and making meshes. Run `PipelineSeedGrowMesh.py`, currently is used for foram chamber separation.
+
+### Filter Seeds/Results using segmentation stats
+TODO This is used to filter out seeds that are not likely to be checked.
+Working on the `./seeds_stats.py`, and based on the method in `./make_seeds_foram.py` and `./make_seeds_merged.py`.
 
 ### Editing tool
-- For a given label, merge multiple classes into one class. 
-- For two labels, merge two labels, using input classes for these two labels
+- For a given segmentation, merge multiple classes into one class. 
+- Merge two segmentations, using specify classes for these two segmentations.
 - Give a class, get all disconnected components, and keep the top-n (user defined) largest components
 
-## Help functions & Segmentation Editing:
-Merge classes in one image
-Merge classes from two images
-Filter or remove segmentation classes. Input: a list of classes
-
-
-
-## Avizo scripts
-Addon scripts are saved in `avizo` folder. 
+### Avizo Addons
+Addon scripts are saved in `./avizo` folder. 
 Change the extension from `py` to `pyscro`, and drag into AVIZO's `Project View` to use it.
 
 `LoadVisFiles.py`  
@@ -116,10 +122,8 @@ TODO
 - can not save tif in batch with good compression, as tifffile need updates
 
 
-## BounTI multithread implementation
+### BounTI multithread implementation
 `./BounTI/run_bounti_mp.py` is used to run BounTI and BounTI flood, with a list of initial thresholds. 
-
-
 
 ## Parallelization:
 `make_mesh.py`, `make_seeds.py`, `make_seeds_foram.py`, `make_sutures` currently support running in multiple processes. Please check your CPU and set the right `num_threads` in the configuration file
@@ -136,42 +140,38 @@ Morphosource file structure.
 
 ## TODO:
 2024/08/03
-- To add different pattern (texture or material) for visualisation. Some have been implemented in `./make_mesh.py`
+- To add different pattern (texture or material) for visualisation. Some have been implemented in `./make_mesh.py`. Testing: UV on mapping texuture, testing code in `check_seeds.ipynb`
 - Make a mesh that have unique colours (Combined), Done
-- Upgrade mesh visualisation. Ask marco what could be done.
-- UV on mapping texuture, testing code in `check_seeds.ipynb`
 
-- stats , working on the `./seeds_stats.py`, and based on the method in `./
-make_seeds_foram.py`
 
 seed making, more option on loop, footprints, 
 also allow cleaning on the seeds
 
-Bug: make_mesh.py 379 about the number for merging meshes, it seems the class 10 will be in 11-20 than 1-10
+Bug: 
+- make_mesh.py 379 about the number for merging meshes, it seems the class 10 will be in 11-20 than 1-10. Sorted
+- make_mesh.py. When mesh is too small, the merging seems don't work: e.g., forams
+- failed to concat csv in suture generations, seems done
+- ccompos, min_size problem
+
 
 ### AVIZO TODO
-- addon test:Use re-order and label functions from AVIZO.
+- addon test:Use re-order and label functions from AVIZO. Done
 - Set the correct voxel size in crop editor. As crop editor is a pop up menu
 might need to ask AVIZO Customer service
-- Can not install trimesh. Need to think how to do it.
+- Can not install trimesh. might need to ask AVIZO Customer service, so Loop, gene suture surface automatically in AVIZO doesn't work atm.
+
 
 
 
 TODO
 •	CSV and recipe maker
-•	Better seed generation and e.g. the saving split and disappear, Test new method, seeds all, XYZ
-•	
+•	Better seed generation and e.g. the saving split and disappear.
 •	Move files
 
-Loop, gene suture surface automatically
 
-Can generate separate and all-in-one tif sutures
 
 Need to figure out how to save sutures.
 Better naming on sutures, 
-and failed to concat csv in suture generations
 
-concat seems working. Maybe also have the suture size in df_output
+Maybe also have the suture size in df_output from `./make_sutures.py`
 
-ccompos
-min_size problem
