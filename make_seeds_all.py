@@ -53,7 +53,7 @@ def write_json(filename, args_dict):
 
 
 if __name__ == "__main__":
-    file_path = 'make_seeds.yaml'
+    file_path = 'make_seeds_all.yaml'
     _, extension = os.path.splitext(file_path)
     print(f"processing config he file {file_path}")
     if extension == '.json':
@@ -84,29 +84,33 @@ if __name__ == "__main__":
     ###################
 
     output_seed_folder =os.path.join(workspace, output_seed_folder)
-    output_json_path = os.path.join(output_seed_folder,output_log_file)
+    
     file_path = os.path.join(workspace, file_name)
-    os.makedirs(output_seed_folder , exist_ok=True)
+    
 
 
     footprint_list = [
         ["ball"] * ero_iters,
         ["ball_XY"] * ero_iters,
         ["ball_YZ"] * ero_iters,
-        ["ball_XY"] * ero_iters
+        ["ball_XZ"] * ero_iters
 
     ]
 
-    output_seed_folders = [
-        "seeds"
+    output_seed_sub_folders = [
+        "seeds_ball",
         "seeds_XY",
         "seeds_YZ",
-        "seeds_XY"
+        "seeds_XZ"
     ]
 
     
-    for footprints, output_seed_folder in zip(footprint_list,output_seed_folders):
+    for footprints, output_seed_sub_folder in zip(footprint_list,output_seed_sub_folders):
 
+
+        output_seed_sub_folder = os.path.join(output_seed_folder, output_seed_sub_folder)
+        os.makedirs(output_seed_sub_folder , exist_ok=True)
+        output_json_path = os.path.join(output_seed_sub_folder, output_log_file)
 
         start_time = datetime.now()
         print(f"""{start_time.strftime("%Y-%m-%d %H:%M:%S")}
@@ -120,9 +124,10 @@ if __name__ == "__main__":
         
 
 
-        threshold_ero_iter_pairs = list(itertools.product(target_thresholds, ero_iters))
+        threshold_ero_iter_pairs = list(itertools.product(target_thresholds, [ero_iters]))
 
         volume = tifffile.imread(file_path)
+        volume = volume.astype("uint8")
         
         
 
@@ -138,7 +143,7 @@ if __name__ == "__main__":
         for sublist in sublists:
            
             thread = threading.Thread(target=make_seeds.find_seed_by_ero_mp, args=(volume,sublist, segments,
-                                                                        output_seed_folder,output_json_path, footprints ))
+                                                                        output_seed_sub_folder,output_json_path, footprints ))
             threads.append(thread)
             thread.start()
             
