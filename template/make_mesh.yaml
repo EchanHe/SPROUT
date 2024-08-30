@@ -1,0 +1,41 @@
+
+# Number of threads to generate meshes
+num_threads: 15
+
+# MULTI_FILES read in a folder, and make meshes for all *.tif files
+MULTI_FILES: True
+# Make meshes for a given tif file
+SINGLE: False
+
+# Root folder
+# Workspace can be set as ""
+# Then the input_folder and output_folder need to be absolute paths
+workspace: "./dataset_1/data_1/good_grow"
+
+# The relative path of the folder from the workspace
+# The actual path will be workspace + input_folder 
+# Set it as "" meaning use workspace as the input folder
+input_folder: ""
+
+# Output folder, similar to input_folder
+output_folder: ""
+
+# Similify the mesh by dividing downsample_scale. >=1
+# Not compulsory, if missing, algorithm will use 10 as default
+downsample_scale: 1
+
+# Step size for marching cubes. 1 for the best result
+# The higher, the mesh quality if lower.
+# Not compulsory, if missing, algorithm will use 1 as default
+step_size: 2
+
+## An example of single file version
+
+# SINGLE: True
+# MULTI_FILES: False
+# # Absolute path for the input image
+# img_file: "./data/input.tiff"
+# # Absolute path of the output folder
+# output_folder: "./output"
+
+

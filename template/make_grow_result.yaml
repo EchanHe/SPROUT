@@ -1,0 +1,36 @@
+# The root folder for processing data
+workspace: "C:\\Users\\Yichen\\OneDrive\\work\\codes\\nhm_bounti\\result\\procavia"
+# The relative path from the workspace of input image
+# The actual path will be workspace + img_path 
+img_path: 'input\\procaviaH4981C_0001.tif.resampled_400_600.tif'
+
+# The relative path from the workspace of the segmentation that to be grown (seeds)
+# The actual path will be workspace + seg_path 
+seg_path: "seeds_divide_1\\merged.tif"
+
+# A list of thresholds that the grow algorithm is growing on
+# Order matters, normally from high to low (available space to grow: from less to more)
+# If there is only one threshold, please also include the []
+
+# e.g., thresholds: [0]
+thresholds: [5000,2000,1000]
+
+# A list of dilation steps to grow on each threshold
+# Order matters, and should have the same length to thresholds
+
+# one element example: dilate_iters: [30]
+dilate_iters: [30,30,10]
+
+# if you want to grow on all ids, put a ~
+to_grow_ids: ~
+# Example for growing on classes 1,3,5:
+# to_grow_ids: [1,3,5]
+
+# Keep it "stop for now"
+touch_rule: "stop"
+# The name of the output folder
+# A folder of workspace + output_folder
+output_folder: "grow_2"
+
+# Save the grow result every n iters
+save_interval: 5
