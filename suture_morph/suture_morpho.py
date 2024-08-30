@@ -666,12 +666,13 @@ def find_seed_by_ero_custom(volume_array, threshold , segments, ero_iter,
     
     volume_label = volume_array > threshold
     
-    log_dict = {"Method": "find_seed_by_ero",
+    log_dict = {"Method": "find_seed_by_ero_custom",
                   "volume_array shape": list(volume_array.shape),
                   "threshold": threshold,
                   "segments": segments,
-                  "ero_shape": ero_shape,
-                  "Whole Volume": str(np.sum(volume_label))
+                  "footprints": footprints,
+                  "Whole Volume": int(np.sum(volume_label)),
+                  "seeds": []
                   }
     
 
@@ -686,20 +687,28 @@ def find_seed_by_ero_custom(volume_array, threshold , segments, ero_iter,
         seed_file = os.path.join(output_dir , 
                             f"seed_ero_{i_iter}_thre{threshold}_segs_{segments}.tif")
         
+
+        
         seed, ccomp_sizes = get_ccomps_with_size_order(volume_label,segments)
-        tifffile.imwrite(seed_file, seed,
+        
+
+        tifffile.imwrite(seed_file, seed.astype('uint8'),
                          compression ='zlib')
         
         args_dict = {
             # "start_time": start_time.strftime("%Y-%m-%d %H:%M:%S"),
             # "end_time": end_time.strftime("%Y-%m-%d %H:%M:%S"),
             # "duration": str(duration),
-            f'size_top_{segments}_ccomp': ccomp_sizes.tolist(),
-            f'number_of_ccopms_found': len(ccomp_sizes.tolist()),
-            'output_seed_dir': output_dir
+            'ero_iter' : i_iter,
+            'size_ccomp': ccomp_sizes.tolist(),
+            'number_of_ccomps': len(ccomp_sizes.tolist()),
+            'output_seed_dir': output_dir,
+            'output_path': os.path.abspath(seed_file)
         }
         
-        log_dict[f"ero_iter{i_iter}"]=args_dict
+        log_dict["seeds"].append(args_dict)
+        
+        # log_dict[f"ero_iter{i_iter}"]=args_dict
         # .append(args_dict)
     
         
@@ -909,6 +918,60 @@ def binary_stack_to_mesh(input_volume , threshold, downsample_scale=20,
     simplified_mesh.visual.face_colors = face_color
     return simplified_mesh
 
+
+### Checkings:
+def check_tiff_files(tifffile_list):
+    """Do a quick check on whether all tiff files exist 
+
+    Args:
+        tifffile_list (_type_): list of tiff files
+    """
+    
+    # Iterate over the 'seg_file' column in the DataFrame
+    
+    for file_path in tifffile_list:
+        # Check if the file exists
+        print(file_path)
+        if os.path.isfile(file_path):
+            try:
+                # Attempt to open the file using tifffile.imread
+                img = tifffile.imread(file_path)
+            except Exception as e:
+                print(f"File at index {file_path} cannot be opened. Error: {e}")
+                raise
+            finally:
+                # Release the image variable
+                del img
+        else:
+            print(f"File at index {file_path} does not exist.")
+            raise
+    
+    # Release variables (optional in Python, done automatically by garbage collection)
+    # del df
+
+
+def check_files(file_list):
+    """Do a quick check on whether all files exist 
+
+    Args:
+        tifffile_list (_type_): list of tiff files
+    """
+    
+    # Iterate over the 'seg_file' column in the DataFrame
+    
+    for file_path in file_list:
+        # Check if the file exists
+        print(file_path)
+        if os.path.isfile(file_path):
+            pass
+        else:
+            print(f"File at index {file_path} does not exist.")
+            raise
+    
+    # Release variables (optional in Python, done automatically by garbage collection)
+    # del df
+
+
 # import numpy as np
 # import tifffile
 
@@ -943,3 +1006,5 @@ def binary_stack_to_mesh(input_volume , threshold, downsample_scale=20,
 
 # # Save the 4D array as a TIFF file
 # tifffile.imwrite('data/bones_suture/output_test_colour.tif', array_4d)
+
+

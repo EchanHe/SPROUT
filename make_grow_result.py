@@ -3,14 +3,14 @@ import os, sys
 from skimage.morphology import ball
 import tifffile
 from datetime import datetime
-from skimage.measure import marching_cubes
 import json ,yaml
 import numpy as np
 import pandas as pd
 
 
-import suture_morph.suture_morpho as suture_morpho 
 
+import suture_morph.suture_morpho as suture_morpho 
+import suture_morph.vis_lib as vis_lib
 # Function to recursively create global variables from the config dictionary
 def load_config_yaml(config, parent_key=''):
     for key, value in config.items():
@@ -29,6 +29,8 @@ def load_config_json(file_path):
  
     for key, value in config.items():
         globals()[key] = value
+        
+
 def main(**kwargs):
     
     dilate_iters = kwargs.get('dilate_iters', None)
@@ -139,7 +141,7 @@ def main(**kwargs):
                 compression ='zlib')
                 break
             
-            if i_dilate%real_save_interval==0:
+            if i_dilate%real_save_interval==0 or i_dilate ==dilate_iter:
                 # output_path = os.path.join(workspace, f'result/ai/dila_{dilate_iter}_{threshold}_rule_{touch_rule}.tif')
               
                 
@@ -158,9 +160,14 @@ def main(**kwargs):
     
     df_log = pd.DataFrame(df_log)
     
-        
-    df_log.to_csv(os.path.join(output_folder, f'{base_name}.csv'), index = False)
+    log_path =  os.path.join(output_folder, f'grow_log_{base_name}.csv')   
+    df_log.to_csv(log_path, index = False)
 
+    grow_dict = {
+        "log_path":log_path,
+        "output_folder": output_folder
+    }
+    return grow_dict
 
 if __name__ == "__main__":
     
@@ -200,7 +207,7 @@ if __name__ == "__main__":
     # dilate_iters = 4
     # touch_rule = "no"
     
-    main(        
+    grow_dict = main(        
         dilate_iters = dilate_iters,
         thresholds = thresholds,
         save_interval = save_interval,  
@@ -212,6 +219,12 @@ if __name__ == "__main__":
         output_folder = output_folder,
         to_grow_ids = to_grow_ids
          )
+    
+    vis_lib.plot_grow(pd.read_csv(grow_dict['log_path']),
+              grow_dict['log_path'] +".png"
+              )
+    
+    
     
     # assert len(thresholds) == len(dilate_iters), f"thresholds and dilate_iters must have the same length, but got {len(thresholds)} and {len(dilate_iters)}."
      

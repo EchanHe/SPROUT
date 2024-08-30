@@ -395,12 +395,9 @@ if __name__ == "__main__":
     elif extension == '.yaml':
         with open(file_path, 'r') as file:
             config = yaml.safe_load(file)
+            downsample_scale = config.get('downsample_scale', 10)
+            step_size = config.get('step_size', 1)
         load_config_yaml(config)
-
-    with open(file_path, 'r') as file:
-        data = yaml.safe_load(file)
-        downsample_scale = data.get('downsample_scale', 10)
-        step_size = data.get('step_size', 1)
     
     
     start_time = datetime.now()
@@ -444,7 +441,7 @@ if __name__ == "__main__":
         
         os.makedirs(output_folder,exist_ok=True)
 
-        make_mesh_for_tiff(tif_file,output_folder, num_threads,
+        make_mesh_for_tiff(img_file,output_folder, num_threads,
                            no_zero = True,
                            downsample_scale=downsample_scale,
                            step_size=step_size)   
