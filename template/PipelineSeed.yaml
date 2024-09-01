@@ -1,0 +1,17 @@
+# This is a comment
+
+csv_path: "./result/procavia/seeds_input.csv"
+num_threads: ~
+  # - 1
+  # - 2
+
+# if there isn't a ero_iter col in csv, set ero_iters for all input to this one
+ero_iters: 3
+# if there isn't a segments col in csv, set segments for all input to this one
+segments: 25
+
+# This is the path of a output root directory
+# sub folders with seeds using the input name will be saved to here
+output_seed_root_dir: "./result/procavia/seeds_batch"
+# if there isn't a output_log_file col in csv, set output_log_file for all input to this one
+output_log_file: "seed_log.json"

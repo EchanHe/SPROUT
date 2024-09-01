@@ -1,0 +1,10 @@
+
+csv_path: "./result/procavia/grow_input.csv"
+
+thresholds: [3400,2400]
+
+dilate_iters: 2
+touch_rule: "stop"
+output_root_dir: "./result/procavia/grow_batch"
+save_interval: 1
+
