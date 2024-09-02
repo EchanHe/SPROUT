@@ -74,6 +74,11 @@ def main(**kwargs):
     segments = kwargs.get('segments', None)  
     
     num_threads = kwargs.get('num_threads', None) 
+    
+    is_make_meshes = kwargs.get('is_make_meshes', False) 
+    num_threads = kwargs.get('num_threads', None) 
+    downsample_scale = kwargs.get('downsample_scale', 10) 
+    step_size  = kwargs.get('step_size', 2) 
 
     if num_threads is None:
         num_threads = len(target_thresholds)
@@ -151,7 +156,39 @@ def main(**kwargs):
         output_dict["output_seed_sub_folders"].append(output_seed_sub_folder)
         output_dict["output_log_files"].append(output_json_path)
         
+        # Make meshes  
+        if is_make_meshes:  
+            tif_files = glob.glob(os.path.join(output_seed_sub_folder, '*.tif'))
+
+            for tif_file in tif_files:
+                make_mesh.make_mesh_for_tiff(tif_file,output_seed_sub_folder,
+                                    num_threads=num_threads,no_zero = True,
+                                    colormap = "color10",
+                                    downsample_scale=downsample_scale,
+                                    step_size=step_size)
+        
+        
     return output_dict
+
+def plot(output_dict, full_log_plot_path):
+    output_log_files = output_dict["output_log_files"]
+    output_seed_sub_folders = output_dict["output_seed_sub_folders"]
+    
+    plot_list = []
+    for output_log_file, output_seed_sub_folder in zip(output_log_files,output_seed_sub_folders):
+        
+        with open(output_log_file, 'r') as config_file:
+            json_data = json.load(config_file)
+        
+        vis_lib.plot_seeds_log_json(json_data, os.path.join(output_seed_sub_folder, "seeds.png"))
+        
+        # plot_data = vis_lib.seeds_json_to_plot_ready(output_log_file)
+        # vis_lib.plot_seeds_log(plot_data, os.path.join(output_seed_sub_folder, "seeds.png"))
+        
+        plot_list.append(os.path.join(output_seed_sub_folder, "seeds.png"))
+
+    
+    vis_lib.merge_plots(plot_list, full_log_plot_path)
 
 if __name__ == "__main__":
     file_path = 'make_seeds_all.yaml'
@@ -195,20 +232,8 @@ if __name__ == "__main__":
     
     # Make plot based on the seeds log json
     # Doing this after parallel/multi processing
-
-    output_log_files = output_dict["output_log_files"]
-    output_seed_sub_folders = output_dict["output_seed_sub_folders"]
-    
-    plot_list = []
-    for output_log_file, output_seed_sub_folder in zip(output_log_files,output_seed_sub_folders):
-        plot_data = vis_lib.seeds_json_to_plot_ready(output_log_file)
-        vis_lib.plot_seeds_log(plot_data, os.path.join(output_seed_sub_folder, "seeds.png"))
-        
-        plot_list.append(os.path.join(output_seed_sub_folder, "seeds.png"))
-
-    
-    vis_lib.merge_plots(plot_list, os.path.join(os.path.join(workspace,output_seed_folder), 
-                                                                "full_log.png"))
+    plot(output_dict, os.path.join(os.path.join(workspace, output_seed_folder, "full_log.png")))
+                                                     
 
     # if make_mesh:
         

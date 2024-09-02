@@ -402,7 +402,7 @@ if __name__ == "__main__":
     
     start_time = datetime.now()
     print(f"""{start_time.strftime("%Y-%m-%d %H:%M:%S")}
-    Mode WHOLE_MESH:{WHOLE_MESH}
+    Mode WHOLE_MESH:{SINGLE}
     Mode MULTI_FILES:{MULTI_FILES}
             """)
     ################

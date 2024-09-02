@@ -931,7 +931,7 @@ def check_tiff_files(tifffile_list):
     
     for file_path in tifffile_list:
         # Check if the file exists
-        print(file_path)
+        # print(file_path)
         if os.path.isfile(file_path):
             try:
                 # Attempt to open the file using tifffile.imread
