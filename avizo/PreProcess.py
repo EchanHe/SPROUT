@@ -29,6 +29,34 @@ def del_all_objs(objs):
         hx_project.remove(obj)
         
 
+import re
+
+def extract_number(data_string):
+    # Regular expression to find the number in the string
+    match = re.search(r'[\d\.]+', data_string)
+    if match:
+        return float(match.group())
+    return None
+
+def extract_bit_depth(data_string):
+    # Regular expression to find the word ending with '-bit' and capture the preceding number
+    match = re.search(r'(\d+)-bit', data_string, re.IGNORECASE)
+    if match:
+        return int(match.group(1))
+    return None
+
+def process_voxel_dimensions(dim_string):
+    # Split the string by 'x' and remove any leading/trailing whitespace
+    dimensions = dim_string.split('x')
+    
+    # Convert each part to a float
+    voxel_x = float(dimensions[0].strip())
+    voxel_y = float(dimensions[1].strip())
+    voxel_z = float(dimensions[2].strip())
+    
+    return voxel_x, voxel_y, voxel_z
+
+
 def print_material_cls_mapping(input):
     input_seed = input.source()
     
@@ -60,7 +88,7 @@ def test_progress_bar():
             print("interrupted by user: {progress.interrupted} step: {progress.current_step} progress: {progress.value:.0%}".format(progress=progress))
             if progress.interrupted:
                 break
-class LoadVisLabels(PyScriptObject):
+class PreProcess(PyScriptObject):
     def __init__(self):
         
         self.segs = []
@@ -69,46 +97,90 @@ class LoadVisLabels(PyScriptObject):
         import _hx_core
         _hx_core._tcl_interp('startLogInhibitor')
 
+        self.input_data = HxConnection(self, "input_data", " Data")
+        self.input_data.valid_types = ('HxRegScalarField3')
+        
+        self.min_coords = HxPortIntTextN(self,"min_coords", "Crop Min")
+        self.min_coords.texts = [HxPortIntTextN.IntText(label="X"),
+                             HxPortIntTextN.IntText(label="Y"),
+                             HxPortIntTextN.IntText(label="Z")]
+        
+        self.max_coords = HxPortIntTextN(self,"max_coords", "Crop Max")
+        self.max_coords.texts = [HxPortIntTextN.IntText(label="X"),
+                             HxPortIntTextN.IntText(label="Y"),
+                             HxPortIntTextN.IntText(label="Z")]
+        
+        self.ren_thres = HxPortIntTextN(self,"ren_thres", "Volume rendering thresholds")
+        self.ren_thres.texts = [HxPortIntTextN.IntText(label="Min",
+                                                       value=-1, clamp_range=(-1,65535)),
+                             HxPortIntTextN.IntText(label="Max",
+                                                    value=-1, clamp_range=(-1,65535))]
+                
+        for text in self.min_coords.texts:
+            text.value = 0
+            text.clamp_range = (0,10000)
+        for text in self.max_coords.texts:
+            text.value = 0
+            text.clamp_range = (0,10000)
+            
+            
+        self.is_size_check = HxPortToggleList(self,"is_size_check", "Size limit")
+        self.is_size_check.toggles[0] = HxPortToggleList.Toggle(label="True", checked=HxPortToggleList.Toggle.CHECKED)
+        
+        self.size_check = HxPortFloatTextN(self,"size_check", "Parameters for resize")
+        self.size_check.texts = [HxPortFloatTextN.FloatText(label="Size limit (MB)",
+                                                            value=1500, clamp_range=(0.0, 20000.0)),
+                                 HxPortFloatTextN.FloatText(label="Resample Scale", value = 2),
+                                 ]
+        
+        
+        self.swap_axes = HxPortRadioBox(self,"swap_axes", "Choose axes to swap")
+        self.swap_axes.radio_boxes = [
+            HxPortRadioBox.RadioBox(label="None"),
+            HxPortRadioBox.RadioBox(label="X and Y"),
+            HxPortRadioBox.RadioBox(label="X and Z"),
+            HxPortRadioBox.RadioBox(label="Y and Z"),
+            ]
+        self.swap_axes.selected = 0
+
+        # self.size_check.texts[0].value = 1500
+        # self.size_check.texts[1].value = 2
+        # self.functions = HxPortRadioBox(self,"functions", "Choose Load Files or visualsation")
+        # self.functions.radio_boxes = [
+        #     HxPortRadioBox.RadioBox(label="Load Files"),
+        # HxPortRadioBox.RadioBox(label="visualsation")]
+        # self.functions.selected = 0
+        
+        # self.load_mode = HxPortRadioBox(self,"load_mode", "Choose folder or multi files")
+        # self.load_mode.radio_boxes = [
+        #     HxPortRadioBox.RadioBox(label="Folder"),
+        #     HxPortRadioBox.RadioBox(label="Multi files")]
+        # self.load_mode.selected = 0
+        
 
         
-        self.functions = HxPortRadioBox(self,"functions", "Choose Load Files or visualsation")
-        self.functions.radio_boxes = [
-            HxPortRadioBox.RadioBox(label="Load Files"),
-        HxPortRadioBox.RadioBox(label="visualsation")]
-        self.functions.selected = 0
-        
-        self.load_mode = HxPortRadioBox(self,"load_mode", "Choose folder or multi files")
-        self.load_mode.radio_boxes = [
-            HxPortRadioBox.RadioBox(label="Folder"),
-            HxPortRadioBox.RadioBox(label="Multi files")]
-        self.load_mode.selected = 0
-        
-        self.is_reorder = HxPortToggleList(self,"is_reorder", "Reorder the label?")
-        self.is_reorder.toggles[0] = HxPortToggleList.Toggle(label="True", checked=HxPortToggleList.Toggle.CHECKED)
+        # self.input_dir= HxPortFilename(self, "input_dir", "Folder of input segs")
+        # self.input_dir.mode = HxPortFilename.LOAD_DIRECTORY
         
         
-        self.input_dir= HxPortFilename(self, "input_dir", "Folder of input segs")
-        self.input_dir.mode = HxPortFilename.LOAD_DIRECTORY
-        
-        
-        self.input_multi_files= HxPortFilename(self, "input_multi_files", "Folder of input segs")
-        self.input_multi_files.mode = HxPortFilename.MULTI_FILE
-        self.input_multi_files.enabled = False
+        # self.input_multi_files= HxPortFilename(self, "input_multi_files", "Folder of input segs")
+        # self.input_multi_files.mode = HxPortFilename.MULTI_FILE
+        # self.input_multi_files.enabled = False
         
 
-        self.vis_mode = HxPortRadioBox(self,"vis_mode", "How to visualise")
-        self.vis_mode.radio_boxes = [
-            HxPortRadioBox.RadioBox(label="Volume"),
-            HxPortRadioBox.RadioBox(label="Mesh"),
-            HxPortRadioBox.RadioBox(label="View Mat and Seg class")]
-        self.vis_mode.selected = 0
+        # self.vis_mode = HxPortRadioBox(self,"vis_mode", "How to visualise")
+        # self.vis_mode.radio_boxes = [
+        #     HxPortRadioBox.RadioBox(label="Volume"),
+        #     HxPortRadioBox.RadioBox(label="Mesh"),
+        #     HxPortRadioBox.RadioBox(label="View Mat and Seg class")]
+        # self.vis_mode.selected = 0
 
 
 
 
         
-        self.inputL = HxConnection(self, "inputL", " Label to visualise")
-        self.inputL.valid_types = ('HxUniformLabelField3')
+        # self.inputL = HxConnection(self, "inputL", " Label to visualise")
+        # self.inputL.valid_types = ('HxUniformLabelField3')
 
 
 
@@ -258,15 +330,20 @@ class LoadVisLabels(PyScriptObject):
         self.vol_ren_set  = hx_project.create("HxVolumeRenderingSettings")
         self.vol_ren = hx_project.create("HxVolumeRender2")
         self.vol_ren.ports.volumeRenderingSettings.connect(self.vol_ren_set)
-        
-
-        
         self.vol_ren_set.ports.data.connect(obj)
-        self.vol_ren_set.fire()        
+        self.vol_ren_set.fire()            
         
-        cm_256 = hx_project.get('labels256.am')
-        self.vol_ren.ports.colormap.connect(cm_256)    
-        self.vol_ren.fire()  
+        threshold_range = list(self.vol_ren.ports.colormap.range)
+        
+        min_thre, max_thre = self.ren_thres.texts[0].value, self.ren_thres.texts[1].value
+        
+        if min_thre == -1:
+            min_thre = threshold_range[0]
+        if max_thre == -1:
+            max_thre = threshold_range[1]
+        
+        self.vol_ren.ports.colormap.range= [min_thre,max_thre]
+        self.vol_ren.fire()
    
     def view_obj_mesh(self, obj):
         """Visualise an object using volume rendering
@@ -312,6 +389,9 @@ class LoadVisLabels(PyScriptObject):
         self.inputL.visible = visible    
         self.vis_mode.visible = visible   
     
+    def toggle_size_check(self, visible):
+        self.size_check.visible = visible
+    
     def addon_clean(self):
         try:
             if self.data.visible:
@@ -330,20 +410,8 @@ class LoadVisLabels(PyScriptObject):
         #     return
         # if self.input.source() is None:
         self.addon_clean()
-        
-        if self.functions.selected ==0:
-            self.toggle_load(True)
-            self.toggle_vis(False)
-        elif self.functions.selected ==1:
-            self.toggle_load(False)
-            self.toggle_vis(True)
-        
-        if self.load_mode.selected == 0:
-            self.input_multi_files.enabled = False
-            self.input_dir.enabled = True
-        elif self.load_mode.selected == 1:
-            self.input_multi_files.enabled = True
-            self.input_dir.enabled = False
+    
+        self.toggle_size_check(self.is_size_check.toggles[0].checked)
         
     
     
@@ -353,54 +421,113 @@ class LoadVisLabels(PyScriptObject):
             return
 
         # Is there an input data connected?
-        # if self.input.source() is None:
-        #     return
+        if self.input_data.source() is None:
+            return
         
-        if self.functions.selected ==0:
-            
-            if self.load_mode.selected == 0:
-                print(f"reading files from: {self.input_dir.filenames}")
-                
-                if not is_valid_path(self.input_dir.filenames):
-                    print("File path not valid, please reinput")
-                    hx_message.info("File path not valid, please reinput")
-                else:  
-                    file_paths = glob.glob(os.path.join(self.input_dir.filenames,"*.tif"))
-                    hx_message.info(f"reading {len(file_paths)} files from: {self.input_dir.filenames}")
-            elif self.load_mode.selected == 1:
-                file_paths= self.input_multi_files.filenames
-                print(file_paths, type(file_paths))
-                if isinstance(file_paths, str):
-                    file_paths = [file_paths]
-                
-            
-            self.load_files(file_paths)
-            # self.load_data_tifffile(file_paths)
-            self.to_label(self.is_reorder.toggles[0].checked)
-            
-            
-  
-            
-            # self.files = []
-            # self.converts = []
-            
-            # self.input_dir.filenames = ""
-            # self.input_multi_files.filenames = ""
-            
-        elif self.functions.selected ==1:
-            if self.inputL.source() is None:
-                hx_message.info(f"Please select an input label")
-                return
-            labeldata = self.inputL.source()
-    
-            if self.vis_mode.selected == 0:
-                self.view_obj_vol_ren(labeldata)
-            elif self.vis_mode.selected == 1:
-                self.view_obj_mesh(labeldata)
-            elif self.vis_mode.selected == 2:
-                print_material_cls_mapping(self.inputL)
-                # self.inputL.connect(None)
-    
 
-    
+        # self.min_coords = HxPortIntTextN(self,"min_coords", "Crop Min")
+        # self.min_coords.texts = [HxPortIntTextN.IntText(label="X"),
+        #                      HxPortIntTextN.IntText(label="Y"),
+        #                      HxPortIntTextN.IntText(label="Z")]
+        
+        # self.max_coords = HxPortIntTextN(self,"max_coords", "Crop Max")
+        # self.max_coords.texts = [HxPortIntTextN.IntText(label="X"),
+        #                      HxPortIntTextN.IntText(label="Y"),
+        #                      HxPortIntTextN.IntText(label="Z")]
+        
 
+        input = self.input_data.source()
+        np_input = input.get_array()
+        
+        # Get the dimensions
+        x_dim, y_dim, z_dim = np_input.shape
+
+        # Print the dimensions
+        print(f"Dimensions of the 3D image: x = {x_dim}, y = {y_dim}, z = {z_dim}")
+        
+        min_x,min_y,min_z = self.min_coords.texts[0].value,self.min_coords.texts[1].value,self.min_coords.texts[2].value
+        
+        max_x,max_y,max_z = self.max_coords.texts[0].value,self.max_coords.texts[1].value,self.max_coords.texts[2].value
+        
+
+        cropped = np_input[min_x:max_x+1, min_y:max_y+1, min_z:max_z+1]
+        
+        ##If the swap axes is needed
+        if self.swap_axes.selected == 1:
+            cropped = np.swapaxes(cropped, 0, 1)
+        elif self.swap_axes.selected == 2:
+            cropped = np.swapaxes(cropped, 0, 2)
+        elif self.swap_axes.selected == 3:
+            cropped = np.swapaxes(cropped, 1, 2)
+        
+        result = hx_project.create('HxUniformScalarField3')
+        result.name = input.name + "_cropped"
+        result.bounding_box = ((0.0, 0.0, 0.0), tuple([s-1 for s in cropped.shape]))
+        result.set_array(cropped)
+        
+        self.view_obj_vol_ren(result)
+        print(f"min_x,min_y,min_z:{[min_x,min_y,min_z]}")
+        print(f"max_x,max_y,max_z:{[max_x,max_y,max_z]}")
+        
+        result.selected = True
+        print(result.name, result.portnames)
+        
+        
+
+        
+        
+        # #### Resizing the image size
+        if self.is_size_check.toggles[0].checked:
+            size_str = result.ports.MemorySize.text
+            data_info = result.ports.DataInfo.text
+            voxel_str = result.ports.VoxelSize.text
+
+            voxel_x, voxel_y, voxel_z = process_voxel_dimensions(voxel_str)
+
+
+            size = extract_number(size_str)
+            bit = extract_bit_depth(data_info)
+
+            size_limit = self.size_check.texts[0].value
+            resize_scale = self.size_check.texts[1].value
+
+            if size > size_limit:
+                
+                resample = hx_project.create("HxResample")
+                
+                if bit ==8:
+                    print("Reducing size by resampling")
+                    
+                    
+                else:
+                    print("Reducing size by (1) Resampling and (2) Convert to 8 bit")
+                    
+                    
+                    convert = hx_project.create("HxCastField")
+                    convert.ports.data.connect(result)
+                    convert.fire()
+                    convert.execute()
+                    
+                    convert_result = convert.results[0]
+                    
+                    convert.results[0] = None
+
+                resample.ports.data.connect(result)
+                resample.fire()
+
+                resample.ports.mode.selected = 1
+                resample.fire()
+                voxelSize_set = resample.ports.voxelSize
+                
+                voxelSize_set.texts[0].value = voxel_x * resize_scale
+                voxelSize_set.texts[1].value = voxel_y * resize_scale
+                voxelSize_set.texts[2].value = voxel_z * resize_scale
+                
+
+                resample.execute()
+                
+                resample_result = resample.results[0]
+                
+                resample.results[0] = None
+        
+       

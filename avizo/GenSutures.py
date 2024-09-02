@@ -292,4 +292,6 @@ class GenSutures(PyScriptObject):
         
         output_dir = self.output_dir.filenames
         output_path = os.path.join(output_dir, f"sutures_{suture_input.name}.tif")
+        
+        
         imwrite(output_path,array_all_sutures)

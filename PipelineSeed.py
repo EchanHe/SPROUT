@@ -66,7 +66,8 @@ if __name__ == "__main__":
         # make_seeds_all.plot(output_dict , os.path.join(output_seed_folder,"log.png"))
         
     for idx, output_dict in enumerate(output_dict_list):
-        make_seeds_all.plot(output_dict , os.path.join(output_seed_root_dir,f"{idx}.png"))
+        merged_img_name = os.path.basename(output_dict["output_seed_sub_folders"])
+        make_seeds_all.plot(output_dict , os.path.join(output_seed_root_dir,f"{merged_img_name}.png"))
 
 # output = make_seeds.main(workspace= workspace,
 #                 file_name= file_name,
