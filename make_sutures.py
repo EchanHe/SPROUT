@@ -20,35 +20,6 @@ import csv
 import math
 import make_mesh
 
-def check_tiff_files(df):
-    """Do a quick check on whether all files in the df bone ids exist 
-
-    Args:
-        df (_type_): df bone ids
-    """
-    
-    # Iterate over the 'seg_file' column in the DataFrame
-    for idx, file_path in enumerate(df['seg_file']):
-        # Check if the file exists
-        print(file_path)
-        if os.path.isfile(file_path):
-            try:
-                # Attempt to open the file using tifffile.imread
-                img = tifffile.imread(file_path)
-                
-                print(f"File at index {idx} is valid and can be opened.")
-            except Exception as e:
-                print(f"File at index {idx} cannot be opened. Error: {e}")
-                raise
-            finally:
-                # Release the image variable
-                del img
-        else:
-            print(f"File at index {idx} does not exist.")
-            raise
-    
-    # Release variables (optional in Python, done automatically by garbage collection)
-    del df
 
 def is_island_id(value):
     if np.isnan(value) or (value is None) or (math.isnan(value)):
@@ -393,7 +364,8 @@ if __name__ == "__main__":
     df_id = pd.read_csv("./template/scan_bone_ids_multi.csv")
     df_mapping = pd.read_csv("./template/suture_bone_mapping.csv")
     
-    check_tiff_files(df_id)
+    # for idx, file_path in enumerate(df['seg_file']):
+    suture_morpho.check_tiff_files(df['seg_file'])
     # sys.exit(
 
     SAVE_ISLANDS = False
