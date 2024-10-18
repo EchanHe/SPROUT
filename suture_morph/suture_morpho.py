@@ -757,9 +757,14 @@ def dilation_one_iter(input_mask, threshold_binary,
             # This is the binary for non-label of the updated mask
             binary_non_label = (result !=label_id) & (result != 0)
             # See if original mask overlay with grown label_id mask
-            overlay = np.logical_and(binary_non_label, dilated_binary_label_id)
-            # Check if there are any True values in the resulting array
-            HAS_OVERLAY = np.any(overlay)
+            # overlay = np.logical_and(binary_non_label, dilated_binary_label_id)
+                        
+            # # Check if there are any True values in the resulting array
+            # HAS_OVERLAY = np.any(overlay)
+            
+            # Quicker way to do intersection check
+            inter = np.sum(binary_non_label[dilated_binary_label_id])
+            HAS_OVERLAY = inter>0
             
             # print(f"""
             #     np.sum((result ==label_id)){np.sum((result ==label_id))},
@@ -1008,3 +1013,19 @@ def check_files(file_list):
 # tifffile.imwrite('data/bones_suture/output_test_colour.tif', array_4d)
 
 
+def convert_seg_to_8bit(seg):
+    # If a seg (16 or 32 bits) has less than 256 classes,
+    # Convert it to 8bits to save some spaces
+    
+    # Get the number of unique classes in the array
+    unique_classes = np.unique(seg)
+
+    # Check if the number of unique classes is less than or equal to 255
+    if len(unique_classes) <= 255:
+        # Convert to 8-bit (uint8)
+        print(f"Array has {len(unique_classes)} unique classes. Converting to 8-bit.")
+        return seg.astype(np.uint8)
+    else:
+        # Keep it as is (16-bit)
+        print(f"Array has {len(unique_classes)} unique classes. Keeping it as 16-bit.")
+        return seg

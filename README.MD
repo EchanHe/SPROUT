@@ -24,7 +24,9 @@ Use morphological transformations and connected components (initial segmentation
 
 2. `make_seeds_all.py`, use the similar config except for `footprints`. As it generates seeds using 'ball', 'ball_XY', 'ball_XZ', 'ball_YZ'. And seeds are saved in subfolders with names match the footprint names.
 
-3. `make_seeds_foram.py` is the algorithm for generating seeds for the binary segmentation of foram chambers. TODO: add more description
+3. `make_seeds_merged.py` is the algorithm for generating seeds for automating merge seeds generated. This algorithm can detect separations of a segmented region, and also keep regions that might be segmented out during the further seed generation.
+
+Parameters need to be set on rules to detect the separations, and rules to keep segmented regions.
 
 
 ### 2. Grow
@@ -89,6 +91,8 @@ A Merged CSV of the CSV file for each scan.
 
 2. Seed generation, growing and making meshes. Run `PipelineSeedGrowMesh.py`, currently is used for foram chamber separation.
 
+4. Seed Generation by given a list of input arguements for `make_seeds` or `make_seeds_all`
+
 ### Filter Seeds/Results using segmentation stats
 TODO This is used to filter out seeds that are not likely to be checked.
 Working on the `./seeds_stats.py`, and based on the method in `./make_seeds_foram.py` and `./make_seeds_merged.py`.
@@ -102,12 +106,29 @@ Working on the `./seeds_stats.py`, and based on the method in `./make_seeds_fora
 Addon scripts are saved in `./avizo` folder. 
 Change the extension from `py` to `pyscro`, and drag into AVIZO's `Project View` to use it.
 
+`PreProcess.py`. 
+<br>
+Pre-processing image based the skull-suture workflow.
+<br>
+Pre-process the image in one addon, without the need of open multiple functions in AVIZO.
+<br>
+Create all objects (vol ren, ortho-slice, axes, bounding boxes) for a data that are useful for preprocessing
+<br>
+Transforming is not supported need to be done separately
+- Cropping
+- Swapping axes
+- Resample by scaling voxel size
+- Convert image to 8-bit
+
 `LoadVisFiles.py`  
 - Load and convert 8-bit labels into Avizo in batch.
 - Allow users to visualise the labels in voxel or mesh
-- Print the the relation between material names and the actual segmentation classes
+- Print the the relation between material names and the actual segmentation classes. The current version should work fine.
 
 TO CHECK: For the mat names and seg cls. The numbers in names (`data.parameters['materials']`) won't match the seg cls numbers (`np.unique(data.get_array())`). We assume for 0-n in array match the materials[0] to materials[1].
+
+Bug: can't load the tiff label that is export by AVIZO
+TODO: add voxel size, by downsample the images.
 
 `Edit.py` 
 - Same tasks as describe in the Editing tools section
@@ -119,7 +140,8 @@ TO CHECK: For the mat names and seg cls. The numbers in names (`data.parameters[
 
 TODO
 - can not save meshes in batch. As trimesh is not updated.
-- can not save tif in batch with good compression, as tifffile need updates
+- can not save tif in batch with good compression (very large size atm), as tifffile need update
+- check the resolution X and Z issue in gen_sutures. Sorted
 
 
 ### BounTI multithread implementation
@@ -153,20 +175,21 @@ Bug:
 - failed to concat csv in suture generations, seems done
 - ccompos, min_size problem
 
+Make_seeds_all
+add blend make seeds in?
+add multi_process for different footprints
+
+Dealing with 8bits and 16 bits. Especally in merge_seeds.py, 8bits might not be enough to hold all segments
+
 
 ### AVIZO TODO
-- addon test:Use re-order and label functions from AVIZO. Done
-- Set the correct voxel size in crop editor. As crop editor is a pop up menu
-might need to ask AVIZO Customer service
+
+- Set the correct voxel size in crop editor. As crop editor is a pop up menu.might need to ask AVIZO Customer service
 - Can not install trimesh. might need to ask AVIZO Customer service, so Loop, gene suture surface automatically in AVIZO doesn't work atm.
 
 
-
-
 TODO
-•	CSV and recipe maker
 •	Better seed generation and e.g. the saving split and disappear.
-•	Move files
 
 
 

@@ -59,12 +59,14 @@ def make_seeds_merged_mp(img,
                       no_split_limit =3,
                       min_size=5,
                       sort = True,
-                      prop_thre = 0.01,
+                      min_split_prop = 0.01,
                       background = 0,
                       save_every_iter = False,
+                      save_merged_every_iter = False,
                       name_prefix = "comp_seed",
                       init_segments = None,
                       footprint = "ball",
+                      min_split_sum_prop = 0
                       ):
 
     output_name = f"{name_prefix}_thre_{threshold}_ero_{n_iters}"
@@ -98,7 +100,8 @@ def make_seeds_merged_mp(img,
                    "split_ori_id": {0: {}},
                    "split_ori_id_filtered":  {0: {}},
                    "split_prop":  {0: {}},
-                   "cur_seed_name": {0: output_img_name}
+                   "cur_seed_name": {0: output_img_name},
+                   "output_folder":output_folder
                    }
 
     ori_combine_ids_map = {}
@@ -120,6 +123,7 @@ def make_seeds_merged_mp(img,
         
         img = suture_morpho.erosion_binary_img_on_sub(img, kernal_size = 1,footprint=footprint)
         seed, _ = suture_morpho.get_ccomps_with_size_order(img,segments)
+        seed = seed.astype('uint16')
         
         output_img_name = f'thre_{threshold}_ero_{ero_iter}.tif'
         output_dict["cur_seed_name"][threshold] = output_img_name
@@ -127,6 +131,7 @@ def make_seeds_merged_mp(img,
         if save_every_iter:
             output_path = os.path.join(output_folder, output_img_name)
             print(f"\tSaving {output_path}")
+            
             imwrite(output_path, seed, 
                 compression ='zlib')
 
@@ -176,31 +181,35 @@ def make_seeds_merged_mp(img,
                 print(f'\t{combine_id} has been split to {temp_inter_count} parts. Ids are {temp_inter_ids}')
                 print(f"\tprops are: {temp_inter_props}")
                 
-                combine_seed[combine_seed == combine_id] =0
-                filtered_inter_ids = temp_inter_ids[temp_inter_props>prop_thre]
-                
-                if len(filtered_inter_ids)>0:
-                    has_split = True
-                
-                new_ids = []
-                for inter_id in filtered_inter_ids:
-                    max_seed_id +=1
+                sum_inter_props = np.sum(temp_inter_props)
+                print(f"\tSplit prop is {sum_inter_props}")
+                if sum_inter_props<min_split_sum_prop:
+                    has_split = False
+                else:
+                    combine_seed[combine_seed == combine_id] =0
+                    filtered_inter_ids = temp_inter_ids[temp_inter_props>min_split_prop]
                     
-                    combine_seed[seed == inter_id] = max_seed_id
-                    # new_ids.append(max_seed_id)     
+                    if len(filtered_inter_ids)>0:
+                        has_split = True
                     
-                    new_ids.append(max_seed_id)
-                    for key,value in ori_combine_ids_map.items():
-                        if combine_id in value:
-                            ori_combine_ids_map[key].append(max_seed_id)
-                            break
-                            # if len(value) <= max_splits:
-                                
-                output_dict["split_id"][ero_iter][combine_id] = new_ids
-                output_dict["split_ori_id"][ero_iter][combine_id] = inter_log["inter_ids"]
-                output_dict["split_ori_id_filtered"][ero_iter][combine_id] = filtered_inter_ids
-                output_dict["split_prop"][ero_iter][combine_id] = inter_log["inter_props"]
-                
+                    new_ids = []
+                    for inter_id in filtered_inter_ids:
+                        max_seed_id +=1
+                        
+                        combine_seed[seed == inter_id] = max_seed_id
+                        # new_ids.append(max_seed_id)     
+                        
+                        new_ids.append(max_seed_id)
+                        for key,value in ori_combine_ids_map.items():
+                            if combine_id in value:
+                                ori_combine_ids_map[key].append(max_seed_id)
+                                break
+                                # if len(value) <= max_splits:
+                                    
+                    output_dict["split_id"][ero_iter][combine_id] = new_ids
+                    output_dict["split_ori_id"][ero_iter][combine_id] = inter_log["inter_ids"]
+                    output_dict["split_ori_id_filtered"][ero_iter][combine_id] = filtered_inter_ids
+                    output_dict["split_prop"][ero_iter][combine_id] = inter_log["inter_props"]                    
         
             output_dict["total_id"][ero_iter] = len(np.unique(combine_seed))-1
     
@@ -210,16 +219,24 @@ def make_seeds_merged_mp(img,
             no_consec_split_count+=1
             
         
+        if save_merged_every_iter:
+            combine_seed,_ = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort)
+            output_path = os.path.join(output_folder,output_name+f'ero_{ero_iter}_sorted.tif')
+            
+            print(f"\tSaving final output:{output_path}")
+            imwrite(output_path, combine_seed, 
+                compression ='zlib')    
+        
         if no_consec_split_count>=no_split_limit:
             print(f"detect non split for {no_consec_split_count}rounds")
             print(f"break loop at {ero_iter} iter")
             break
         
 
-    output_path = os.path.join(output_folder,output_name+'.tif')
-    print(f"\tSaving final output:{output_path}")
-    imwrite(output_path, combine_seed, 
-        compression ='zlib')
+    # output_path = os.path.join(output_folder,output_name+'.tif')
+    # print(f"\tSaving final output:{output_path}")
+    # imwrite(output_path, combine_seed, 
+    #     compression ='zlib')
     
     combine_seed,_ = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort)
     output_path = os.path.join(output_folder,output_name+'_sorted.tif')
@@ -240,13 +257,14 @@ def make_seeds_merged_by_thres_mp(img,
                       no_split_limit =3,
                       min_size=5,
                       sort = True,
-                      prop_thre = 0.01,
+                      min_split_prop = 0.01,
                       background = 0,
                       save_every_iter = False,
+                      save_merged_every_iter = False,
                       name_prefix = "comp_seed",
                       init_segments = None,
                       footprint = "ball",
-                      min_split_prop = 0
+                      min_split_sum_prop = 0
                       ):
 
     output_name = f"{name_prefix}_ero_{n_iters}"
@@ -282,7 +300,8 @@ def make_seeds_merged_by_thres_mp(img,
                    "split_ori_id": {0: {}},
                    "split_ori_id_filtered":  {0: {}},
                    "split_prop":  {0: {}}, 
-                   "cur_seed_name": {0: output_img_name}
+                   "cur_seed_name": {0: output_img_name},
+                   "output_folder":output_folder
                    }
 
     ori_combine_ids_map = {}
@@ -304,6 +323,7 @@ def make_seeds_merged_by_thres_mp(img,
         for ero_iter in range(1, n_iters+1):
             mask = suture_morpho.erosion_binary_img_on_sub(mask, kernal_size = 1,footprint=footprint)
         seed, _ = suture_morpho.get_ccomps_with_size_order(mask,segments)
+        seed = seed.astype('uint16')
         
         output_img_name = f'thre_{threshold}_ero_{n_iters}.tif'
         output_dict["cur_seed_name"][threshold] = output_img_name
@@ -356,21 +376,20 @@ def make_seeds_merged_by_thres_mp(img,
                 temp_inter_ids = inter_log["inter_ids"]
                 temp_inter_props = inter_log["inter_props"]
                 
-                sum_inter_props = np.sum(temp_inter_props)
+                
                 print(f'\t{combine_id} has been split to {temp_inter_count} parts. Ids are {temp_inter_ids}')
                 print(f"\tprops are: {temp_inter_props}")
                 
+                sum_inter_props = np.sum(temp_inter_props)
                 print(f"\tSplit prop is {sum_inter_props}")
-                if sum_inter_props<min_split_prop:
+                
+                if sum_inter_props<min_split_sum_prop:
                     has_split = False
                 else:
                     combine_seed[combine_seed == combine_id] =0
-                    filtered_inter_ids = temp_inter_ids[temp_inter_props>prop_thre]
+                    filtered_inter_ids = temp_inter_ids[temp_inter_props>min_split_prop]
                     
-                    
-
-
-
+                
                     if len(filtered_inter_ids)>0:
                         has_split = True
                     
@@ -408,10 +427,10 @@ def make_seeds_merged_by_thres_mp(img,
         
 
     
-    output_path = os.path.join(output_folder,output_name+'.tif')
-    print(f"\tSaving final output:{output_path}")
-    imwrite(output_path, combine_seed, 
-        compression ='zlib')
+    # output_path = os.path.join(output_folder,output_name+'.tif')
+    # print(f"\tSaving final output:{output_path}")
+    # imwrite(output_path, combine_seed, 
+    #     compression ='zlib')
     
     combine_seed,_ = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort)
     output_path = os.path.join(output_folder,output_name+'_sorted.tif')
