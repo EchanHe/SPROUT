@@ -444,42 +444,72 @@ def make_seeds_merged_by_thres_mp(img,
 
 if __name__ == "__main__":        
    
+    ############ Config
+    file_path = './make_seeds_merged.yaml'
+    
+    _, extension = os.path.splitext(file_path)
+    print(f"processing config he file {file_path}")
+    if extension == '.yaml':
+        with open(file_path, 'r') as file:
+            config = yaml.safe_load(file)
+        load_config_yaml(config)
+        
+    
+    if isinstance(thresholds, int):
+        seed_merging_mode = "ERO"
+    elif isinstance(thresholds, list):
+        if all(isinstance(t, int) for t in thresholds):
+            if len(thresholds) == 1:
+                seed_merging_mode = "ERO"
+            elif len(thresholds) > 1:
+                seed_merging_mode = "THRE"
+        else:
+            raise ValueError("'thresholds' must be an int or a list of int(s).")
     
     # img_path = './result/dog_lucy/input/Beagle_220783_8bits.tif'
     # output_folder = './result/dog_lucy/seeds'
     # threshold = 121
     
-    img_path = './result/foram_james/input/ai/final.20180719_VERSA_1905_ASB_OLK_st014_bl4_fo1_recon.tif'  
-    output_folder = './result/foram_james/seeds_test_gen_time_mp' 
-    threshold = 266
+    # img_path = './result/foram_james/input/ai/final.20180719_VERSA_1905_ASB_OLK_st014_bl4_fo1_recon.tif'  
+    # output_folder = './result/foram_james/seeds_test_gen_time_mp' 
+    # threshold = 266
     
     # Track the overall start time
     overall_start_time = time.time()
     
     
-    # seed ,ori_combine_ids_map , output_dict=  separate_chambers(img_path, 
-    #                                                     threshold = threshold,
-    #                                                     output_folder = output_folder,
-    #                                                     n_iters=3,segments=20,
-    #                                                     save_every_iter = True)
+    
     img = imread(img_path)
     name_prefix = os.path.basename(img_path)
-    seed ,ori_combine_ids_map , output_dict=  make_seeds_merged_mp(img, 
-                                                threshold = threshold,
-                                                output_folder = output_folder,
-                                                n_iters=3,segments=20,
-                                                num_threads = 10,
-                                                min_size= 100,
-                                                save_every_iter = True,
-                                                name_prefix=name_prefix)
+    
+    if seed_merging_mode == "ERO":
+        seed ,ori_combine_ids_map , output_dict=  make_seeds_merged_mp(img, 
+                                                    threshold = thresholds,
+                                                    output_folder = output_folder,
+                                                    n_iters=n_iters,segments=segments,
+                                                    num_threads = num_threads,
+                                                    min_size= 100,
+                                                    save_every_iter = True,
+                                                    name_prefix=name_prefix)
     # pd.DataFrame(ori_combine_ids_map).to_csv(os.path.join(output_folder, 'ori_combine_ids_map.csv'),index=False)
+    
+    elif seed_merging_mode=="THRE":
+   
+        seed ,ori_combine_ids_map , output_dict=  make_seeds_merged_by_thres_mp(img,
+                        thresholds,
+                        output_folder,
+                        n_iters = n_iters, 
+                        segments = segments,
+                        num_threads = num_threads,
+                        no_split_limit =3,
+                        sort = True,
+                        background = 0,
+                        save_every_iter = True,
+                        name_prefix = name_prefix,
+                        footprint = "ball",
+                        )
+    
     pd.DataFrame(output_dict).to_csv(os.path.join(output_folder, 'output_dict.csv'),index=False)
-    
-    
-    
-
-    
-
     # Track the overall end time
     overall_end_time = time.time()
 

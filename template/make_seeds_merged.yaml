@@ -1,0 +1,9 @@
+img_path: './data/FrenchBulldog_lowres.tif'
+
+output_folder: "seed_ai_v2"
+
+threshold: [10,20]
+
+segments: 25
+n_iters: 5
+num_threads: 5

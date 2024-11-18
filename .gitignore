@@ -3,11 +3,19 @@ json_configs/*
 old_codes/*
 .vscode/*
 
+./slide/*
+
+
 avizo/*
 !avizo/GenSutures.py
+!avizo/Preprocess.py
 !avizo/Edit.py
 !avizo/LoadVisLabels.py
 !avizo/make_sutures_avizo_recipe.hxisp
+
+data/*
+!data/demo_FrenchBulldog_lowres.tif
+!data/demo_foram_segmentation.tif
 
 test_*.py
 test_*.ipynb
