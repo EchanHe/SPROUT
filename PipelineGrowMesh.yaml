@@ -11,4 +11,4 @@ touch_rule: "stop"
 output_folder: "grow"
 save_interval: 5
 
-num_threads:5
+num_threads: 5

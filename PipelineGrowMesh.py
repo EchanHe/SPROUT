@@ -29,7 +29,7 @@ if extension == '.yaml':
     
 
 
-output = make_grow_result.main(
+grow_dict = make_grow_result.main(
         dilate_iters = dilate_iters,
     thresholds = thresholds,
     save_interval = save_interval,  
@@ -42,7 +42,7 @@ output = make_grow_result.main(
     to_grow_ids = to_grow_ids
 )
 
-mesh_folder = output_folder = os.path.join(workspace, output_folder)
+mesh_folder = grow_dict['output_folder']
 
 tif_files = glob.glob(os.path.join(mesh_folder, '*.tif'))
 

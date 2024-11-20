@@ -6,9 +6,9 @@ import numpy as np
 
 from skimage.morphology import binary_dilation,binary_closing, cube,square
 
-import suture_morph.suture_morpho as suture_morpho
-import suture_morph.img_process as img_process
-# importlib.reload(suture_morpho)
+import sprout_core.sprout_core as sprout_core
+import sprout_core.img_process as img_process
+# importlib.reload(sprout_core)
 import threading
 
 import tifffile
@@ -257,7 +257,7 @@ def find_sutures_mp(img, key_value_list, output_folder):
         bone_1 = img==bone_1_id
         bone_2 = img==bone_2_id
         
-        result = suture_morpho.find_gaps_between_two(bone_1,bone_2,background)
+        result = sprout_core.find_gaps_between_two(bone_1,bone_2,background)
             
         if result is None:
             print(f"No gaps between {bone_1_id} and {bone_2_id}")
@@ -306,7 +306,7 @@ def find_sutures(img, key_value_list, output_folder):
                 bone_1 = img==bone_1_id
                 bone_2 = img==bone_2_id
                 
-                result = suture_morpho.find_gaps_between_two(bone_1,bone_2,background)
+                result = sprout_core.find_gaps_between_two(bone_1,bone_2,background)
                 
             if result is None:
                 print(f"No gaps between {bone_1_id} and {bone_2_id}")
@@ -365,7 +365,7 @@ if __name__ == "__main__":
     df_mapping = pd.read_csv("./template/suture_bone_mapping.csv")
     
     # for idx, file_path in enumerate(df['seg_file']):
-    suture_morpho.check_tiff_files(df['seg_file'])
+    sprout_core.check_tiff_files(df['seg_file'])
     # sys.exit(
 
     SAVE_ISLANDS = False
@@ -490,7 +490,7 @@ if __name__ == "__main__":
     #     bone_1 = img==bone_1_id
     #     bone_2 = img==bone_2_id
         
-    #     result = suture_morpho.find_gaps_between_two(bone_1,bone_2,background)
+    #     result = sprout_core.find_gaps_between_two(bone_1,bone_2,background)
             
     #     if result is None:
     #         print(f"No gaps between {bone_1_id} and {bone_2_id}")
@@ -538,7 +538,7 @@ if __name__ == "__main__":
 #     bone_1 = img==bone_1_id
 #     bone_2 = img==bone_2_id
     
-#     result = suture_morpho.find_gaps_between_two(bone_1,bone_2,background)
+#     result = sprout_core.find_gaps_between_two(bone_1,bone_2,background)
         
 #     if result is None:
 #         print(f"No gaps between {bone_1_id} and {bone_2_id}")

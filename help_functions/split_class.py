@@ -4,9 +4,9 @@ from tifffile import imread, imwrite
 import traceback
 import os,sys
 
-lib_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../suture_morph'))
+lib_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../sprout_core'))
 sys.path.insert(0, lib_path)
-import suture_morpho
+import sprout_core
 
 def replace_values_in_array(arr, values_to_replace, target_value):
     try:
@@ -73,7 +73,7 @@ for to_check_id,n_ccomp in zip(to_check_ids, n_ccomps):
     
     max_id = np.max(img_output)
     # print(f"max_id:{max_id}")
-    seed, ccomp_sizes = suture_morpho.get_ccomps_with_size_order(binary_img, n_ccomp)
+    seed, ccomp_sizes = sprout_core.get_ccomps_with_size_order(binary_img, n_ccomp)
     print(f"size of split comps:{ccomp_sizes}")
    
     seed_offset = np.where(seed != 0, seed + max_id, 0)

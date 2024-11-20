@@ -26,6 +26,7 @@ for img_path in img_paths:
     seeds = glob.glob(os.path.join(workspace,f"{base_name}*.tif"))
 
     print(f"Growing on seed files:{seeds}")
+    #Make grow on both sorted and not sorted grown results
     for seed_path in seeds:
 
         output = make_grow_result.main(

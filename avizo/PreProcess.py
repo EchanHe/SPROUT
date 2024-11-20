@@ -88,8 +88,11 @@ def test_progress_bar():
             print("interrupted by user: {progress.interrupted} step: {progress.current_step} progress: {progress.value:.0%}".format(progress=progress))
             if progress.interrupted:
                 break
+            
 class PreProcess(PyScriptObject):
     def __init__(self):
+        
+        self.STATUS_VISUAL=False
         
         self.segs = []
         self.converts = []
@@ -99,6 +102,9 @@ class PreProcess(PyScriptObject):
 
         self.input_data = HxConnection(self, "input_data", " Data")
         self.input_data.valid_types = ('HxRegScalarField3')
+        
+        self.is_vis_check = HxPortToggleList(self,"is_vis_check", "Visualise data")
+        self.is_vis_check.toggles[0] = HxPortToggleList.Toggle(label="Visualise", checked=HxPortToggleList.Toggle.UNCHECKED)
         
         self.min_coords = HxPortIntTextN(self,"min_coords", "Crop Min")
         self.min_coords.texts = [HxPortIntTextN.IntText(label="X"),
@@ -117,11 +123,13 @@ class PreProcess(PyScriptObject):
                                                     value=-1, clamp_range=(-1,65535))]
                 
         for text in self.min_coords.texts:
-            text.value = 0
-            text.clamp_range = (0,10000)
+            text.clamp_range = (-1,100000)
+            text.value = -1
+            
         for text in self.max_coords.texts:
-            text.value = 0
-            text.clamp_range = (0,10000)
+            text.clamp_range = (-1,100000)
+            text.value = -1
+            
             
             
         self.is_size_check = HxPortToggleList(self,"is_size_check", "Size limit")
@@ -404,6 +412,58 @@ class PreProcess(PyScriptObject):
                 self.ports.showConsole.visible = False
         except Exception as e:
             print(f"Waiting for ports being created {e}")
+
+    def vis_data(self):
+        if self.is_vis_check.toggles[0].checked:
+            if self.input_data.source() is None:
+                print("no data")
+            elif self.STATUS_VISUAL is False:
+                print("create visualisation for data")
+                print("create volume rendering")
+                self.vol_ren_set  = hx_project.create("HxVolumeRenderingSettings")
+                self.vol_ren = hx_project.create("HxVolumeRender2")
+                self.vol_ren.ports.volumeRenderingSettings.connect(self.vol_ren_set)
+                
+                print("create orthoslice")
+                self.OrthoSlice  = hx_project.create("HxOrthoSlice")
+                
+                print("create axes")
+                self.Axis  = hx_project.create("HxAxis")
+                
+                print("create bounding boxes")
+                self.BoundingBox  = hx_project.create("HxBoundingBox")
+                
+
+                input = self.input_data.source()
+                self.BoundingBox.ports.data.connect(input)
+
+                self.OrthoSlice.ports.data.connect(input)
+
+                self.vol_ren_set.ports.data.connect(input)
+                self.vol_ren_set.fire()        
+                
+                
+                self.STATUS_VISUAL = True
+        else:
+            print("Close visualisation for data")
+            
+            try:
+                self.vol_ren_set.ports.data.disconnect()
+                self.OrthoSlice.ports.data.disconnect()
+                self.BoundingBox.ports.data.disconnect()
+
+                hx_project.remove(self.BoundingBox)
+                hx_project.remove(self.OrthoSlice)
+                hx_project.remove(self.Axis)
+
+                hx_project.remove(self.vol_ren_set)
+                hx_project.remove(self.vol_ren)
+
+            except:
+                pass
+            
+            self.STATUS_VISUAL = False
+
     
     def update(self):
         # if not self.inputL.is_new:
@@ -413,7 +473,9 @@ class PreProcess(PyScriptObject):
     
         self.toggle_size_check(self.is_size_check.toggles[0].checked)
         
-    
+        self.vis_data()
+       
+
     
     def compute(self):
         # Does the user press the 'Apply' button?
@@ -449,6 +511,20 @@ class PreProcess(PyScriptObject):
         
         max_x,max_y,max_z = self.max_coords.texts[0].value,self.max_coords.texts[1].value,self.max_coords.texts[2].value
         
+
+        # Check for -1 and substitute with min or max values as needed
+        min_x = 0 if min_x == -1 else min_x
+        min_y = 0 if min_y == -1 else min_y
+        min_z = 0 if min_z == -1 else min_z
+
+        max_x = x_dim - 1 if max_x == -1 else max_x
+        max_y = y_dim - 1 if max_y == -1 else max_y
+        max_z = z_dim - 1 if max_z == -1 else max_z
+
+        # Ensure max values do not exceed array dimensions
+        max_x = min(max_x, x_dim - 1)
+        max_y = min(max_y, y_dim - 1)
+        max_z = min(max_z, z_dim - 1)
 
         cropped = np_input[min_x:max_x+1, min_y:max_y+1, min_z:max_z+1]
         
@@ -529,5 +605,3 @@ class PreProcess(PyScriptObject):
                 resample_result = resample.results[0]
                 
                 resample.results[0] = None
-        
-       

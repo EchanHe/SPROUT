@@ -33,7 +33,6 @@ if __name__ == "__main__":
     # file_path = 'example.tiff'
     workspace = r'C:\Users\Yichen\OneDrive\work\codes\nhm_bounti_pipeline\result\procavia'
     file_path = os.path.join(workspace, 'thre_ero_seed/thre_ero_2iter_thre4500.tif')
-    file_2_path = os.path.join(workspace, 'thre_ero_seed/thre_ero_3iter_thre4500.tif')
 
     img_ids =[5,6]
 

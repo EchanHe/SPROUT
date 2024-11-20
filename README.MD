@@ -1,6 +1,9 @@
 # SPROUT (Semi-automated Parcellation of Region Outputs Using Thresholding and Transformation): an adaptable computer vision tool to generate 3D segmentations
 
+SPROUT: Semi-automated Parcellation of Region Outputs Using Thresholding and Transformation
+This package is for parcellating segments from 3D scans (e.g. micro-CT and MRI scans) using semi-automoated seed generation and growth. It can be applied to diverse datasets, from skulls and entire skeletons (e.g. to isolate individual bones) to organs and even man-made structures (e.g. concrete blocks).  Example applications and method details are provided in Y. He, M. Camaiti, L.E. Roberts, J.M. Mulqueeney, M. Didziokas, A. Goswami. 2024. Introducing SPROUT (Semi-automated Parcellation of Region Outputs Using Thresholding and Transformation): an adaptable computer vision tool to generate 3D segmentations. Bioarxiv, xx.
 
+This approach and code are highly inspired by BounTI (M. Didziokas, E. Pauws, L. Kölby, R. H. Khonsari, M. Moazen. 2024. BounTI (boundary-preserving threshold iteration): A user-friendly tool for automatic hard tissue segmentation. Journal of Anatomy 245, 829–841).
 
 
 ## Prerequisites
@@ -104,26 +107,9 @@ Output includes components `ply` meshes with its segmentation id. e.g. `1.ply`, 
 2. `plot_mesh.py` Plot Generated meshes. <br>
 TODO: Currently under testing
 
-The current colourmap has 10 colours, mesh colours follow its order mapping the segmentation class 1-10, and recur using them after more than 11. ![Color Map](./src/colourmap.png)
+The current colourmap has 10 colours, mesh colours follow its order mapping the segmentation class 1-10, and recur using them after more than 11. ![Color Map](./material/colourmap.png)
 
-### 4. Suture generation
-    
-1. `make_sutures.py`. 
 
-Input: two CSV. 
-    1. One contains segmentation file names, and segmentation class id to each bone names. E.g., `./template/bone_ids.csv`
-    2. Another spreadsheet have three columns. E.g., `./template/suture_bone_mapping.csv`
-        (1) the suture names(col: result), 
-        (2) the first bone making the suture (col:part_1)
-        (3) the second bone making the suture (col:part_2). 
-
-Output: 
-For each scan:
-    1. Separated suture segmentation are generated in a folder (0: background, 1: sutures).
-    2. Merged sutures segmentation.
-    3. CSV file of suture names, parts, output detail, merged suture ID
-
-A Merged CSV of the CSV file for each scan.
 
 ### Tutorial
 
@@ -181,15 +167,7 @@ TODO: add voxel size, by downsample the images.
 `Edit.py` 
 - Same tasks as describe in the Editing tools section
 
-`GenSutures.py`
-- Use bone-suture mappings and bone ids to generate sutures from bone pairs
-- Generate data include: pairs, individual suture and all sutures
-- Save the all sutures as a tif file to a given folder
 
-TODO
-- can not save meshes in batch. As trimesh is not updated.
-- can not save tif in batch with good compression (very large size atm), as tifffile need update
-- check the resolution X and Z issue in gen_sutures. Sorted
 
 
 ### BounTI multithread implementation
@@ -223,42 +201,4 @@ These scripts are designed to streamline the process of extracting Morphosource 
   - Path of the unzipped content.
   - Status of the operation (success or failure).
 
-
-## TODO:
-2024/08/03
-- To add different pattern (texture or material) for visualisation. Some have been implemented in `./make_mesh.py`. Testing: UV on mapping texuture, testing code in `check_seeds.ipynb`
-- Make a mesh that have unique colours (Combined), Done
-
-
-seed making, more option on loop, footprints, 
-also allow cleaning on the seeds
-
-Bug: 
-- make_mesh.py 379 about the number for merging meshes, it seems the class 10 will be in 11-20 than 1-10. Sorted
-- make_mesh.py. When mesh is too small, the merging seems don't work: e.g., forams
-- failed to concat csv in suture generations, seems done
-- ccompos, min_size problem
-
-Make_seeds_all
-add blend make seeds in?
-add multi_process for different footprints
-
-Dealing with 8bits and 16 bits. Especally in merge_seeds.py, 8bits might not be enough to hold all segments
-
-
-### AVIZO TODO
-
-- Set the correct voxel size in crop editor. As crop editor is a pop up menu.might need to ask AVIZO Customer service
-- Can not install trimesh. might need to ask AVIZO Customer service, so Loop, gene suture surface automatically in AVIZO doesn't work atm.
-
-
-TODO
-•	Better seed generation and e.g. the saving split and disappear.
-
-
-
-Need to figure out how to save sutures.
-Better naming on sutures, 
-
-Maybe also have the suture size in df_output from `./make_sutures.py`
 

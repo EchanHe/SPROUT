@@ -1,2 +1,5 @@
 seg_file,specimen,img_file,frontal_L,frontal_R,parietal_L,parietal_R,occipital,jugal_L,jugal_R,squamosal_L,squamosal_R,maxillary_L,maxillary_R,premaxillary_L,premaxillary_R,nasal_L,nasal_R,interparietal,palatine_L,palatine_R
 ./result/procavia/seg/Procavia_capensis_parcellation.tif,procavia,./result/procavia/input/procaviaH4981C_0001.tif.resampled.tif,10,11,5,7,14,40,13,42,6,33,4,2,25,34,26,9,8,19
+<seg_file>,monodelphis,,10,8,14,16,18,7,9,15,17,4,5,21,20,11,12,18,,
+<seg_file>,mus,,8,7,19,21,11,14,16,9,10,1,2,3,4,12,13,23,18,20
+<seg_file>,talpa,,43,42,44,44,45,41,41,41,41,41,41,,,41,41,45,,

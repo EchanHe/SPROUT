@@ -48,7 +48,7 @@ def reorder_segmentation(segmentation, min_size=None, sort_ids=True):
     for old, new in class_mapping.items():
         print(f"Old Class {old} -> New Class {new}, Size: {sizes[old]}")
 
-    return reordered_segmentation
+    return reordered_segmentation, class_mapping
 if __name__ == "__main__":   
     # Example usage
     # segmentation = np.array([

@@ -757,7 +757,7 @@ def dilation_one_iter(input_mask, threshold_binary,
             # This is the binary for non-label of the updated mask
             binary_non_label = (result !=label_id) & (result != 0)
             # See if original mask overlay with grown label_id mask
-            # overlay = np.logical_and(binary_non_label, dilated_binary_label_id)
+            overlay = np.logical_and(binary_non_label, dilated_binary_label_id)
                         
             # # Check if there are any True values in the resulting array
             # HAS_OVERLAY = np.any(overlay)
@@ -802,7 +802,7 @@ def find_seg_by_morpho_trans(input_mask, threshold_binary,  dilate_iter,
     #     # Get the result for dilaition
     #     dilated_binary_label_id = (result ==label_id)
     #     for i in range(dilate_iter):
-    #         dilated_binary_label_id = suture_morpho.dilation_binary_img_on_sub(dilated_binary_label_id, 
+    #         dilated_binary_label_id = sprout_core.dilation_binary_img_on_sub(dilated_binary_label_id, 
     #                                                                             margin = 2, kernal_size = 1)
     #         print(f"Size of each iter for label:{label_id} is {np.sum(dilated_binary_label_id)}")
     #     if touch_rule == 'stop':

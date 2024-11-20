@@ -4,8 +4,8 @@ import yaml
 import os
 import glob
 import pandas as pd
-import suture_morph.vis_lib as vis_lib
-import suture_morph.suture_morpho as suture_morpho
+import sprout_core.vis_lib as vis_lib
+import sprout_core.sprout_core as sprout_core
 
 def load_config_yaml(config, parent_key=''):
     for key, value in config.items():
@@ -34,8 +34,8 @@ if __name__ == "__main__":
     #TODO check if This df fits the requirements
     
     #a check to see if all files exist
-    suture_morpho.check_tiff_files(df['img_path'])
-    suture_morpho.check_tiff_files(df['seg_path'])
+    sprout_core.check_tiff_files(df['img_path'])
+    sprout_core.check_tiff_files(df['seg_path'])
     
     
     grow_dict_list = []

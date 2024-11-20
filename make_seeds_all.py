@@ -16,10 +16,10 @@ import multiprocessing
 max_threads = multiprocessing.cpu_count()
 
 # import configparser
-# import suture_morph.suture_morpho as suture_morpho
+# import sprout_core.sprout_core as sprout_core
 import make_seeds
 
-import suture_morph.vis_lib as vis_lib
+import sprout_core.vis_lib as vis_lib
 import json, yaml
 
 

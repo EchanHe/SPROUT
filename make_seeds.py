@@ -10,12 +10,12 @@ lock = threading.Lock()
 
 import configparser
 
-# lib_path = os.path.abspath(os.path.join(os.path.dirname(__file__), 'suture_morph'))
+# lib_path = os.path.abspath(os.path.join(os.path.dirname(__file__), 'sprout_core'))
 # sys.path.insert(0, lib_path)
 
-import suture_morph.suture_morpho as suture_morpho
-# import suture_morph.load_config as load_config
-# import suture_morpho
+import sprout_core.sprout_core as sprout_core
+# import sprout_core.load_config as load_config
+# import sprout_core
 # import load_config
 
 
@@ -134,7 +134,7 @@ def find_seed_by_ero_mp(volume, input_threshold_ero_iter_pairs , segments ,
         
         print(f"Saving every seeds for thresholds {threshold} for {ero_iter} erosion")
         
-        log_dict = suture_morpho.find_seed_by_ero_custom(volume, threshold , segments, ero_iter,
+        log_dict = sprout_core.find_seed_by_ero_custom(volume, threshold , segments, ero_iter,
                                           output_dir =output_seed_folder,
                                           footprints = footprints)
         
@@ -177,7 +177,7 @@ def find_seed_by_ero_mp_v2(volume, input_threshold_ero_iter_pairs , segments ,
 
         
         for ero_i in ero_iter:
-            seed, ccomp_sizes = suture_morpho.ero_one_iter(volume_label,
+            seed, ccomp_sizes = sprout_core.ero_one_iter(volume_label,
                                                         segments, 
                                                         footprint = footprints[ero_i])
             
@@ -188,7 +188,7 @@ def find_seed_by_ero_mp_v2(volume, input_threshold_ero_iter_pairs , segments ,
             
             tifffile.imwrite(seed_file, seed,
                     compression ='zlib')
-            # log_dict = suture_morpho.find_seed_by_ero_custom(volume, threshold , segments, ero_iter,
+            # log_dict = sprout_core.find_seed_by_ero_custom(volume, threshold , segments, ero_iter,
             #                                 output_dir =output_seed_folder,
             #                                 footprints = footprints)
         

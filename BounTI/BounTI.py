@@ -402,7 +402,7 @@ def segmentation_ero(volume_array, initial_threshold, target_threshold, segments
     volume_label = volume_array > initial_threshold
     
     for i in range(2):
-        volume_label = suture_morpho.erosion_binary_img_on_sub(volume_label, kernal_size = 1)
+        volume_label = sprout_core.erosion_binary_img_on_sub(volume_label, kernal_size = 1)
 
     if label_preserve == False:
         #get the top largest ccomps

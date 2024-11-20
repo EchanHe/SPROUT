@@ -11,8 +11,8 @@ import time
 import json, yaml
 
 # Add the lib directory to the system path
-import suture_morph.suture_morpho as suture_morpho
-from suture_morph.suture_morpho import reorder_segmentation
+import sprout_core.sprout_core as sprout_core
+from sprout_core.sprout_core import reorder_segmentation
 
 
 
@@ -80,7 +80,7 @@ def make_seeds_merged_mp(img,
     if init_segments is None:
         init_segments = segments
 
-    init_seed, _ = suture_morpho.get_ccomps_with_size_order(img,init_segments)
+    init_seed, _ = sprout_core.get_ccomps_with_size_order(img,init_segments)
     
     output_img_name = f'thre_{threshold}_ero_0.tif'
     if save_every_iter:
@@ -121,8 +121,8 @@ def make_seeds_merged_mp(img,
         output_dict["split_ori_id_filtered"][ero_iter] = {}
         output_dict["split_prop"][ero_iter] = {}
         
-        img = suture_morpho.erosion_binary_img_on_sub(img, kernal_size = 1,footprint=footprint)
-        seed, _ = suture_morpho.get_ccomps_with_size_order(img,segments)
+        img = sprout_core.erosion_binary_img_on_sub(img, kernal_size = 1,footprint=footprint)
+        seed, _ = sprout_core.get_ccomps_with_size_order(img,segments)
         seed = seed.astype('uint16')
         
         output_img_name = f'thre_{threshold}_ero_{ero_iter}.tif'
@@ -279,8 +279,8 @@ def make_seeds_merged_by_thres_mp(img,
 
     mask = img>=thresholds[0]
     for ero_iter in range(1, n_iters+1):
-        mask = suture_morpho.erosion_binary_img_on_sub(mask, kernal_size = 1,footprint=footprint)
-    init_seed, _ = suture_morpho.get_ccomps_with_size_order(mask,init_segments)
+        mask = sprout_core.erosion_binary_img_on_sub(mask, kernal_size = 1,footprint=footprint)
+    init_seed, _ = sprout_core.get_ccomps_with_size_order(mask,init_segments)
     
     output_img_name = f'thre_{thresholds[0]}_ero_{n_iters}.tif'
     if save_every_iter:
@@ -321,8 +321,8 @@ def make_seeds_merged_by_thres_mp(img,
         
         mask = img>=threshold
         for ero_iter in range(1, n_iters+1):
-            mask = suture_morpho.erosion_binary_img_on_sub(mask, kernal_size = 1,footprint=footprint)
-        seed, _ = suture_morpho.get_ccomps_with_size_order(mask,segments)
+            mask = sprout_core.erosion_binary_img_on_sub(mask, kernal_size = 1,footprint=footprint)
+        seed, _ = sprout_core.get_ccomps_with_size_order(mask,segments)
         seed = seed.astype('uint16')
         
         output_img_name = f'thre_{threshold}_ero_{n_iters}.tif'

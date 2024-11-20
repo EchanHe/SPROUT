@@ -70,9 +70,6 @@ if __name__ == "__main__":
     img1 = imread(file_1_path)
     img2 = imread(file_2_path)
 
-    binary_img1 = np.isin(img1, img1_ids)
-    binary_img2 = np.isin(img2, img2_ids)
-
     # result = np.logical_or(binary_img1, binary_img2)
 
     merge_masks_with_filter(img1, img2,img1_ids,img2_ids)

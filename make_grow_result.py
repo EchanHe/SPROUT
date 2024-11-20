@@ -6,11 +6,15 @@ from datetime import datetime
 import json ,yaml
 import numpy as np
 import pandas as pd
+import glob
+import multiprocessing
+max_threads = multiprocessing.cpu_count()
 
+import sprout_core.sprout_core as sprout_core 
+import sprout_core.vis_lib as vis_lib
 
+import make_mesh
 
-import suture_morph.suture_morpho as suture_morpho 
-import suture_morph.vis_lib as vis_lib
 # Function to recursively create global variables from the config dictionary
 def load_config_yaml(config, parent_key=''):
     for key, value in config.items():
@@ -36,7 +40,7 @@ def main(**kwargs):
     dilate_iters = kwargs.get('dilate_iters', None)
     thresholds = kwargs.get('thresholds', None)  
     save_interval = kwargs.get('save_interval', None)  
-    touch_rule = kwargs.get('touch_rule', None)  
+    touch_rule = kwargs.get('touch_rule', "stop")  
     
     workspace = kwargs.get('workspace', None)
     img_path = kwargs.get('img_path', None)
@@ -44,10 +48,19 @@ def main(**kwargs):
     output_folder = kwargs.get('output_folder', None) 
     to_grow_ids = kwargs.get('to_grow_ids', None) 
     
-    is_sort = kwargs.get('is_sort', False) 
+    is_sort = kwargs.get('is_sort', True) 
     
     min_diff = kwargs.get('min_diff', 50) 
     tolerate_iters = kwargs.get('tolerate_iters', 3) 
+    
+    is_make_meshes = kwargs.get('is_make_meshes', False) 
+    num_threads = kwargs.get('num_threads', None) 
+    downsample_scale = kwargs.get('downsample_scale', 10) 
+    step_size  = kwargs.get('step_size', 2) 
+    
+    
+    if num_threads is None:
+        num_threads = max_threads-1
     # Test if the grown result and input's diff is more than this. Default is 10.
     # min_diff = 50
     # The number of iters for diff is less than diff_threshold
@@ -107,7 +120,7 @@ def main(**kwargs):
             input_size = np.sum(result!=0)
             
             ## Making grow for one iteration
-            result = suture_morpho.dilation_one_iter(result, threshold_binary ,
+            result = sprout_core.dilation_one_iter(result, threshold_binary ,
                                             touch_rule = touch_rule,
                                             to_grow_ids=to_grow_ids)
             
@@ -132,24 +145,29 @@ def main(**kwargs):
                 count_below_threshold += 1
             else:
                 count_below_threshold = 0
-            if count_below_threshold >= tolerate_iters:
-                print(f"\tBreaking at iteration {i_dilate} with Input size = {input_size} and Output_size = {output_size}")
-                 
-                print(f"\tGrown result has been saved {output_path}")
-                tifffile.imwrite(output_path, 
-                result,
-                compression ='zlib')
-                break
-            
-            if i_dilate%real_save_interval==0 or i_dilate ==dilate_iter:
-                # output_path = os.path.join(workspace, f'result/ai/dila_{dilate_iter}_{threshold}_rule_{touch_rule}.tif')
-              
+            if i_dilate%real_save_interval==0 or i_dilate ==dilate_iter or count_below_threshold >= tolerate_iters:
                 
+                result,_ = sprout_core.reorder_segmentation(result, sort_ids=is_sort)
+                tifffile.imwrite(output_path, 
+                    result,
+                    compression ='zlib')
                 print(f"\tGrown result has been saved {output_path}")
                 print(f"\tIter:{i_dilate}. Last Input size = {input_size} and Output_size = {output_size}")
-                tifffile.imwrite(output_path, 
-                result,
-                compression ='zlib')
+
+                
+                if count_below_threshold >= tolerate_iters:
+                    print(f"\tBreaking at iteration {i_dilate} with Input size = {input_size} and Output_size = {output_size}")
+                    break
+            
+            # if i_dilate%real_save_interval==0 or i_dilate ==dilate_iter:
+            #     # output_path = os.path.join(workspace, f'result/ai/dila_{dilate_iter}_{threshold}_rule_{touch_rule}.tif')
+              
+                
+            #     print(f"\tGrown result has been saved {output_path}")
+            #     print(f"\tIter:{i_dilate}. Last Input size = {input_size} and Output_size = {output_size}")
+            #     tifffile.imwrite(output_path, 
+            #     result,
+            #     compression ='zlib')
         print(f"\tFinish growing. Last Input size = {input_size} and Output_size = {output_size}")
     
     end_time = datetime.now()
@@ -167,6 +185,18 @@ def main(**kwargs):
         "log_path":log_path,
         "output_folder": output_folder
     }
+    
+    # Make meshes  
+    if is_make_meshes:  
+        tif_files = glob.glob(os.path.join(output_folder, '*.tif'))
+
+        for tif_file in tif_files:
+            make_mesh.make_mesh_for_tiff(tif_file,output_folder,
+                                num_threads=num_threads,no_zero = True,
+                                colormap = "color10",
+                                downsample_scale=downsample_scale,
+                                step_size=step_size)
+    
     return grow_dict
 
 if __name__ == "__main__":
@@ -226,6 +256,8 @@ if __name__ == "__main__":
     
     
     
+
+    
     # assert len(thresholds) == len(dilate_iters), f"thresholds and dilate_iters must have the same length, but got {len(thresholds)} and {len(dilate_iters)}."
      
     # img_path = os.path.join(workspace, 
@@ -253,7 +285,7 @@ if __name__ == "__main__":
     #     for i_dilate in range(1, dilate_iter+1):
     #         threshold_binary = ori_img > threshold
 
-    #         result = suture_morpho.dilation_one_iter(result, threshold_binary ,
+    #         result = sprout_core.dilation_one_iter(result, threshold_binary ,
     #                                           touch_rule = touch_rule)
             
             
