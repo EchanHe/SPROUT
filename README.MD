@@ -110,6 +110,17 @@ TODO: Currently under testing
 The current colourmap has 10 colours, mesh colours follow its order mapping the segmentation class 1-10, and recur using them after more than 11. ![Color Map](./material/colourmap.png)
 
 
+### 4. Parallelization Support
+
+All SPROUT scripts (`make_seeds.py`, `make_seeds_all.py`, `make_seeds_merged.py`, `make_grow_result.py`, `make_mesh.py`) support **parallelization** using Python's `threading` library. This allows for faster execution by distributing tasks across multiple threads.
+
+- **How It Works**:  
+  You can specify the number of threads in the configuration file (`num_threads`). By utilizing multiple threads, the scripts can process data simultaneously, significantly improving efficiency for large datasets or computationally intensive tasks.
+
+- **Recommendation**:  
+  For optimal performance, set `num_threads` to match the number of CPU cores on your system.
+
+
 
 ### Tutorial
 
