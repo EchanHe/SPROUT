@@ -51,7 +51,13 @@ This approach and code are highly inspired by BounTI (M. Didziokas, E. Pauws, L.
 
 ## Usage
 
-### 1. Generate seeds
+### Tutorial
+
+A detailed tutorial with step-by-step instructions and screenshots is available in the [`./material/`](./material/) directory.
+
+Demo data for the tutorial can be found in the [`./data/`](./data/) directory.
+
+### 1. Seed Generation
 Use morphological transformations and connected components (initial segmentations for grow)
     
 1. `make_seeds.py` is the for generating seeds. Config file template: `make_seeds.yaml` 
@@ -69,12 +75,14 @@ Use morphological transformations and connected components (initial segmentation
 
 2. `make_seeds_all.py`, use the similar config except for `footprints`. As it generates seeds using 'ball', 'ball_XY', 'ball_XZ', 'ball_YZ'. And seeds are saved in subfolders with names match the footprint names.
 
-3. `make_seeds_merged.py` is the algorithm for generating seeds for automating merge seeds generated. This algorithm can detect separations of a segmented region, and also keep regions that might be segmented out during the further seed generation.
+#### Merged Seed Generation
+
+`make_seeds_merged.py` is the algorithm for generating seeds for automating merge seeds generated. This algorithm can detect separations of a segmented region, and also keep regions that might be segmented out during the further seed generation.
 
 Parameters need to be set on rules to detect the separations, and rules to keep segmented regions.
 
 
-### 2. Grow
+### 2. Seed Growth
 
 1. `make_grow_result.py` To grow the seeds to back to the original images with thresholds, or grow back to the binary segmentation<br>. Config file template: `make_grow_result.yaml`. 
     - workspace: The workspace folder. All below files and folders are based on the workspace
@@ -121,12 +129,6 @@ All SPROUT scripts (`make_seeds.py`, `make_seeds_all.py`, `make_seeds_merged.py`
   For optimal performance, set `num_threads` to match the number of CPU cores on your system.
 
 
-
-### Tutorial
-
-A detailed tutorial with step-by-step instructions and screenshots is available in the [`./material/`](./material/) directory.
-
-Demo data for the tutorial can be found in the [`./data/`](./data/) directory.
 
 ### Pipelines
 
@@ -180,36 +182,25 @@ TODO: add voxel size, by downsample the images.
 
 
 
+### BounTI Multithreaded Implementation
 
-### BounTI multithread implementation
-`./BounTI/run_bounti_mp.py` is used to run BounTI and BounTI flood, with a list of initial thresholds. 
+The script `./BounTI/run_bounti_mp.py` is designed to run **BounTI** and **BounTI Flood** using a multithreaded approach. It efficiently processes a list of initial thresholds in parallel, leveraging multiple threads for improved performance.
 
-## Parallelization:
-`make_mesh.py`, `make_seeds.py`, `make_seeds_foram.py`, `make_sutures` currently support running in multiple processes. Please check your CPU and set the right `num_threads` in the configuration file
+### Miscellaneous: Unzipping Morphosource Zip Files
 
-### Helper functions: Unzip a list of morphosource zip files
-`morphosource_unzip.ipynb` 
-`morphosource_unzip.py` .
-- Unzip all the `*.zip` files from a given folder (input folder) to a target folder
-- Save the unzip log. zip file path, unzip path, whether the unzip is success.
-Unzip all morphosource in a folder/
+The following scripts provide utilities for handling Morphosource datasets:
 
-Morphosource file structure.
+- **`morphosource_unzip.ipynb`**: Jupyter Notebook version for interactive use.
+- **`morphosource_unzip.py`**: Python script for command-line usage.
 
-
-### Unzip Morphosource Zip Files
-
-#### Scripts
-- **Notebook**: `morphosource/morphosource_unzip.ipynb`
-- **Python Script**: `morphosource/morphosource_unzip.py`
-
-These scripts are designed to streamline the process of extracting Morphosource files within a folder.
-
-#### Functionality
+#### Functionality:
 - Unzips all `*.zip` files from a specified input folder to a target output folder.
-- Logs the following details for each unzip operation:
-  - Path of the `.zip` file.
-  - Path of the unzipped content.
-  - Status of the operation (success or failure).
+- Logs important details for each file, including:
+  - Path of the original `.zip` file.
+  - Path of the extracted contents.
+  - Status of the extraction (success/failure).
+- Supports batch unzipping of Morphosource datasets in a folder.
 
+#### Morphosource File Structure:
+These scripts handle the expected Morphosource file structure, ensuring extracted files are well-organized for subsequent processing.
 

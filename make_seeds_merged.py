@@ -55,6 +55,7 @@ def make_seeds_merged_mp(img,
                       output_folder,
                       n_iters, 
                       segments,
+                      boundary = None,
                       num_threads = 1,
                       no_split_limit =3,
                       min_size=5,
@@ -76,6 +77,9 @@ def make_seeds_merged_mp(img,
     max_splits = segments
     
     img = img>=threshold
+
+    if boundary is not None:
+        img[boundary] = False
 
     if init_segments is None:
         init_segments = segments
@@ -253,6 +257,7 @@ def make_seeds_merged_by_thres_mp(img,
                       output_folder,
                       n_iters, 
                       segments,
+                      boundary =None,
                       num_threads = 1,
                       no_split_limit =3,
                       min_size=5,
@@ -278,6 +283,10 @@ def make_seeds_merged_by_thres_mp(img,
 
 
     mask = img>=thresholds[0]
+    
+    if boundary is not None:
+        mask[boundary] = False
+    
     for ero_iter in range(1, n_iters+1):
         mask = sprout_core.erosion_binary_img_on_sub(mask, kernal_size = 1,footprint=footprint)
     init_seed, _ = sprout_core.get_ccomps_with_size_order(mask,init_segments)
@@ -461,6 +470,7 @@ if __name__ == "__main__":
         if all(isinstance(t, int) for t in thresholds):
             if len(thresholds) == 1:
                 seed_merging_mode = "ERO"
+                thresholds = thresholds[0]
             elif len(thresholds) > 1:
                 seed_merging_mode = "THRE"
         else:

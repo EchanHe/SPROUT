@@ -79,7 +79,8 @@ def dilation_one_iter_mp(input_mask, threshold_binary,
                             num_threads,
                              touch_rule = 'stop',
                              segments=None, ero_shape = 'ball',
-                             to_grow_ids = None):
+                             to_grow_ids = None,
+                             boundary = None):
     if to_grow_ids is None:
         label_id_list = np.unique(input_mask)
         label_id_list = label_id_list[label_id_list!=0]
@@ -139,6 +140,9 @@ def dilation_one_iter_mp(input_mask, threshold_binary,
     #     result[dilated_binary_label_id & threshold_binary] = label_id  
         
         ## Save the results if there is needed         
+    
+    if boundary is not None:
+        result[boundary] = False
     
     return result
 
