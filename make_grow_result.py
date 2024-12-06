@@ -135,11 +135,11 @@ def grow_mp(**kwargs):
     downsample_scale = kwargs.get('downsample_scale', 10) 
     step_size  = kwargs.get('step_size', 2) 
     
-    boundary  = kwargs.get('boundary', None)
+    boundary_path  = kwargs.get('boundary_path', None)
     
     if num_threads is None:
         num_threads = max_threads-1
-    print(f"Parallel into {num_threads} threads")
+    
     # Test if the grown result and input's diff is more than this. Default is 10.
     # min_diff = 50
     # The number of iters for diff is less than diff_threshold
@@ -159,18 +159,31 @@ def grow_mp(**kwargs):
     input_mask = tifffile.imread(seg_path)
     ori_img = tifffile.imread(img_path)
 
+    if boundary_path is not None:
+        boundary = tifffile.imread(boundary_path)
+        boundary = sprout_core.check_and_cast_boundary(boundary)
 
     os.makedirs(output_folder , exist_ok=True)
     
     # Record the start time
     start_time = datetime.now()
-    print(f"""{start_time.strftime("%Y-%m-%d %H:%M:%S")}
-    Making growing for 
-        Img: {img_path}
-        Threshold for Img {thresholds}
-        Seed {seg_path} to grow {dilate_iters} iterations
-        Early stopping: min_diff = {min_diff} and tolerate_iters = {tolerate_iters}
-            """)
+    
+    
+    values_to_print = {   
+            "Segmentation Path": seg_path,
+            "Boundary Path": boundary_path,      
+            "Dilate Iterations": dilate_iters,
+            "Grow Thresholds": thresholds,
+            "Output Folder": output_folder,
+            "Save Interval": save_interval,
+            "num_threads": num_threads,
+            "Early stopping": f"min_diff = {min_diff} and tolerate_iters = {tolerate_iters}"
+            }
+    print("Start time: "+start_time.strftime("%Y-%m-%d %H:%M:%S"))
+    print(f"Growing on: {img_path}")
+    for key, value in values_to_print.items():
+        print(f"  {key}: {value}")
+
     
     df_log = []
 
@@ -191,7 +204,7 @@ def grow_mp(**kwargs):
         dilate_name = "_".join(str(s) for s in dilate_iters[:i+1])
         
         
-        print(f"threshold:{threshold} dilate_iter:{dilate_iter}.real_save_interval:{real_save_interval}")
+        # print(f"threshold:{threshold} dilate_iter:{dilate_iter}.real_save_interval:{real_save_interval}")
         for i_dilate in range(1, dilate_iter+1):
             threshold_binary = ori_img > threshold
             

@@ -32,7 +32,8 @@ if __name__ == "__main__":
     df = pd.read_csv(csv_path)
 
     pipeline_seed_required_keys =["csv_path",
-                                  "num_threads"
+                                  "num_threads",
+                                  "touch_rule"
                                   ]
 
     either_keys = ["dilate_iters", "grow_thresholds",
@@ -47,7 +48,11 @@ if __name__ == "__main__":
                                                               config,
                                                               either_keys)
         
-        
+    print("Finish reading yaml and csv")  
+    print(f"CSV: {csv_path}")
+    print(f"touch_rule: {touch_rule}")
+    print(f"num_threads: {num_threads}\n" )
+                 
 
     for index, row in df.iterrows():
         
@@ -58,9 +63,10 @@ if __name__ == "__main__":
         # s = tifffile.imread(seg_path)
     
         if "boundary_path" in df.columns and (not pd.isna(row['boundary_path'])):
-            boundary = tifffile.imread(row['boundary_path'])
+            boundary_path = row['boundary_path']
+            
         else:
-            boundary = None
+            boundary_path = None
     
         
         if "dilate_iters" in either_keys_info["keys_in_df"]:
@@ -97,24 +103,36 @@ if __name__ == "__main__":
         name = os.path.splitext(os.path.basename(input_path))[0]
         output_sub_folder = os.path.join(output_folder , name)
 
+
         output = make_grow_result.grow_mp(
             img_path = input_path,
             seg_path = seg_path,
             dilate_iters = dilate_iters,
             thresholds = grow_thresholds,
             save_interval = save_interval,  
-            touch_rule = 'stop', 
+            touch_rule = touch_rule, 
             num_threads = num_threads,
             workspace = None,
-            boundary = boundary,
+            boundary_path = boundary_path,
             output_folder = output_sub_folder,
             final_grow_output_folder = output_folder
         )
 
-        df.loc[index,'final_output_path'] = output['final_output_path']
-        df.to_csv(os.path.join(output_folder, "output_info.csv"), index = False)
+        # df.loc[index,'final_output_path'] = output['final_output_path']
+        # df.to_csv(os.path.join(output_folder, "output_info.csv"), index = False)
 
 
+        # if is_make_mesh:
+        #     mesh_folder = grow_dict['output_folder']
+        #     tif_files = glob.glob(os.path.join(mesh_folder, '*.tif'))
+        #     for tif_file in tif_files:
+        #         make_mesh.make_mesh_for_tiff(tif_file,mesh_folder,
+        #                             num_threads,no_zero = True,
+        #                             colormap = "color10")
+
+        # for grow_dict in grow_dict_list:
+        #     vis_lib.plot_grow(pd.read_csv(grow_dict['log_path']),
+        #         grow_dict['log_path'] +".png")
 
 
             
