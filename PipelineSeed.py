@@ -61,7 +61,7 @@ if __name__ == "__main__":
     else:
         either_keys = ["ero_iters", "segments",
                        "output_folder", "name_prefix", "seed_threshold"]
-    csv_required_keys = ['file_path']
+    csv_required_keys = ['img_path']
     
     sprout_core.check_required_keys(config,pipeline_seed_required_keys)          
     sprout_core.check_csv_required_keys(df,csv_required_keys)  
@@ -79,7 +79,7 @@ if __name__ == "__main__":
     
     for index, row in df.iterrows():
         
-        input_path = row['file_path']
+        input_path = row['img_path']
         img = tifffile.imread(input_path)
         
         if "boundary_path" in df.columns and (not pd.isna(row['boundary_path'])):
