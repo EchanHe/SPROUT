@@ -4,10 +4,15 @@ import make_mesh
 import yaml
 import os
 import glob
+import tifffile
+
+
+import make_seeds_merged
 
 import pandas as pd
-import suture_morph.vis_lib as vis_lib
-import suture_morph.suture_morpho as suture_morpho
+import sprout_core.vis_lib as vis_lib
+import sprout_core.sprout_core as sprout_core
+
 
 def load_config_yaml(config, parent_key=''):
     for key, value in config.items():
@@ -15,6 +20,19 @@ def load_config_yaml(config, parent_key=''):
             load_config_yaml(value, parent_key='')
         else:
             globals()[parent_key + key] = value
+
+
+pipeline_seed_required_keys = [
+    
+    "csv_path",
+    "seed_mode",
+    
+    
+    ## Must have in yaml
+    "num_threads",
+    # "ero_iters",
+    # "segments",
+]
 
 
 if __name__ == "__main__":
@@ -25,65 +43,201 @@ if __name__ == "__main__":
     if extension == '.yaml':
         with open(file_path, 'r') as file:
             config = yaml.safe_load(file)
+            
             workspace = config.get("workspace","")
         load_config_yaml(config)
     
 
+    for key, value in config.items():
+        print(f"\t{key}: {value}")
+
     df = pd.read_csv(csv_path)
     
-    #TODO check if This df fits the requirements
+    if seed_mode == "original" or seed_mode == "merge":
     
-    #a check to see if all files exist
-    suture_morpho.check_tiff_files(df['file_name'])
-
+        either_keys = ["ero_iters", "segments",
+                       "output_folder", "name_prefix",
+                       "footprints", "seed_threshold"]
+    else:
+        either_keys = ["ero_iters", "segments",
+                       "output_folder", "name_prefix", "seed_threshold"]
+    csv_required_keys = ['file_path']
     
-    output_dict_list = []
+    sprout_core.check_required_keys(config,pipeline_seed_required_keys)          
+    sprout_core.check_csv_required_keys(df,csv_required_keys)  
     
-
-    for idx, row in df.iterrows():
-        file_name = row["file_name"]
-        file_name_no_ext = os.path.splitext(os.path.basename(file_name))[0]
+    either_keys_info = sprout_core.check_either_csv_yaml_keys(df,
+                                                              config,
+                                                              either_keys)
+    
+    # Set the name_prefix
+    
+    
+    
         
-        target_thresholds = eval(row['target_thresholds'])
         
-        if 'output_seed_folder' in df.columns:
-            output_seed_folder = row['output_seed_folder']
+    
+    for index, row in df.iterrows():
+        
+        input_path = row['file_path']
+        img = tifffile.imread(input_path)
+        
+        if "boundary_path" in df.columns and (not pd.isna(row['boundary_path'])):
+            boundary = tifffile.imread(row['boundary_path'])
         else:
-            output_seed_folder = os.path.join(output_seed_root_dir, file_name_no_ext)
+            boundary = None
+    
         
-        print(file_name, target_thresholds)
-
-        output_dict = make_seeds_all.main(workspace=workspace,
-                                      file_name= file_name,
-                                      output_log_file = output_log_file,
-                                      output_seed_folder = output_seed_folder,
-                                      ero_iters = ero_iters,
-                                      target_thresholds = target_thresholds,
-                                      segments = segments
-                                      )
+        if "ero_iters" in either_keys_info["keys_in_df"]:
+            ero_iters = row['ero_iters']
+        if "segments" in either_keys_info["keys_in_df"]:
+            segments = row['segments']
+        if "name_prefix" in either_keys_info["keys_in_df"]:    
+            name_prefix = row['name_prefix']
+        if "footprints" in either_keys_info["keys_in_df"]:    
+            footprints = row['footprints']
+        if "seed_threshold" in either_keys_info["keys_in_df"]:    
+            seed_threshold = row['seed_threshold']    
+ 
         
-        output_dict_list.append(output_dict)
-        # make_seeds_all.plot(output_dict , os.path.join(output_seed_folder,"log.png"))
+        output_names = f"{name_prefix}_{os.path.splitext(os.path.basename(input_path))[0]}"
         
-    for idx, output_dict in enumerate(output_dict_list):
-        merged_img_name = os.path.basename(output_dict["output_seed_sub_folders"])
-        make_seeds_all.plot(output_dict , os.path.join(output_seed_root_dir,f"{merged_img_name}.png"))
+        if seed_mode == "original":
+            if type(footprints) is str:
+                footprints = [footprints]   
+            
+            output_dict = make_seeds_all.for_pipeline(
+                            
+                                    img= img,
+                                    output_folder = output_folder,
+                                    ero_iters = ero_iters,
+                                    target_thresholds = seed_threshold,
+                                    segments = segments,
+                                    name_prefix = output_names,
+                                    num_threads = num_threads,
+                                    footprints = footprints
+                                    )
+        elif seed_mode == "all":
+            output_dict = make_seeds_all.for_pipeline(
+                            img= img,
+                            output_folder = output_folder,
+                            ero_iters = ero_iters,
+                            target_thresholds = seed_threshold,
+                            segments = segments,
+                            name_prefix = output_names,
+                            num_threads = num_threads,
+                            )
+        
+        elif seed_mode == "merge":
+            if type(footprints) is list:
+                footprints = footprints [0]
+            if len(seed_threshold)==1:
+                print("Running make_seeds_merged")
+                seed ,ori_combine_ids_map , output_dict=make_seeds_merged.make_seeds_merged_mp(                           
+                                        img= img,
+                                        threshold= seed_threshold[0],
+                                        output_folder=output_folder,
+                                        boundary = boundary,
+                                        n_iters = ero_iters,
+                                        segments = segments,
+                                        
+                                        no_split_limit =3,
+                                        # min_size= min_size,
+                                        sort = True,
+                                        background = 0,
+                                        save_every_iter = True,
+                                        name_prefix = output_names,
+                                        init_segments = None
+                                        )
+            else:
+                print("Running make_seeds_merged_by_thres_mp")
+                seed ,ori_combine_ids_map , output_dict=make_seeds_merged.make_seeds_merged_by_thres_mp(                           
+                                        img= img,
+                                        threshold= seed_threshold,
+                                        output_folder=output_folder,
+                                        boundary = boundary,
+                                        n_iters = ero_iters,
+                                        segments = segments,
+                                        
+                                        no_split_limit =3,
+                                        # min_size= min_size,
+                                        sort = True,
+                                        background = 0,
+                                        save_every_iter = True,
+                                        name_prefix = output_names,
+                                        init_segments = None
+                                        )
+        
 
-# output = make_seeds.main(workspace= workspace,
-#                 file_name= file_name,
-#                 output_log_file = output_log_file,
-#                 output_seed_folder = output_seed_folder,
-#                 num_threads = num_threads,
-#                 ero_iters = ero_iters,
-#                 target_thresholds = target_thresholds,
-#                 segments = segments,
-#                 footprints = footprints)
 
-# output_seed_folder = output[0]
+        
+    
+    # for csv_required_key in csv_required_keys:
+    # if "file_path" not in df.columns:
+    #     raise Exception("'file_path' must be present as a column in the CSV file.")
+    # else:
+    #     print("'file_path' is present in the CSV file.")
+    
+    # try:
+    #     yaml_data, df
+    # except Exception as e:
+    #     print(e)
 
-# tif_files = glob.glob(os.path.join(output_seed_folder, '*.tif'))
+#     
+    
+#     #TODO check if This df fits the requirements
+    
+#     #a check to see if all files exist
+#     sprout_core.check_tiff_files(df['file_name'])
 
-# for tif_file in tif_files:
-#     make_mesh.make_mesh_for_tiff(tif_file,output_seed_folder,
-#                         num_threads,no_zero = True,
-#                         colormap = "color10")
+    
+#     output_dict_list = []
+    
+
+#     for idx, row in df.iterrows():
+#         file_name = row["file_name"]
+#         file_name_no_ext = os.path.splitext(os.path.basename(file_name))[0]
+        
+#         target_thresholds = eval(row['target_thresholds'])
+        
+#         if 'output_seed_folder' in df.columns:
+#             output_seed_folder = row['output_seed_folder']
+#         else:
+#             output_seed_folder = os.path.join(output_seed_root_dir, file_name_no_ext)
+        
+#         print(file_name, target_thresholds)
+
+#         output_dict = make_seeds_all.main(workspace=workspace,
+#                                       file_name= file_name,
+#                                       output_log_file = output_log_file,
+#                                       output_seed_folder = output_seed_folder,
+#                                       ero_iters = ero_iters,
+#                                       target_thresholds = target_thresholds,
+#                                       segments = segments
+#                                       )
+        
+#         output_dict_list.append(output_dict)
+# #         # make_seeds_all.plot(output_dict , os.path.join(output_seed_folder,"log.png"))
+        
+#     for idx, output_dict in enumerate(output_dict_list):
+#         merged_img_name = os.path.basename(output_dict["output_seed_sub_folders"])
+#         make_seeds_all.plot(output_dict , os.path.join(output_seed_root_dir,f"{merged_img_name}.png"))
+
+# # output = make_seeds.main(workspace= workspace,
+# #                 file_name= file_name,
+# #                 output_log_file = output_log_file,
+# #                 output_seed_folder = output_seed_folder,
+# #                 num_threads = num_threads,
+# #                 ero_iters = ero_iters,
+# #                 target_thresholds = target_thresholds,
+# #                 segments = segments,
+# #                 footprints = footprints)
+
+# # output_seed_folder = output[0]
+
+# # tif_files = glob.glob(os.path.join(output_seed_folder, '*.tif'))
+
+# # for tif_file in tif_files:
+# #     make_mesh.make_mesh_for_tiff(tif_file,output_seed_folder,
+# #                         num_threads,no_zero = True,
+# #                         colormap = "color10")

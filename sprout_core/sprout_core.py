@@ -7,6 +7,58 @@ import tifffile
 
 
 
+def check_required_keys(data, required_keys):
+
+    
+    # Find missing keys
+    missing_keys = [key for key in required_keys if key not in data]
+    
+    # Raise exception if any keys are missing
+    if missing_keys:
+        raise Exception(f"Missing required keys in YAML file: {missing_keys}")
+    else:
+        print("All required keys are present.")
+
+def check_csv_required_keys(df, required_keys):
+    # Find missing keys
+    missing_keys = [key for key in required_keys if key not in df.columns]
+    
+    # Raise exception if any keys are missing
+    if missing_keys:
+        raise Exception(f"Missing required keys in csv file: {missing_keys}")
+    else:
+        print("All required keys are present.")
+
+def check_either_csv_yaml_keys(df, data, required_keys):
+    # Find missing keys
+    missing_keys_df = [key for key in required_keys if key not in df.columns]
+    
+    missing_keys_data = [key for key in required_keys if key not in data]
+    
+    and_result = list(set(missing_keys_df) & set(missing_keys_data))
+    
+    conflicting_keys = [key for key in required_keys if key in df.columns and key in data]
+    
+    # Raise exception if any keys are missing
+    if and_result:
+        raise Exception(f"Missing required keys in either both CSV or YAML: {and_result}")
+    else:
+        print("All required keys are present in either both CSV or YAML.")
+        
+
+    if conflicting_keys:
+        raise Exception(f"Conflicting keys found in both CSV and YAML: {conflicting_keys}")
+    else:
+        print("No conflicting keys found between CSV and YAML.")
+    
+    keys_in_df = [key for key in required_keys if key in df.columns]
+    
+    # Find which keys are in the YAML config
+    keys_in_data = [key for key in required_keys if key in data]
+
+    return {"keys_in_df": keys_in_df, "keys_in_config": keys_in_data}
+
+
 ball_fp_YZ = np.array(
                 [[[0, 0, 0],
                     [0, 1, 0],
@@ -303,6 +355,7 @@ def erosion_binary_img_on_sub(input, kernal_size = 1, footprint='ball'):
                 subset_3d = binary_erosion(subset_3d, ball_fp_YZ)
                 subset_3d = binary_erosion(subset_3d, ball_fp_YZ)
                 subset_3d = binary_erosion(subset_3d, fp_X)
+
             
             input[min_z:max_z+1, min_y:max_y+1, min_x:max_x+1] = subset_3d
     else:
@@ -880,9 +933,9 @@ def reorder_segmentation(segmentation, min_size=None, sort_ids=True):
     sizes = {cls: np.sum(segmentation == cls) for cls in unique_classes}
 
     # Print the size of each class
-    print("Original Class Sizes:")
-    for cls, size in sizes.items():
-        print(f"Class {cls}: Size {size}")
+    # print("Original Class Sizes:")
+    # for cls, size in sizes.items():
+    #     print(f"Class {cls}: Size {size}")
     
     # Sort classes by size in descending order
     sorted_classes = sorted(sizes, key=sizes.get, reverse=True)
@@ -903,9 +956,9 @@ def reorder_segmentation(segmentation, min_size=None, sort_ids=True):
         reordered_segmentation[segmentation == old] = new
 
     # Print the mapping and reordered sizes
-    print("\nReordered Class Mapping and Sizes:")
-    for old, new in class_mapping.items():
-        print(f"Old Class {old} -> New Class {new}, Size: {sizes[old]}")
+    # print("\nReordered Class Mapping and Sizes:")
+    # for old, new in class_mapping.items():
+    #     print(f"Old Class {old} -> New Class {new}, Size: {sizes[old]}")
 
     return reordered_segmentation, class_mapping
 

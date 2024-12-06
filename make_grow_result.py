@@ -41,10 +41,8 @@ def grow_function(result, threshold_binary, label_id_list,touch_rule):
     
     for label_id in label_id_list:
     
-        print(f"processing class id {label_id}")
-        
-        
-        
+        # print(f"processing class id {label_id}")
+
         dilated_binary_label_id = (result ==label_id)
         dilated_binary_label_id = sprout_core.dilation_binary_img_on_sub(dilated_binary_label_id, 
                                                                     margin = 2, kernal_size = 1)
@@ -94,7 +92,7 @@ def dilation_one_iter_mp(input_mask, threshold_binary,
     # Create a list to hold the threads
     threads = []
     for sublist in sublists:
-        print(f"Processing sublist {sublist}")
+        # print(f"Processing sublist {sublist}")
         
         thread = threading.Thread(target=grow_function, args=(result, 
                                                               threshold_binary,
@@ -106,40 +104,7 @@ def dilation_one_iter_mp(input_mask, threshold_binary,
     # Wait for all threads to complete
     for thread in threads:
         thread.join()
-    
-    
-    # for label_id in label_id_list:
-    #     dilated_binary_label_id = (result ==label_id)
-    #     dilated_binary_label_id = sprout_core.dilation_binary_img_on_sub(dilated_binary_label_id, 
-    #                                                             margin = 2, kernal_size = 1)
-        
-        
-    #     if touch_rule == 'stop':
-    #         # This is the binary for non-label of the updated mask
-    #         binary_non_label = (result !=label_id) & (result != 0)
-    #         # See if original mask overlay with grown label_id mask
-    #         overlay = np.logical_and(binary_non_label, dilated_binary_label_id)
-                        
-    #         # # Check if there are any True values in the resulting array
-    #         # HAS_OVERLAY = np.any(overlay)
-            
-    #         # Quicker way to do intersection check
-    #         inter = np.sum(binary_non_label[dilated_binary_label_id])
-    #         HAS_OVERLAY = inter>0
-            
-    #         # print(f"""
-    #         #     np.sum((result ==label_id)){np.sum((result ==label_id))},
-    #         #     np.sum(dilated_binary_label_id){np.sum(dilated_binary_label_id)},
-    #         #     np.sum(overlay){np.sum(overlay)},
-    #         #     np.sum(binary_non_label){np.sum(binary_non_label)}
-    #         #     """)
-            
-    #         if HAS_OVERLAY:
-    #             dilated_binary_label_id[overlay] = False
-        
-    #     result[dilated_binary_label_id & threshold_binary] = label_id  
-        
-        ## Save the results if there is needed         
+     
     
     if boundary is not None:
         result[boundary] = False
@@ -157,6 +122,7 @@ def grow_mp(**kwargs):
     img_path = kwargs.get('img_path', None)
     seg_path = kwargs.get('seg_path', None) 
     output_folder = kwargs.get('output_folder', None) 
+    final_grow_output_folder = kwargs.get('final_grow_output_folder', None) 
     to_grow_ids = kwargs.get('to_grow_ids', None) 
     
     is_sort = kwargs.get('is_sort', True) 
@@ -169,6 +135,7 @@ def grow_mp(**kwargs):
     downsample_scale = kwargs.get('downsample_scale', 10) 
     step_size  = kwargs.get('step_size', 2) 
     
+    boundary  = kwargs.get('boundary', None)
     
     if num_threads is None:
         num_threads = max_threads-1
@@ -188,7 +155,7 @@ def grow_mp(**kwargs):
         seg_path = os.path.join(workspace, seg_path)
         output_folder = os.path.join(workspace, output_folder)
     
-    base_name = os.path.basename(seg_path)
+    base_name = os.path.splitext(os.path.basename(img_path))[0]
     input_mask = tifffile.imread(seg_path)
     ori_img = tifffile.imread(img_path)
 
@@ -242,7 +209,8 @@ def grow_mp(**kwargs):
             result = dilation_one_iter_mp(result, threshold_binary ,
                                           num_threads=num_threads,
                                             touch_rule = touch_rule,
-                                            to_grow_ids=to_grow_ids)
+                                            to_grow_ids=to_grow_ids,
+                                            boundary=boundary)
             
             # Get the output size for the log
             output_size = np.sum(result!=0)
@@ -290,6 +258,15 @@ def grow_mp(**kwargs):
             #     compression ='zlib')
         print(f"\tFinish growing. Last Input size = {input_size} and Output_size = {output_size}")
     
+    ## Save the final grow output as the final_<img_name>
+    if final_grow_output_folder is not None:
+        final_output_path = os.path.join(final_grow_output_folder,f"final_grow_{base_name}.tiff")
+    else:
+        final_output_path = os.path.join(output_folder,f"final_grow_{base_name}.tiff")
+    tifffile.imwrite(final_output_path, 
+        result,
+        compression ='zlib')
+    
     end_time = datetime.now()
     running_time = end_time - start_time
     total_seconds = running_time.total_seconds()
@@ -302,6 +279,7 @@ def grow_mp(**kwargs):
     df_log.to_csv(log_path, index = False)
 
     grow_dict = {
+        "final_output_path": final_output_path,
         "log_path":log_path,
         "output_folder": output_folder
     }
