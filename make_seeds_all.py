@@ -101,7 +101,9 @@ def for_pipeline_wrapper(img_path, boundary_path=None, **kwargs):
         boundary = tifffile.imread(boundary_path)
     
     # Call the original function with all the necessary arguments
-    for_pipeline(img=img, boundary=boundary, **kwargs)
+    output_dict = for_pipeline(img=img, boundary=boundary, **kwargs)
+    
+    return output_dict
 
 
 

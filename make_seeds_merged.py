@@ -97,7 +97,7 @@ def make_seeds_merged_path_wrapper(img_path,
     
     
     # Call the original function
-    make_seeds_merged_mp(img=img,
+    seed ,ori_combine_ids_map , output_dict=make_seeds_merged_mp(img=img,
                          threshold=threshold,
                          output_folder=output_folder,
                          n_iters=n_iters,
@@ -122,6 +122,8 @@ def make_seeds_merged_path_wrapper(img_path,
     total_seconds = running_time.total_seconds()
     minutes, _ = divmod(total_seconds, 60)
     print(f"Running time:{minutes}")
+    
+    return seed ,ori_combine_ids_map , output_dict
 
 
 def make_seeds_merged_mp(img,
@@ -392,7 +394,7 @@ def make_seeds_merged_by_thres_path_wrapper(img_path,
         print(f"  {key}: {value}")
     
     # Call the original function
-    make_seeds_merged_by_thres_mp(img=img,
+    combine_seed,ori_combine_ids_map, output_dict  = make_seeds_merged_by_thres_mp(img=img,
                                   thresholds=thresholds,
                                   output_folder=output_folder,
                                   n_iters=n_iters,
@@ -416,6 +418,8 @@ def make_seeds_merged_by_thres_path_wrapper(img_path,
     total_seconds = running_time.total_seconds()
     minutes, _ = divmod(total_seconds, 60)
     print(f"Running time:{minutes}")
+    
+    return combine_seed,ori_combine_ids_map, output_dict
 
 def make_seeds_merged_by_thres_mp(img,
                       thresholds,
