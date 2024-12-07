@@ -58,6 +58,27 @@ def check_either_csv_yaml_keys(df, data, required_keys):
 
     return {"keys_in_df": keys_in_df, "keys_in_config": keys_in_data}
 
+def check_and_cast_boundary(boundary):
+    # Check if the boundary is a matrix with only True and False
+    if isinstance(boundary, np.ndarray) and np.issubdtype(boundary.dtype, np.bool_):
+        # print("Boundary is a valid True/False matrix.")
+        return boundary  # No changes needed
+
+    # Check if the boundary has only two values: 0 and another value
+    elif isinstance(boundary, np.ndarray) and len(np.unique(boundary)) == 2:
+        unique_values = np.unique(boundary)
+        if 0 in unique_values:
+            # print("Boundary has two values: 0 and another. Casting to True/False.")
+            # Cast to True/False: replace 0 with False and others with True
+            return boundary != 0
+        else:
+            raise ValueError("Boundary is not supported. It must be a True/False matrix or have two values (0 and other).")
+    
+    # If neither condition is met, raise an error
+    else:
+        raise ValueError("Boundary is not supported. It must be a True/False matrix or have two values (0 and other).")
+
+
 
 ball_fp_YZ = np.array(
                 [[[0, 0, 0],

@@ -160,9 +160,12 @@ def grow_mp(**kwargs):
     ori_img = tifffile.imread(img_path)
 
     if boundary_path is not None:
+        if workspace is not None:
+            boundary_path = os.path.join(workspace, boundary_path)
         boundary = tifffile.imread(boundary_path)
         boundary = sprout_core.check_and_cast_boundary(boundary)
-
+    else:
+        boundary = None
     os.makedirs(output_folder , exist_ok=True)
     
     # Record the start time

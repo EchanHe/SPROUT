@@ -1,17 +1,22 @@
-# This is a comment
+### Must-have inputs
 
-csv_path: "./result/procavia/seeds_input.csv"
-num_threads: ~
-  # - 1
-  # - 2
+# The path to the CSV file
+# Must have column: img_path, seg_path
+# If boundary_path is included, seed generation will read in boundary as well
+csv_path: "./data/test_batch_boundary/input.csv"
 
-# if there isn't a ero_iter col in csv, set ero_iters for all input to this one
+num_threads: 10
+# Can be 'original', 'all', and 'merge'
+# original: make seed using given footprints
+# all: make seeds using four footprints
+# merge: use make_seeds_merged
+seed_mode: 'merge'
+
+### Optional inputs
+#Optional, if there isn't one in csv, set here for all input
 ero_iters: 3
-# if there isn't a segments col in csv, set segments for all input to this one
 segments: 25
+output_folder: "./data/test_batch_boundary/seed_all"
 
-# This is the path of a output root directory
-# sub folders with seeds using the input name will be saved to here
-output_seed_root_dir: "./result/procavia/seeds_batch"
-# if there isn't a output_log_file col in csv, set output_log_file for all input to this one
-output_log_file: "seed_log.json"
+name_prefix: ""
+footprints: "ball_XY"

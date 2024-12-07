@@ -16,7 +16,7 @@ import multiprocessing
 max_threads = multiprocessing.cpu_count()
 
 # import configparser
-# import sprout_core.sprout_core as sprout_core
+import sprout_core.sprout_core as sprout_core
 import make_seeds
 
 import sprout_core.vis_lib as vis_lib
@@ -68,15 +68,58 @@ support_footprints =['ball','cube',
 
 output_log_file =  "seed_log.json"
 
+
+def for_pipeline_wrapper(img_path, boundary_path=None, **kwargs):
+    """
+    Wrapper for the `for_pipeline` function that reads `img_path` and `boundary_path`
+    and passes them along with additional keyword arguments to the original function.
+    
+    Parameters:
+        img_path (str): Path to the image file to be processed.
+        boundary_path (str, optional): Path to the boundary file. Defaults to None.
+        **kwargs: Additional parameters to pass to `for_pipeline`.
+    """
+
+    
+    # Prepare values for printing
+    values_to_print = {
+        "Boundary Path": boundary_path if boundary_path else "None"
+    }
+    # Print detailed values
+    print(f"Processing Image: {img_path}")
+    for key, value in values_to_print.items():
+        print(f"  {key}: {value}")
+    
+    
+    # Read the image from img_path
+    img = tifffile.imread(img_path)
+    # print(f"Loaded image from: {img_path}")
+    
+    # Read the boundary from boundary_path, if provided
+    boundary = None
+    if boundary_path is not None:
+        boundary = tifffile.imread(boundary_path)
+    
+    # Call the original function with all the necessary arguments
+    for_pipeline(img=img, boundary=boundary, **kwargs)
+
+
+
 def for_pipeline(**kwargs):
     img = kwargs.get('img', None) 
+    boundary  = kwargs.get('boundary', None) 
+    
     # output_log_file = kwargs.get('output_log_file', None) 
     output_folder = kwargs.get('output_folder', None) 
     name_prefix = kwargs.get('name_prefix', None) 
     
     # Seed generation related 
     ero_iters = kwargs.get('ero_iters', None)
-    target_thresholds = kwargs.get('target_thresholds', None)  
+    target_thresholds = kwargs.get('target_thresholds', None) 
+
+    if isinstance(target_thresholds, int):
+        target_thresholds = [target_thresholds]
+ 
     segments = kwargs.get('segments', None)  
     num_threads = kwargs.get('num_threads', None) 
     
@@ -84,8 +127,8 @@ def for_pipeline(**kwargs):
     num_threads = kwargs.get('num_threads', None) 
     downsample_scale = kwargs.get('downsample_scale', 10) 
     step_size  = kwargs.get('step_size', 2) 
-    
-    step_size  = kwargs.get('step_size', 2) 
+
+    footprints = kwargs.get('footprints', None)
 
     if num_threads is None:
         num_threads = 1
@@ -93,7 +136,32 @@ def for_pipeline(**kwargs):
     if num_threads>=max_threads:
         num_threads = max_threads-1
 
-    footprints = kwargs.get('footprints', None)
+
+
+    # Prepare values to print
+    # values_to_print = {
+    #     "Output Folder": output_folder,
+    #     "Name Prefix": name_prefix,
+    #     "Erosion Iterations": ero_iters,
+    #     "Target Thresholds": target_thresholds,
+    #     "Segments": segments,
+    #     "Number of Threads": num_threads,
+    #     "Make Meshes": is_make_meshes,
+    #     "Downsample Scale": downsample_scale,
+    #     "Step Size": step_size,
+    #     "Footprints": footprints,
+    #     "pre_set_sub_folders": pre_set_sub_folders
+    # }
+
+    # # Print values
+    # print("Pipeline Configuration:")
+    # for key, value in values_to_print.items():
+    #     print(f"  {key}: {value}")
+
+
+    if boundary is not None:
+        boundary = sprout_core.check_and_cast_boundary(boundary)
+        img[boundary] = False
     
     if footprints is None:
         footprint_list = [footprint*ero_iters for footprint in pre_set_footprint_list]
@@ -197,6 +265,8 @@ def main(**kwargs):
     num_threads = kwargs.get('num_threads', None) 
     downsample_scale = kwargs.get('downsample_scale', 10) 
     step_size  = kwargs.get('step_size', 2) 
+    
+    footprints = kwargs.get('footprints', None)
 
     if num_threads is None:
         num_threads = len(target_thresholds)

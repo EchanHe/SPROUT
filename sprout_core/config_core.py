@@ -31,7 +31,18 @@ def check_file_extension(file_path):
         return True
     else:
         return False
- 
+
+
+
+
+
+
+
+try:
+    check_required_keys(yaml_path, required_keys)
+except Exception as e:
+    print(e)
+
 if __name__ == "__main__":           
     # Load the YAML file
     with open('./test.yaml', 'r') as file:

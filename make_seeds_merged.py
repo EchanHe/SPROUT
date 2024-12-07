@@ -3,7 +3,7 @@ import pandas as pd
 # from PIL import Image
 from tifffile import imread, imwrite
 import os,sys
-
+from datetime import datetime
 import glob
 import threading
 lock = threading.Lock()
@@ -50,6 +50,80 @@ def merged_seeds_log_results(output_dict=None, **kwargs):
 
     return output_dict
 
+
+import tifffile
+
+def make_seeds_merged_path_wrapper(img_path,
+                              threshold,
+                              output_folder,
+                              n_iters,
+                              segments,
+                              boundary_path=None,
+                              num_threads=1,
+                              no_split_limit=3,
+                              min_size=5,
+                              sort=True,
+                              min_split_prop=0.01,
+                              background=0,
+                              save_every_iter=False,
+                              save_merged_every_iter=False,
+                              name_prefix="Merged_seed",
+                              init_segments=None,
+                              footprint="ball",
+                              min_split_sum_prop=0):
+    """
+    Wrapper for make_seeds_merged_mp that reads img_path and boundary_path before calling the function.
+    """
+    # Read the image
+    img = tifffile.imread(img_path)
+    print(f"Loaded image from: {img_path}")
+    
+    # Read the boundary if provided
+    boundary = None
+    if boundary_path is not None:
+        boundary = tifffile.imread(boundary_path)
+    
+    # Prepare values for printing
+    start_time = datetime.now()
+    values_to_print = {
+        "Boundary Path": boundary_path if boundary_path else "None"
+    }
+
+    # Print detailed values
+    print("Start time: " + start_time.strftime("%Y-%m-%d %H:%M:%S"))
+    print(f"Processing Image: {img_path}")
+    for key, value in values_to_print.items():
+        print(f"  {key}: {value}")
+    
+    
+    # Call the original function
+    make_seeds_merged_mp(img=img,
+                         threshold=threshold,
+                         output_folder=output_folder,
+                         n_iters=n_iters,
+                         segments=segments,
+                         boundary=boundary,
+                         num_threads=num_threads,
+                         no_split_limit=no_split_limit,
+                         min_size=min_size,
+                         sort=sort,
+                         min_split_prop=min_split_prop,
+                         background=background,
+                         save_every_iter=save_every_iter,
+                         save_merged_every_iter=save_merged_every_iter,
+                         name_prefix=name_prefix,
+                         init_segments=init_segments,
+                         footprint=footprint,
+                         min_split_sum_prop=min_split_sum_prop)
+
+
+    end_time = datetime.now()
+    running_time = end_time - start_time
+    total_seconds = running_time.total_seconds()
+    minutes, _ = divmod(total_seconds, 60)
+    print(f"Running time:{minutes}")
+
+
 def make_seeds_merged_mp(img,
                       threshold,
                       output_folder,
@@ -64,11 +138,33 @@ def make_seeds_merged_mp(img,
                       background = 0,
                       save_every_iter = False,
                       save_merged_every_iter = False,
-                      name_prefix = "comp_seed",
+                      name_prefix = "Merged_seed",
                       init_segments = None,
                       footprint = "ball",
                       min_split_sum_prop = 0
                       ):
+
+
+    values_to_print = {
+        "Threshold": threshold,
+        "Output Folder": output_folder,
+        "Erosion Iterations": n_iters,
+        "Segments": segments,
+        "Number of Threads": num_threads,
+        "No Split Limit for iters": no_split_limit,
+        "Component Minimum Size": min_size,
+        "Sort": sort,
+        "Minimum Split Proportion": min_split_prop,
+        "Background Value": background,
+        "Save Every Iteration": save_every_iter,
+        "Save Merged Every Iteration": save_merged_every_iter,
+        "Name Prefix": name_prefix,
+        "Footprint": footprint,
+        "Minimum Split Sum Proportion": min_split_sum_prop
+    }
+
+    for key, value in values_to_print.items():
+        print(f"  {key}: {value}")
 
     output_name = f"{name_prefix}_thre_{threshold}_ero_{n_iters}"
     output_folder = os.path.join(output_folder, output_name)
@@ -79,6 +175,7 @@ def make_seeds_merged_mp(img,
     img = img>=threshold
 
     if boundary is not None:
+        boundary = sprout_core.check_and_cast_boundary(boundary)
         img[boundary] = False
 
     if init_segments is None:
@@ -252,6 +349,74 @@ def make_seeds_merged_mp(img,
     return combine_seed,ori_combine_ids_map, output_dict    
 
 
+def make_seeds_merged_by_thres_path_wrapper(img_path,
+                                       thresholds,
+                                       output_folder,
+                                       n_iters,
+                                       segments,
+                                       boundary_path=None,
+                                       num_threads=1,
+                                       no_split_limit=3,
+                                       min_size=5,
+                                       sort=True,
+                                       min_split_prop=0.01,
+                                       background=0,
+                                       save_every_iter=False,
+                                       save_merged_every_iter=False,
+                                       name_prefix="Merged_seed",
+                                       init_segments=None,
+                                       footprint="ball",
+                                       min_split_sum_prop=0):
+    """
+    Wrapper for make_seeds_merged_by_thres_mp that reads img_path and boundary_path before calling the function.
+    """
+    # Read the image
+    img = tifffile.imread(img_path)
+    print(f"Loaded image from: {img_path}")
+    
+    # Read the boundary if provided
+    boundary = None
+    if boundary_path is not None:
+        boundary = tifffile.imread(boundary_path)
+    
+    # Prepare values for printing
+    start_time = datetime.now()
+    values_to_print = {
+        "Boundary Path": boundary_path if boundary_path else "None"
+    }
+
+    # Print detailed values
+    print("Start time: " + start_time.strftime("%Y-%m-%d %H:%M:%S"))
+    print(f"Processing Image: {img_path}")
+    for key, value in values_to_print.items():
+        print(f"  {key}: {value}")
+    
+    # Call the original function
+    make_seeds_merged_by_thres_mp(img=img,
+                                  thresholds=thresholds,
+                                  output_folder=output_folder,
+                                  n_iters=n_iters,
+                                  segments=segments,
+                                  boundary=boundary,
+                                  num_threads=num_threads,
+                                  no_split_limit=no_split_limit,
+                                  min_size=min_size,
+                                  sort=sort,
+                                  min_split_prop=min_split_prop,
+                                  background=background,
+                                  save_every_iter=save_every_iter,
+                                  save_merged_every_iter=save_merged_every_iter,
+                                  name_prefix=name_prefix,
+                                  init_segments=init_segments,
+                                  footprint=footprint,
+                                  min_split_sum_prop=min_split_sum_prop)
+
+    end_time = datetime.now()
+    running_time = end_time - start_time
+    total_seconds = running_time.total_seconds()
+    minutes, _ = divmod(total_seconds, 60)
+    print(f"Running time:{minutes}")
+
 def make_seeds_merged_by_thres_mp(img,
                       thresholds,
                       output_folder,
@@ -266,11 +431,33 @@ def make_seeds_merged_by_thres_mp(img,
                       background = 0,
                       save_every_iter = False,
                       save_merged_every_iter = False,
-                      name_prefix = "comp_seed",
+                      name_prefix = "Merged_seed",
                       init_segments = None,
                       footprint = "ball",
                       min_split_sum_prop = 0
                       ):
+
+    values_to_print = {
+        "Thresholds": thresholds,
+        "Output Folder": output_folder,
+        "Erosion Iterations": n_iters,
+        "Segments": segments,
+        "Number of Threads": num_threads,
+        "No Split Limit for iters": no_split_limit,
+        "Component Minimum Size": min_size,
+        "Sort": sort,
+        "Minimum Split Proportion": min_split_prop,
+        "Background Value": background,
+        "Save Every Iteration": save_every_iter,
+        "Save Merged Every Iteration": save_merged_every_iter,
+        "Name Prefix": name_prefix,
+        "Footprint": footprint,
+        "Minimum Split Sum Proportion": min_split_sum_prop
+    }
+
+    for key, value in values_to_print.items():
+        print(f"  {key}: {value}")
+
 
     output_name = f"{name_prefix}_ero_{n_iters}"
     output_folder = os.path.join(output_folder, output_name)
@@ -285,7 +472,8 @@ def make_seeds_merged_by_thres_mp(img,
     mask = img>=thresholds[0]
     
     if boundary is not None:
-        mask[boundary] = False
+        boundary = sprout_core.check_and_cast_boundary(boundary)
+        img[boundary] = False
     
     for ero_iter in range(1, n_iters+1):
         mask = sprout_core.erosion_binary_img_on_sub(mask, kernal_size = 1,footprint=footprint)
@@ -441,11 +629,20 @@ def make_seeds_merged_by_thres_mp(img,
     # imwrite(output_path, combine_seed, 
     #     compression ='zlib')
     
-    combine_seed,_ = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort)
-    output_path = os.path.join(output_folder,output_name+'_sorted.tif')
-    print(f"\tSaving final output:{output_path}")
-    imwrite(output_path, combine_seed, 
-        compression ='zlib')
+    
+    if save_merged_every_iter:
+        combine_seed,_ = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort)
+        output_path = os.path.join(output_folder,output_name+f'ero_{ero_iter}_sorted.tif')
+        
+        print(f"\tSaving final output:{output_path}")
+        imwrite(output_path, combine_seed, 
+            compression ='zlib')    
+        
+    # combine_seed,_ = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort)
+    # output_path = os.path.join(output_folder,output_name+'_sorted.tif')
+    # print(f"\tSaving final output:{output_path}")
+    # imwrite(output_path, combine_seed, 
+    #     compression ='zlib')
     
              
     return combine_seed,ori_combine_ids_map, output_dict  

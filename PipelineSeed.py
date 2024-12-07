@@ -73,7 +73,10 @@ if __name__ == "__main__":
     # Set the name_prefix
     
     
-    
+    print("Finish reading yaml and csv")  
+    print(f"CSV: {csv_path}")
+    print(f"seed_mode: {seed_mode}")
+    print(f"num_threads: {num_threads}\n" )
         
         
     
@@ -83,9 +86,11 @@ if __name__ == "__main__":
         img = tifffile.imread(input_path)
         
         if "boundary_path" in df.columns and (not pd.isna(row['boundary_path'])):
-            boundary = tifffile.imread(row['boundary_path'])
+            boundary_path = row['boundary_path']
+            # boundary = tifffile.imread(row['boundary_path'])
+            # boundary = sprout_core.check_and_cast_boundary(boundary)
         else:
-            boundary = None
+            boundary_path = None
     
         
         if "ero_iters" in either_keys_info["keys_in_df"]:
@@ -96,19 +101,35 @@ if __name__ == "__main__":
             name_prefix = row['name_prefix']
         if "footprints" in either_keys_info["keys_in_df"]:    
             footprints = row['footprints']
-        if "seed_threshold" in either_keys_info["keys_in_df"]:    
-            seed_threshold = row['seed_threshold']    
+        if "seed_threshold" in either_keys_info["keys_in_df"]:  
+            seed_threshold = eval(row['seed_threshold']) if isinstance(row['seed_threshold'], str) else row['seed_threshold'] 
+
  
         
         output_names = f"{name_prefix}_{os.path.splitext(os.path.basename(input_path))[0]}"
+        
+        
+        # values_to_print = {
+        #     "Segmentation Path": row['seg_path'],
+        #     "Boundary Path": row['boundary_path'] if "boundary_path" in df.columns and not pd.isna(row['boundary_path']) else None,
+        #     "Erosion Iterations": ero_iters,
+        #     "Number of Segments": segments,
+        #     "footprints": output_folder,
+        #     "Save Interval": save_interval,
+        # }
+        # print(f"Growing on: {row['img_path']}")
+        # for key, value in values_to_print.items():
+        #     print(f"  {key}: {value}")
+        
         
         if seed_mode == "original":
             if type(footprints) is str:
                 footprints = [footprints]   
             
-            output_dict = make_seeds_all.for_pipeline(
-                            
-                                    img= img,
+            output_dict = make_seeds_all.for_pipeline_wrapper(
+                                    img_path= input_path,
+                                    boundary_path=boundary_path,
+                                    
                                     output_folder = output_folder,
                                     ero_iters = ero_iters,
                                     target_thresholds = seed_threshold,
@@ -118,8 +139,10 @@ if __name__ == "__main__":
                                     footprints = footprints
                                     )
         elif seed_mode == "all":
-            output_dict = make_seeds_all.for_pipeline(
-                            img= img,
+            output_dict = make_seeds_all.for_pipeline_wrapper(
+                            img_path= input_path,
+                            boundary_path=boundary_path,
+                            
                             output_folder = output_folder,
                             ero_iters = ero_iters,
                             target_thresholds = seed_threshold,
@@ -131,42 +154,51 @@ if __name__ == "__main__":
         elif seed_mode == "merge":
             if type(footprints) is list:
                 footprints = footprints [0]
-            if len(seed_threshold)==1:
-                print("Running make_seeds_merged")
-                seed ,ori_combine_ids_map , output_dict=make_seeds_merged.make_seeds_merged_mp(                           
-                                        img= img,
-                                        threshold= seed_threshold[0],
-                                        output_folder=output_folder,
-                                        boundary = boundary,
-                                        n_iters = ero_iters,
-                                        segments = segments,
-                                        
-                                        no_split_limit =3,
-                                        # min_size= min_size,
-                                        sort = True,
-                                        background = 0,
-                                        save_every_iter = True,
-                                        name_prefix = output_names,
-                                        init_segments = None
-                                        )
-            else:
+            
+            if isinstance(seed_threshold,list) and len(seed_threshold)!=1:
+          
                 print("Running make_seeds_merged_by_thres_mp")
-                seed ,ori_combine_ids_map , output_dict=make_seeds_merged.make_seeds_merged_by_thres_mp(                           
-                                        img= img,
+                seed ,ori_combine_ids_map , output_dict=make_seeds_merged.make_seeds_merged_by_thres_path_wrapper(                           
+                            img_path= input_path,
+                            thresholds= seed_threshold,
+                            output_folder=output_folder,
+                            boundary_path = boundary_path,
+                            n_iters = ero_iters,
+                            segments = segments,
+                            num_threads = num_threads,
+                            no_split_limit =3,
+                            # min_size= min_size,
+                            sort = True,
+                            background = 0,
+                            save_every_iter = True,
+                            name_prefix = output_names,
+                            init_segments = None,
+                            footprint= footprints
+                            )
+            
+            else:
+                if isinstance(seed_threshold,list) and len(seed_threshold)==1:
+                    seed_threshold = seed_threshold[0]
+                print("Running make_seeds_merged")
+                seed ,ori_combine_ids_map , output_dict=make_seeds_merged.make_seeds_merged_path_wrapper(                           
+                                        img_path= input_path,
                                         threshold= seed_threshold,
                                         output_folder=output_folder,
-                                        boundary = boundary,
+                                        boundary_path = boundary_path,
                                         n_iters = ero_iters,
                                         segments = segments,
-                                        
+                                        num_threads = num_threads,
                                         no_split_limit =3,
                                         # min_size= min_size,
                                         sort = True,
                                         background = 0,
                                         save_every_iter = True,
                                         name_prefix = output_names,
-                                        init_segments = None
+                                        init_segments = None,
+                                        footprint= footprints
                                         )
+
+
         
 
 
