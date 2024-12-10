@@ -92,7 +92,8 @@ if __name__ == "__main__":
         else:
             boundary_path = None
     
-        
+        if "output_folder" in either_keys_info["keys_in_df"]:
+            output_folder = row['output_folder']    
         if "ero_iters" in either_keys_info["keys_in_df"]:
             ero_iters = row['ero_iters']
         if "segments" in either_keys_info["keys_in_df"]:
@@ -121,85 +122,88 @@ if __name__ == "__main__":
         # for key, value in values_to_print.items():
         #     print(f"  {key}: {value}")
         
-        
-        if seed_mode == "original":
-            if type(footprints) is str:
-                footprints = [footprints]   
-            
-            output_dict = make_seeds_all.for_pipeline_wrapper(
-                                    img_path= input_path,
-                                    boundary_path=boundary_path,
-                                    
-                                    output_folder = output_folder,
-                                    ero_iters = ero_iters,
-                                    target_thresholds = seed_threshold,
-                                    segments = segments,
-                                    name_prefix = output_names,
-                                    num_threads = num_threads,
-                                    footprints = footprints
-                                    )
-        elif seed_mode == "all":
-            output_dict = make_seeds_all.for_pipeline_wrapper(
-                            img_path= input_path,
-                            boundary_path=boundary_path,
-                            
-                            output_folder = output_folder,
-                            ero_iters = ero_iters,
-                            target_thresholds = seed_threshold,
-                            segments = segments,
-                            name_prefix = output_names,
-                            num_threads = num_threads,
-                            )
-        
-        elif seed_mode == "merge":
-            if type(footprints) is list:
-                footprints = footprints [0]
-            
-            if isinstance(seed_threshold,list) and len(seed_threshold)!=1:
-          
-                print("Running make_seeds_merged_by_thres_mp")
-                seed ,ori_combine_ids_map , output_dict=make_seeds_merged.make_seeds_merged_by_thres_path_wrapper(                           
-                            img_path= input_path,
-                            thresholds= seed_threshold,
-                            output_folder=output_folder,
-                            boundary_path = boundary_path,
-                            n_iters = ero_iters,
-                            segments = segments,
-                            num_threads = num_threads,
-                            no_split_limit =3,
-                            # min_size= min_size,
-                            sort = True,
-                            background = 0,
-                            save_every_iter = True,
-                            name_prefix = output_names,
-                            init_segments = None,
-                            footprint= footprints
-                            )
-            
-            else:
-                if isinstance(seed_threshold,list) and len(seed_threshold)==1:
-                    seed_threshold = seed_threshold[0]
-                print("Running make_seeds_merged")
-                seed ,ori_combine_ids_map , output_dict=make_seeds_merged.make_seeds_merged_path_wrapper(                           
+        try:
+            if seed_mode == "original":
+                if type(footprints) is str:
+                    footprints = [footprints]   
+                
+                output_dict = make_seeds_all.for_pipeline_wrapper(
                                         img_path= input_path,
-                                        threshold= seed_threshold,
-                                        output_folder=output_folder,
-                                        boundary_path = boundary_path,
-                                        n_iters = ero_iters,
+                                        boundary_path=boundary_path,
+                                        
+                                        output_folder = output_folder,
+                                        ero_iters = ero_iters,
+                                        target_thresholds = seed_threshold,
                                         segments = segments,
-                                        num_threads = num_threads,
-                                        no_split_limit =3,
-                                        # min_size= min_size,
-                                        sort = True,
-                                        background = 0,
-                                        save_every_iter = True,
                                         name_prefix = output_names,
-                                        init_segments = None,
-                                        footprint= footprints
+                                        num_threads = num_threads,
+                                        footprints = footprints
                                         )
+            elif seed_mode == "all":
+                output_dict = make_seeds_all.for_pipeline_wrapper(
+                                img_path= input_path,
+                                boundary_path=boundary_path,
+                                
+                                output_folder = output_folder,
+                                ero_iters = ero_iters,
+                                target_thresholds = seed_threshold,
+                                segments = segments,
+                                name_prefix = output_names,
+                                num_threads = num_threads,
+                                )
+            
+            elif seed_mode == "merge":
+                if type(footprints) is list:
+                    footprints = footprints [0]
+                
+                if isinstance(seed_threshold,list) and len(seed_threshold)!=1:
+            
+                    print("Running make_seeds_merged_by_thres_mp")
+                    seed ,ori_combine_ids_map , output_dict=make_seeds_merged.make_seeds_merged_by_thres_path_wrapper(                           
+                                img_path= input_path,
+                                thresholds= seed_threshold,
+                                output_folder=output_folder,
+                                boundary_path = boundary_path,
+                                n_iters = ero_iters,
+                                segments = segments,
+                                num_threads = num_threads,
+                                no_split_limit =3,
+                                # min_size= min_size,
+                                sort = True,
+                                background = 0,
+                                save_every_iter = True,
+                                name_prefix = output_names,
+                                init_segments = None,
+                                footprint= footprints
+                                )
+                
+                else:
+                    if isinstance(seed_threshold,list) and len(seed_threshold)==1:
+                        seed_threshold = seed_threshold[0]
+                    print("Running make_seeds_merged")
+                    seed ,ori_combine_ids_map , output_dict=make_seeds_merged.make_seeds_merged_path_wrapper(                           
+                                            img_path= input_path,
+                                            threshold= seed_threshold,
+                                            output_folder=output_folder,
+                                            boundary_path = boundary_path,
+                                            n_iters = ero_iters,
+                                            segments = segments,
+                                            num_threads = num_threads,
+                                            no_split_limit =3,
+                                            # min_size= min_size,
+                                            sort = True,
+                                            background = 0,
+                                            save_every_iter = True,
+                                            name_prefix = output_names,
+                                            init_segments = None,
+                                            footprint= footprints
+                                            )
+        except Exception as e:
+            df.loc[index,'error'] = str(e)
+        df.loc[index,'output_folder'] = output_folder
+        df.loc[index,'name_prefix'] = name_prefix
 
-
-        
+    df.to_csv(csv_path + "_running_results.csv", index = False)    
 
 
         
