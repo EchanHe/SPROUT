@@ -1,13 +1,3 @@
-
-csv_path: "./result/procavia/grow_input.csv"
-
-thresholds: [3400,2400]
-
-touch_rule: "stop"
-output_root_dir: "./result/procavia/grow_batch"
-save_interval: 1
-
-
 ### Must-have inputs
 
 # The path to the CSV file

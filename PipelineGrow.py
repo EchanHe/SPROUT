@@ -27,6 +27,8 @@ if __name__ == "__main__":
             config = yaml.safe_load(file)
             workspace = config.get("workspace","")
             to_grow_ids = config.get("to_grow_ids" , None)
+            name_prefix = config.get("name_prefix" , "final_grow")
+            grow_to_end = config.get("grow_to_end" , False)
         load_config_yaml(config)
         
     df = pd.read_csv(csv_path)
@@ -103,23 +105,28 @@ if __name__ == "__main__":
         name = os.path.splitext(os.path.basename(input_path))[0]
         output_sub_folder = os.path.join(output_folder , name)
 
+        try:
+            output = make_grow_result.grow_mp(
+                img_path = input_path,
+                seg_path = seg_path,
+                dilate_iters = dilate_iters,
+                thresholds = grow_thresholds,
+                save_interval = save_interval,  
+                touch_rule = touch_rule, 
+                num_threads = num_threads,
+                workspace = None,
+                boundary_path = boundary_path,
+                output_folder = output_sub_folder,
+                final_grow_output_folder = output_folder
+            )
 
-        output = make_grow_result.grow_mp(
-            img_path = input_path,
-            seg_path = seg_path,
-            dilate_iters = dilate_iters,
-            thresholds = grow_thresholds,
-            save_interval = save_interval,  
-            touch_rule = touch_rule, 
-            num_threads = num_threads,
-            workspace = None,
-            boundary_path = boundary_path,
-            output_folder = output_sub_folder,
-            final_grow_output_folder = output_folder
-        )
-
-        # df.loc[index,'final_output_path'] = output['final_output_path']
-        # df.to_csv(os.path.join(output_folder, "output_info.csv"), index = False)
+            df.loc[index,'final_output_path'] = output['final_output_path']
+            df.loc[index,'output_folder'] = output['output_folder']
+        
+        except Exception as e:
+            df.loc[index,'error'] = str(e)
+    
+    df.to_csv(csv_path + "_running_results.csv", index = False)
 
 
         # if is_make_mesh:

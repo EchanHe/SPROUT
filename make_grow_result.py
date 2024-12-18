@@ -123,6 +123,8 @@ def grow_mp(**kwargs):
     seg_path = kwargs.get('seg_path', None) 
     output_folder = kwargs.get('output_folder', None) 
     final_grow_output_folder = kwargs.get('final_grow_output_folder', None) 
+    name_prefix = kwargs.get('name_prefix', "final_grow")  
+    
     to_grow_ids = kwargs.get('to_grow_ids', None) 
     
     is_sort = kwargs.get('is_sort', True) 
@@ -134,6 +136,9 @@ def grow_mp(**kwargs):
     num_threads = kwargs.get('num_threads', None) 
     downsample_scale = kwargs.get('downsample_scale', 10) 
     step_size  = kwargs.get('step_size', 2) 
+    
+    grow_to_end = kwargs.get('grow_to_end', False)  
+    
     
     boundary_path  = kwargs.get('boundary_path', None)
     
@@ -175,6 +180,7 @@ def grow_mp(**kwargs):
     values_to_print = {   
             "Segmentation Path": seg_path,
             "Boundary Path": boundary_path,      
+            "grow_to_end" : grow_to_end,
             "Dilate Iterations": dilate_iters,
             "Grow Thresholds": thresholds,
             "Output Folder": output_folder,
@@ -193,11 +199,15 @@ def grow_mp(**kwargs):
     result = input_mask.copy()
     result = result.astype('uint8')
     
+    if grow_to_end:
+        dilate_iters = [100] * len(dilate_iters)
+    
     # Iterate through and make growth results
     for i, (threshold,dilate_iter) in enumerate(zip(thresholds,dilate_iters)):
         # Set the count for check diff for each growing threshold
         count_below_threshold = 0
         
+        # How many iterations for saving intermediate results
         if isinstance(save_interval, list):
                 real_save_interval = save_interval[i]
         elif isinstance(save_interval, int):
@@ -207,10 +217,10 @@ def grow_mp(**kwargs):
         dilate_name = "_".join(str(s) for s in dilate_iters[:i+1])
         
         
-        # print(f"threshold:{threshold} dilate_iter:{dilate_iter}.real_save_interval:{real_save_interval}")
+        threshold_binary = ori_img > threshold
+        full_size = np.sum(threshold_binary)
+        
         for i_dilate in range(1, dilate_iter+1):
-            threshold_binary = ori_img > threshold
-            
             # Get the input size for the log
             input_size = np.sum(result!=0)
             
@@ -233,23 +243,26 @@ def grow_mp(**kwargs):
             
             output_path = os.path.join(output_folder, f'{base_name}_iter_{i_dilate}_dilate_{dilate_name}_thre_{threshold_name}.tif')
             
-                
-            if i_dilate%real_save_interval==0 or count_below_threshold >= tolerate_iters:
-                df_log.append({'id': (i*dilate_iter)+i_dilate, 
-                            'grow_size': output_size,
-                            'full_size':np.sum(threshold_binary),
-                            'cur_threshold': threshold,
-                            "file_name": os.path.basename(output_path),
-                            'full_path': os.path.abspath(output_path),
-                            'cur_dilate_step': i_dilate,
-                            })
-            
             ## Check if output size and input 's diff is bigger than min_diff
             if output_size - input_size < min_diff:
                 count_below_threshold += 1
             else:
                 count_below_threshold = 0
-            if i_dilate%real_save_interval==0 or i_dilate ==dilate_iter or count_below_threshold >= tolerate_iters:
+            if (i_dilate%real_save_interval==0 or 
+                i_dilate ==dilate_iter or 
+                count_below_threshold >= tolerate_iters or
+                (grow_to_end == True and abs(full_size - output_size) < 0.05) ):
+                
+                # Write the log
+                df_log.append({'id': (i*dilate_iter)+i_dilate, 
+                    'grow_size': output_size,
+                    'full_size': full_size,
+                    'cur_threshold': threshold,
+                    "file_name": os.path.basename(output_path),
+                    'full_path': os.path.abspath(output_path),
+                    'cur_dilate_step': i_dilate,
+                    })
+                
                 
                 result,_ = sprout_core.reorder_segmentation(result, sort_ids=is_sort)
                 tifffile.imwrite(output_path, 
@@ -263,22 +276,17 @@ def grow_mp(**kwargs):
                     print(f"\tBreaking at iteration {i_dilate} with Input size = {input_size} and Output_size = {output_size}")
                     break
             
-            # if i_dilate%real_save_interval==0 or i_dilate ==dilate_iter:
-            #     # output_path = os.path.join(workspace, f'result/ai/dila_{dilate_iter}_{threshold}_rule_{touch_rule}.tif')
-              
-                
-            #     print(f"\tGrown result has been saved {output_path}")
-            #     print(f"\tIter:{i_dilate}. Last Input size = {input_size} and Output_size = {output_size}")
-            #     tifffile.imwrite(output_path, 
-            #     result,
-            #     compression ='zlib')
+                if (grow_to_end == True and abs(full_size - output_size) < 0.05) :
+                    print(f"\tBreaking at iteration {i_dilate}: Input size = {input_size}, Output_size = {output_size} and size of threshold binary = {full_size}")
+                    break
+            
         print(f"\tFinish growing. Last Input size = {input_size} and Output_size = {output_size}")
     
     ## Save the final grow output as the final_<img_name>
     if final_grow_output_folder is not None:
-        final_output_path = os.path.join(final_grow_output_folder,f"final_grow_{base_name}.tiff")
+        final_output_path = os.path.join(final_grow_output_folder,f"{name_prefix}_{base_name}.tiff")
     else:
-        final_output_path = os.path.join(output_folder,f"final_grow_{base_name}.tiff")
+        final_output_path = os.path.join(output_folder,f"{name_prefix}_{base_name}.tiff")
     tifffile.imwrite(final_output_path, 
         result,
         compression ='zlib')
