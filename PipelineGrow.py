@@ -117,7 +117,8 @@ if __name__ == "__main__":
                 workspace = None,
                 boundary_path = boundary_path,
                 output_folder = output_sub_folder,
-                final_grow_output_folder = output_folder
+                final_grow_output_folder = output_folder,
+                grow_to_end = grow_to_end
             )
 
             df.loc[index,'final_output_path'] = output['final_output_path']
