@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import tifffile
 # from PIL import Image
 from tifffile import imread, imwrite
 import os,sys
@@ -8,7 +9,8 @@ import glob
 import threading
 lock = threading.Lock()
 import time
-import json, yaml
+import yaml
+
 
 # Add the lib directory to the system path
 import sprout_core.sprout_core as sprout_core
@@ -17,6 +19,13 @@ from sprout_core.sprout_core import reorder_segmentation
 
 
 def load_config_yaml(config, parent_key=''):
+    """
+    Recursively load configuration values from a YAML dictionary into global variables.
+
+    Args:
+        config (dict): Configuration dictionary.
+        parent_key (str): Key prefix for nested configurations (default is '').
+    """
     for key, value in config.items():
         if isinstance(value, dict):
             load_config_yaml(value, parent_key='')
@@ -24,6 +33,17 @@ def load_config_yaml(config, parent_key=''):
             globals()[parent_key + key] = value
 
 def detect_inter(ccomp_combine_seed,ero_seed, seed_ids, inter_log , lock):
+    """
+    Detect intersections between seeds and combined components.
+
+    Args:
+        ccomp_combine_seed (np.ndarray): Combined seed mask.
+        ero_seed (np.ndarray): Eroded seed mask.
+        seed_ids (list): List of seed IDs to process.
+        inter_log (dict): Dictionary to log intersection results.
+        lock (threading.Lock): Threading lock for shared resources.
+    """
+    
     for seed_id in seed_ids:
         seed_ccomp = ero_seed == seed_id
                     
@@ -39,19 +59,6 @@ def detect_inter(ccomp_combine_seed,ero_seed, seed_ids, inter_log , lock):
                 prop = round(inter / np.sum(ccomp_combine_seed),4)*100
                 inter_log["inter_props"] = np.append(inter_log["inter_props"], prop)
 
-def merged_seeds_log_results(output_dict=None, **kwargs):
-    if output_dict is None:
-        # log_dict = {}  # Initialize a new dictionary if none is provided
-
-        output_dict = {}
-
-    for key, value in kwargs.items():
-        output_dict[key] = value  # Assign the key-value pairs to the dictionary
-
-    return output_dict
-
-
-import tifffile
 
 def make_seeds_merged_path_wrapper(img_path,
                               threshold,
@@ -60,19 +67,45 @@ def make_seeds_merged_path_wrapper(img_path,
                               segments,
                               boundary_path=None,
                               num_threads=1,
+                              background=0,
+                              sort=True,
                               no_split_limit=3,
                               min_size=5,
-                              sort=True,
                               min_split_prop=0.01,
-                              background=0,
+                              min_split_sum_prop=0,
                               save_every_iter=False,
                               save_merged_every_iter=False,
                               name_prefix="Merged_seed",
                               init_segments=None,
-                              footprint="ball",
-                              min_split_sum_prop=0):
+                              footprint="ball"
+                              ):
     """
-    Wrapper for make_seeds_merged_mp that reads img_path and boundary_path before calling the function.
+    Wrapper for make_seeds_merged_mp that performs erosion-based merged seed generation with multi-threading.
+
+    Args:
+        img_path (str): Path to the input image.
+        threshold (int): Threshold for segmentation. One value
+        output_folder (str): Directory to save output seeds.
+        n_iters (int): Number of erosion iterations.
+        segments (int): Number of segments to extract.
+        boundary_path (str, optional): Path to boundary image. Defaults to None.
+        num_threads (int, optional): Number of threads to use. Defaults to 1.
+        background (int, optional): Background value. Defaults to 0.
+        sort (bool, optional): Whether to sort output segment IDs. Defaults to True.
+        no_split_limit (int, optional): Early Stop Check: Limit for consecutive no-split iterations. Defaults to 3.
+        min_size (int, optional): Minimum size for segments. Defaults to 5.
+        min_split_prop (float, optional): Minimum proportion to consider a split. Defaults to 0.01.
+        min_split_sum_prop (float, optional): Minimum proportion of (sub-segments from next step)/(current segments)
+            to consider a split. Defaults to 0.
+        save_every_iter (bool, optional): Save results at every iteration. Defaults to False.
+        save_merged_every_iter (bool, optional): Save merged results at every iteration. Defaults to False.
+        name_prefix (str, optional): Prefix for output file names. Defaults to "Merged_seed".
+        init_segments (int, optional): Initial segments. Defaults to None.
+        footprint (str, optional): Footprint shape for erosion. Defaults to "ball".
+        
+
+    Returns:
+        tuple: Merged seeds, original combine ID map, and output dictionary.
     """
     # Read the image
     img = tifffile.imread(img_path)
@@ -98,23 +131,23 @@ def make_seeds_merged_path_wrapper(img_path,
     
     # Call the original function
     seed ,ori_combine_ids_map , output_dict=make_seeds_merged_mp(img=img,
-                         threshold=threshold,
-                         output_folder=output_folder,
-                         n_iters=n_iters,
-                         segments=segments,
-                         boundary=boundary,
-                         num_threads=num_threads,
-                         no_split_limit=no_split_limit,
-                         min_size=min_size,
-                         sort=sort,
-                         min_split_prop=min_split_prop,
-                         background=background,
-                         save_every_iter=save_every_iter,
-                         save_merged_every_iter=save_merged_every_iter,
-                         name_prefix=name_prefix,
-                         init_segments=init_segments,
-                         footprint=footprint,
-                         min_split_sum_prop=min_split_sum_prop)
+                        threshold=threshold,
+                        output_folder=output_folder,
+                        n_iters=n_iters,
+                        segments=segments,
+                        boundary=boundary,
+                        num_threads=num_threads,
+                        no_split_limit=no_split_limit,
+                        min_size=min_size,
+                        sort=sort,
+                        min_split_prop=min_split_prop,
+                        background=background,
+                        save_every_iter=save_every_iter,
+                        save_merged_every_iter=save_merged_every_iter,
+                        name_prefix=name_prefix,
+                        init_segments=init_segments,
+                        footprint=footprint,
+                        min_split_sum_prop=min_split_sum_prop)
 
 
     end_time = datetime.now()
@@ -127,24 +160,51 @@ def make_seeds_merged_path_wrapper(img_path,
 
 
 def make_seeds_merged_mp(img,
-                      threshold,
-                      output_folder,
-                      n_iters, 
-                      segments,
-                      boundary = None,
-                      num_threads = 1,
-                      no_split_limit =3,
-                      min_size=5,
-                      sort = True,
-                      min_split_prop = 0.01,
-                      background = 0,
-                      save_every_iter = False,
-                      save_merged_every_iter = False,
-                      name_prefix = "Merged_seed",
-                      init_segments = None,
-                      footprint = "ball",
-                      min_split_sum_prop = 0
+                        threshold,
+                        output_folder,
+                        n_iters, 
+                        segments,
+                        boundary = None,
+                        num_threads = 1,
+                        background = 0,
+                        sort = True,
+                        no_split_limit =3,
+                        min_size=5,
+                        min_split_prop = 0.01,
+                        min_split_sum_prop = 0,
+                        save_every_iter = False,
+                        save_merged_every_iter = False,
+                        name_prefix = "Merged_seed",
+                        init_segments = None,
+                        footprint = "ball"
                       ):
+    """
+    Erosion-based merged seed generation with multi-threading.
+
+    Args:
+        img (np.ndarray): Input image.
+        threshold (int): Threshold for segmentation. One value
+        output_folder (str): Directory to save output seeds.
+        n_iters (int): Number of erosion iterations.
+        segments (int): Number of segments to extract.
+        boundary (np.ndarray, optional): Boundary mask. Defaults to None.
+        num_threads (int, optional): Number of threads to use. Defaults to 1.
+        background (int, optional): Background value. Defaults to 0.
+        sort (bool, optional): Whether to sort output segment IDs. Defaults to True.
+        no_split_limit (int, optional): Early Stop Check: Limit for consecutive no-split iterations. Defaults to 3.
+        min_size (int, optional): Minimum size for segments. Defaults to 5.
+        min_split_prop (float, optional): Minimum proportion to consider a split. Defaults to 0.01.
+        min_split_sum_prop (float, optional): Minimum proportion of (sub-segments from next step)/(current segments)
+            to consider a split. Defaults to 0.
+        save_every_iter (bool, optional): Save results at every iteration. Defaults to False.
+        save_merged_every_iter (bool, optional): Save merged results at every iteration. Defaults to False.
+        name_prefix (str, optional): Prefix for output file names. Defaults to "Merged_seed".
+        init_segments (int, optional): Initial segments. Defaults to None.
+        footprint (str, optional): Footprint shape for erosion. Defaults to "ball".
+
+    Returns:
+        tuple: Merged seeds, original combine ID map, and output dictionary.
+    """
 
 
     values_to_print = {
@@ -211,6 +271,7 @@ def make_seeds_merged_mp(img,
     for value in init_ids :
         ori_combine_ids_map[value] = [value]
     
+    # Count for no_split_limit
     no_consec_split_count = 0
     
 
@@ -356,21 +417,51 @@ def make_seeds_merged_by_thres_path_wrapper(img_path,
                                        output_folder,
                                        n_iters,
                                        segments,
-                                       boundary_path=None,
                                        num_threads=1,
+                                       boundary_path=None,
+                                       background=0,
+                                       sort=True,
+                                       
                                        no_split_limit=3,
                                        min_size=5,
-                                       sort=True,
                                        min_split_prop=0.01,
-                                       background=0,
+                                       min_split_sum_prop=0,
+                                       
                                        save_every_iter=False,
                                        save_merged_every_iter=False,
                                        name_prefix="Merged_seed",
                                        init_segments=None,
-                                       footprint="ball",
-                                       min_split_sum_prop=0):
+                                       footprint="ball"
+                                       ):
     """
-    Wrapper for make_seeds_merged_by_thres_mp that reads img_path and boundary_path before calling the function.
+    Wrapper for make_seeds_merged_by_thres_mp that performs thresholds-based merged seed generation.
+
+    Args:
+        img_path (str): Path to the input image.
+        thresholds (list): List of thresholds for segmentation.
+        output_folder (str): Directory to save the output.
+        n_iters (int): Number of erosion iterations.
+        segments (int): Number of segments to extract.
+        num_threads (int, optional): Number of threads for parallel processing. Defaults to 1.
+        boundary_path (str, optional): Path to boundary image. Defaults to None.
+        background (int, optional): Value of background pixels. Defaults to 0.
+        sort (bool, optional): Whether to sort segment IDs. Defaults to True.
+        
+        no_split_limit (int, optional): Early Stop Check: Limit for consecutive no-split iterations. Defaults to 3.
+        min_size (int, optional): Minimum size for segments. Defaults to 5.
+        min_split_prop (float, optional): Minimum proportion to consider a split. Defaults to 0.01.
+        min_split_sum_prop (float, optional): Minimum proportion of (sub-segments from next step)/(current segments)
+            to consider a split. Defaults to 0.
+            
+        save_every_iter (bool, optional): Save results at every iteration. Defaults to False.
+        save_merged_every_iter (bool, optional): Save merged results at every iteration. Defaults to False.
+        name_prefix (str, optional): Prefix for output file names. Defaults to "Merged_seed".
+        init_segments (int, optional): Initial segments to start with. Defaults to None.
+        footprint (str, optional): Shape of erosion footprint. Defaults to "ball".
+
+
+    Returns:
+        tuple: Merged seed, original combine ID map, and output dictionary.
     """
     # Read the image
     img = tifffile.imread(img_path)
@@ -422,24 +513,58 @@ def make_seeds_merged_by_thres_path_wrapper(img_path,
     return combine_seed,ori_combine_ids_map, output_dict
 
 def make_seeds_merged_by_thres_mp(img,
-                      thresholds,
-                      output_folder,
-                      n_iters, 
-                      segments,
-                      boundary =None,
-                      num_threads = 1,
-                      no_split_limit =3,
-                      min_size=5,
-                      sort = True,
-                      min_split_prop = 0.01,
-                      background = 0,
-                      save_every_iter = False,
-                      save_merged_every_iter = False,
-                      name_prefix = "Merged_seed",
-                      init_segments = None,
-                      footprint = "ball",
-                      min_split_sum_prop = 0
-                      ):
+                        thresholds,
+                        output_folder,
+                        n_iters, 
+                        segments,
+                        
+                        num_threads = 1,
+                        boundary =None,
+                        background = 0,
+                        sort = True,
+                        
+                        no_split_limit =3,
+                        min_size=5,
+                        min_split_prop = 0.01,
+                        min_split_sum_prop = 0,
+                        
+                        save_every_iter = False,
+                        save_merged_every_iter = False,
+                        name_prefix = "Merged_seed",
+                        init_segments = None,
+                        footprint = "ball",
+                    ):
+    """
+    Thresholds-based merged seed generation.
+
+    Args:
+        img (np.ndarray): Input image.
+        thresholds (list): List of thresholds for segmentation.
+        output_folder (str): Directory to save the output.
+        n_iters (int): Number of erosion iterations.
+        segments (int): Number of segments to extract.
+        num_threads (int, optional): Number of threads for parallel processing. Defaults to 1.
+        boundary (np.ndarray, optional): Boundary mask. Defaults to None.
+        background (int, optional): Value of background pixels. Defaults to 0.
+        sort (bool, optional): Whether to sort segment IDs. Defaults to True.
+        
+        no_split_limit (int, optional): Early Stop Check: Limit for consecutive no-split iterations. Defaults to 3.
+        min_size (int, optional): Minimum size for segments. Defaults to 5.
+        min_split_prop (float, optional): Minimum proportion to consider a split. Defaults to 0.01.
+        min_split_sum_prop (float, optional): Minimum proportion of (sub-segments from next step)/(current segments)
+            to consider a split. Defaults to 0.
+            
+        save_every_iter (bool, optional): Save results at every iteration. Defaults to False.
+        save_merged_every_iter (bool, optional): Save merged results at every iteration. Defaults to False.
+        name_prefix (str, optional): Prefix for output file names. Defaults to "Merged_seed".
+        init_segments (int, optional): Initial segments to start with. Defaults to None.
+        footprint (str, optional): Shape of erosion footprint. Defaults to "ball".
+
+
+    Returns:
+        tuple: Merged seed, original combine ID map, and output dictionary.
+    """
+
 
     values_to_print = {
         "Thresholds": thresholds,
@@ -654,8 +779,9 @@ def make_seeds_merged_by_thres_mp(img,
 
 if __name__ == "__main__":        
    
-    ############ Config
-    file_path = './make_seeds_merged.yaml'
+    # Get the file path from the first command-line argument or use the default
+    file_path = sys.argv[1] if len(sys.argv) > 1 else './make_seeds_merged.yaml'
+
     
     _, extension = os.path.splitext(file_path)
     print(f"processing config he file {file_path}")
@@ -677,13 +803,6 @@ if __name__ == "__main__":
         else:
             raise ValueError("'thresholds' must be an int or a list of int(s).")
     
-    # img_path = './result/dog_lucy/input/Beagle_220783_8bits.tif'
-    # output_folder = './result/dog_lucy/seeds'
-    # threshold = 121
-    
-    # img_path = './result/foram_james/input/ai/final.20180719_VERSA_1905_ASB_OLK_st014_bl4_fo1_recon.tif'  
-    # output_folder = './result/foram_james/seeds_test_gen_time_mp' 
-    # threshold = 266
     
     # Track the overall start time
     overall_start_time = time.time()
@@ -727,47 +846,4 @@ if __name__ == "__main__":
     # Output the total running time
     print(f"Total running time: {overall_end_time - overall_start_time:.2f} seconds")
         
-        
-        
-        
- # file_path = '/result/foram_james/input/ai/final.20180802_VERSA_1905_ASB_OLK_st016_bl4_fo1_recon.tif'    
-
-    # file_paths = glob.glob('result/foram_james/input/ai/*.tif')
-    # output_folder = 'result/foram_james/thre_ero_seed/'
-
-    # config_path = './make_seeds_foram.yaml'
-    # _, extension = os.path.splitext(config_path)
-    # print(f"processing config he file {config_path}")
-    # if extension == '.yaml':
-    #     with open(config_path, 'r') as file:
-    #         config = yaml.safe_load(file)
-    #     load_config_yaml(config)
-
-    # num_threads = 5
-    # file_paths = glob.glob(os.path.join(input_folder,"*.tif"))
-    
-    
-    # threads = []
-    # sub_file_paths = [file_paths[i::num_threads] for i in range(num_threads)]
-    # # Start a new thread for each sublist
-    # for sublist in sub_file_paths:
-    #     thread = threading.Thread(target=foram_seed_mp, args=(sublist,output_folder))
-    #     threads.append(thread)
-    #     thread.start()
-        
-    # # Wait for all threads to complete
-    # for thread in threads:
-    #     thread.join()
-    
-    # sys.exit()
-    #### For single file instance
-    
-    # img_path = './result/foram_james/input/ai/final.20180719_VERSA_1905_ASB_OLK_st014_bl4_fo1_recon.tif'
-    # output_folder = './result/foram_james/seed_ai_v2/'
-
-    # imwrite(os.path.join('./result/foram_james/seed_ai_v2/',base_name+'.tif'), seed, 
-    #     compression ='zlib')
-    # bone_ids_dict = {int(key): str(value) for key, value in bone_ids_dict.items()}
-    
-# separate_chambers(file_path)
 

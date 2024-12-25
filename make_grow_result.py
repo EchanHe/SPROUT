@@ -165,6 +165,7 @@ def grow_mp(**kwargs):
     output_folder = kwargs.get('output_folder', None) 
     final_grow_output_folder = kwargs.get('final_grow_output_folder', None) 
     name_prefix = kwargs.get('name_prefix', "final_grow")  
+    simple_naming = kwargs.get('simple_naming', True)  
     
     to_grow_ids = kwargs.get('to_grow_ids', None) 
     is_sort = kwargs.get('is_sort', True) 
@@ -280,7 +281,7 @@ def grow_mp(**kwargs):
             # Get the output size for the log
             output_size = np.sum(result!=0)
             
-            output_path = os.path.join(output_folder, f'{base_name}_iter_{i_dilate}_dilate_{dilate_name}_thre_{threshold_name}.tif')
+            
             
             ## Check if output size and input 's diff is bigger than min_diff
             if output_size - input_size < min_diff:
@@ -297,6 +298,11 @@ def grow_mp(**kwargs):
                 i_dilate ==dilate_iter or 
                 count_below_threshold >= tolerate_iters or
                 (grow_to_end == True and abs(full_size - output_size) < 0.05) ):
+                
+                if simple_naming:
+                    output_path = os.path.join(output_folder, f'{base_name}_{threshold}_{i_dilate}.tif')
+                else:
+                    output_path = os.path.join(output_folder, f'{base_name}_iter_{i_dilate}_dilate_{dilate_name}_thre_{threshold_name}.tif')
                 
                 # Write the log
                 df_log.append({'id': (i*dilate_iter)+i_dilate, 
@@ -339,7 +345,7 @@ def grow_mp(**kwargs):
 
     total_seconds = (datetime.now() - start_time).total_seconds()
     minutes, s = divmod(total_seconds, 60)
-    print(f"Running time:{minutes} minutes {s} secd")
+    print(f"Running time:{minutes} minutes {round(s,2)} sec")
     
     # Save the dataframe of the growing log
     df_log = pd.DataFrame(df_log)

@@ -24,6 +24,14 @@ import json, yaml
 
 # Function to recursively create global variables from the config dictionary
 def load_config_yaml(config, parent_key=''):
+    """
+    Recursively load configuration values from a YAML dictionary into global variables.
+
+    Args:
+        config (dict): Configuration dictionary.
+        parent_key (str): Key prefix for nested configurations (default is '').
+    """
+    
     for key, value in config.items():
         if isinstance(value, dict):
             load_config_yaml(value, parent_key='')
@@ -31,19 +39,17 @@ def load_config_yaml(config, parent_key=''):
             globals()[parent_key + key] = value
             
 
-# Define a function to read the configuration and set variables dynamically
-def load_config_json(file_path):
-    with open(file_path, 'r') as config_file:
-        config = json.load(config_file)
 
-    # Dynamically set variables in the global namespace
- 
-    for key, value in config.items():
-        globals()[key] = value
 
 
 def write_json(filename, args_dict):
-    
+    """
+    Write dictionary data to a JSON file, appending it if the file exists.
+    Use to write seed generation log.
+    Args:
+        filename (str): Path to the JSON file.
+        args_dict (dict): Data to be written to the file.
+    """    
     # Check if the file exists and load existing data
     if os.path.exists(filename):
         with open(filename, 'r') as jsonfile:
@@ -58,6 +64,18 @@ def write_json(filename, args_dict):
         json.dump(results, jsonfile, indent=4)
 
 def find_seg_by_ero(volume, threshold , segments, input_ero_iters):
+    """
+    Deprecated
+    Find and save segmentation by erosion for given thresholds and iterations.
+
+    Args:
+        volume (np.ndarray): 3D volume data.
+        threshold (int): Threshold value for segmentation.
+        segments (int): Number of segments to keep.
+        input_ero_iters (list): List of erosion iteration values.
+    """    
+
+
     for ero_iter in input_ero_iters:
         seed, result, log_dict = BounTI.find_seg_by_ero(volume, threshold , segments, ero_iter)
         
@@ -85,6 +103,15 @@ def find_seg_by_ero(volume, threshold , segments, input_ero_iters):
             write_json(output_json_path, log_dict)   
             
 def find_seg_by_ero_v2(volume, input_threshold_ero_iter_pairs , segments):
+    """
+    Version 2 of find_seg_by_ero with support for multiple threshold and erosion pairs.
+
+    Args:
+        volume (np.ndarray): 3D volume data.
+        input_threshold_ero_iter_pairs (list): List of (threshold, erosion) pairs.
+        segments (int): Number of segments to keep.
+    """
+    
     for threshold_ero_iter_pair in input_threshold_ero_iter_pairs:
         threshold = threshold_ero_iter_pair[0]
         ero_iter = threshold_ero_iter_pair[1]
@@ -115,12 +142,16 @@ def find_seg_by_ero_v2(volume, input_threshold_ero_iter_pairs , segments):
 
 def find_seed_by_ero_mp(volume, input_threshold_ero_iter_pairs , segments , 
                         output_seed_folder, output_json_path,  footprints = 'default',):
-    """The function for find_seed_by_ero using multi threads
+    """
+    Seed generation using erosion and thresholds for multi-threading.
 
     Args:
-        volume (_type_): _description_
-        input_threshold_ero_iter_pairs (_type_): _description_
-        segments (_type_): _description_
+        volume (np.ndarray): 3D volume data.
+        input_threshold_ero_iter_pairs (list): List of (threshold, erosion) pairs.
+        segments (int): Number of segments to keep.
+        output_seed_folder (str): Directory to save seed outputs.
+        output_json_path (str): Path to save the log JSON.
+        footprints (str): Footprint type for erosion (default is 'default').
     """
     
 
@@ -154,7 +185,7 @@ def find_seed_by_ero_mp(volume, input_threshold_ero_iter_pairs , segments ,
 
 def find_seed_by_ero_mp_v2(volume, input_threshold_ero_iter_pairs , segments , 
                         output_seed_folder, output_json_path,  footprints = 'default',):
-    """The function for find_seed_by_ero using multi threads
+    """Version 2Seed generation using erosion and thresholds for multi-threading.
 
     Args:
         volume (_type_): _description_
@@ -208,7 +239,15 @@ def find_seed_by_ero_mp_v2(volume, input_threshold_ero_iter_pairs , segments ,
             write_json(output_json_path, log_dict)   
 
 def main(**kwargs):
-    
+    """
+    Main function to orchestrate erosion-based seed generation with multi-threading.
+
+    Args:
+        kwargs: Dictionary containing parameters for seed generation.
+
+    Returns:
+        tuple: Output folder and log file paths.
+    """    
     ero_iters = kwargs.get('ero_iters', None)
     target_thresholds = kwargs.get('target_thresholds', None)  
     segments = kwargs.get('segments', None)  
@@ -243,14 +282,13 @@ def main(**kwargs):
 
     volume = tifffile.imread(file_path)
     
-   
+   # Split pairs among threads
     sublists = [threshold_ero_iter_pairs[i::num_threads] for i in range(num_threads)]
-
     # Create a list to hold the threads
     threads = []
 
 
-    # Start a new thread for each sublist
+    # # Start threads
     for sublist in sublists:
         # thread = threading.Thread(target=find_seg_by_ero_v2, args=(volume,sublist, segments ))
         thread = threading.Thread(target=find_seed_by_ero_mp, args=(volume,sublist, segments,
@@ -265,20 +303,20 @@ def main(**kwargs):
     end_time = datetime.now()
     running_time = end_time - start_time
     total_seconds = running_time.total_seconds()
-    minutes, _ = divmod(total_seconds, 60)
-    print(f"Running time:{minutes}")
+    minutes, second = divmod(total_seconds, 60)
+    print(f"Running time:{minutes}mins {second}secs")
     
     return (output_seed_folder,output_log_file)
     
     
 if __name__ == "__main__":
-    file_path = 'make_seeds.yaml'
+    
+    # Get the file path from the first command-line argument or use the default
+    file_path = sys.argv[1] if len(sys.argv) > 1 else './make_seeds.yaml'
+    
     _, extension = os.path.splitext(file_path)
     print(f"processing config he file {file_path}")
-    if extension == '.json':
-        
-        load_config_json(file_path)
-    elif extension == '.yaml':
+    if extension == '.yaml':
         with open(file_path, 'r') as file:
             config = yaml.safe_load(file)
         load_config_yaml(config)

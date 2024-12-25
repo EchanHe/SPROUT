@@ -11,6 +11,7 @@ old_codes/*
 ./slide/*
 
 
+
 avizo/*
 !avizo/GenSutures.py
 !avizo/Preprocess.py
@@ -22,6 +23,8 @@ data/*
 !data/demo_FrenchBulldog_lowres.tif
 !data/demo_foram_segmentation.tif
 
+src/*
+test_*.bat
 test_*.py
 test_*.ipynb
 

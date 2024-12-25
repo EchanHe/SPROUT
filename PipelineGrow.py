@@ -1,7 +1,7 @@
 import make_grow_result
 import make_mesh
 import yaml
-import os
+import os,sys
 import glob
 import pandas as pd
 import sprout_core.vis_lib as vis_lib
@@ -19,7 +19,10 @@ def load_config_yaml(config, parent_key=''):
 
 if __name__ == "__main__":
     
-    file_path = 'PipelineGrow.yaml'
+    # Get the file path from the first command-line argument or use the default
+    file_path = sys.argv[1] if len(sys.argv) > 1 else './PipelineGrow.yaml'
+    
+
     _, extension = os.path.splitext(file_path)
     print(f"processing config he file {file_path}")
     if extension == '.yaml':

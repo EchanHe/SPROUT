@@ -2,7 +2,7 @@ import make_seeds
 import make_seeds_all
 import make_mesh
 import yaml
-import os
+import os,sys
 import glob
 import tifffile
 
@@ -36,8 +36,10 @@ pipeline_seed_required_keys = [
 
 
 if __name__ == "__main__":
+
+    # Get the file path from the first command-line argument or use the default
+    file_path = sys.argv[1] if len(sys.argv) > 1 else './PipelineSeed.yaml'
     
-    file_path = 'PipelineSeed.yaml'
     _, extension = os.path.splitext(file_path)
     print(f"processing config he file {file_path}")
     if extension == '.yaml':
