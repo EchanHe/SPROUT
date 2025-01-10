@@ -388,7 +388,7 @@ if __name__ == "__main__":
     file_path = './make_mesh.yaml'
     
     _, extension = os.path.splitext(file_path)
-    print(f"processing config he file {file_path}")
+    print(f"processing config the file {file_path}")
     if extension == '.json':
         
         load_config_json(file_path)

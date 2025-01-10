@@ -787,7 +787,7 @@ if __name__ == "__main__":
 
     
     _, extension = os.path.splitext(file_path)
-    print(f"processing config he file {file_path}")
+    print(f"processing config the file {file_path}")
     if extension == '.yaml':
         with open(file_path, 'r') as file:
             config = yaml.safe_load(file)

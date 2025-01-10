@@ -62,7 +62,8 @@ Demo data for the tutorial can be found in the [`./data/`](./data/) directory an
 
 ### Seed Generation
 Use morphological transformations and connected components (initial segmentations for grow)
-    
+
+**`make_seeds.py`**  
 `make_seeds.py` is the for generating seeds. 
    - **Usage**: An example YAML configuration file can be found at `./template/make_seeds.yaml`.
       - Run with the default configuration:  
@@ -87,6 +88,13 @@ Use morphological transformations and connected components (initial segmentation
 
 **`make_seeds_all.py`**  
 Similar to `make_seeds.py` in usage and configuration, but does not require specifying `footprints`. It automatically generates seeds using predefined footprints: `'ball'`, `'ball_XY'`, `'ball_XZ'`, and `'ball_YZ'`. 
+
+   - **Usage**: An example YAML configuration file can be found at `./template/make_seeds_all.yaml`.
+      - Run with the default configuration:  
+         `python make_seeds_all.py`  
+         *(Reads the `./make_seeds_all.yaml` file)*  
+      - Run with a custom configuration:  
+         `python make_seeds_all.py <config>.yaml`
 
 ### Merged Seed Generation
 

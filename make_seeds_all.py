@@ -284,9 +284,11 @@ def plot(output_dict, full_log_plot_path):
     vis_lib.merge_plots(plot_list, full_log_plot_path)
 
 if __name__ == "__main__":
-    file_path = 'make_seeds_all.yaml'
+    # Get the file path from the first command-line argument or use the default
+    file_path = sys.argv[1] if len(sys.argv) > 1 else './make_seeds_all.yaml'
+    
     _, extension = os.path.splitext(file_path)
-    print(f"processing config he file {file_path}")
+    print(f"processing config the file {file_path}")
     if extension == '.json':
         
         load_config_json(file_path)
