@@ -132,7 +132,7 @@ def save_new_img_stride(image_stack, step):
 
     Args:
     image_stack (numpy.ndarray): Input image array with shape DHW or DHWC.
-    step (int): Step size for subsampling, defaults to 10.
+    step (int): Step size for subsampling, defaults is 10.
 
     Returns:
     numpy.ndarray: Subsampled image array.

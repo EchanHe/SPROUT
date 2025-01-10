@@ -195,11 +195,12 @@ def make_seeds_merged_mp(img,
         min_size (int, optional): Minimum size for segments. Defaults to 5.
         min_split_prop (float, optional): Minimum proportion to consider a split. Defaults to 0.01.
         min_split_sum_prop (float, optional): Minimum proportion of (sub-segments from next step)/(current segments)
-            to consider a split. Defaults to 0.
+            to consider a split. Defaults to 0. Range: 0 to 1
         save_every_iter (bool, optional): Save results at every iteration. Defaults to False.
         save_merged_every_iter (bool, optional): Save merged results at every iteration. Defaults to False.
         name_prefix (str, optional): Prefix for output file names. Defaults to "Merged_seed".
-        init_segments (int, optional): Initial segments. Defaults to None.
+        init_segments (int, optional): Number of segments for the first seed, defaults is None.
+            A small number of make the initial sepration faster, as normally the first seed only has a big one component
         footprint (str, optional): Footprint shape for erosion. Defaults to "ball".
 
     Returns:
@@ -456,8 +457,9 @@ def make_seeds_merged_by_thres_path_wrapper(img_path,
         save_every_iter (bool, optional): Save results at every iteration. Defaults to False.
         save_merged_every_iter (bool, optional): Save merged results at every iteration. Defaults to False.
         name_prefix (str, optional): Prefix for output file names. Defaults to "Merged_seed".
-        init_segments (int, optional): Initial segments to start with. Defaults to None.
-        footprint (str, optional): Shape of erosion footprint. Defaults to "ball".
+        init_segments (int, optional): Number of segments for the first seed, defaults is None.
+            A small number of make the initial sepration faster, as normally the first seed only has a big one component
+        footprint (str, optional): Footprint shape for erosion. Defaults to "ball".
 
 
     Returns:
@@ -557,8 +559,9 @@ def make_seeds_merged_by_thres_mp(img,
         save_every_iter (bool, optional): Save results at every iteration. Defaults to False.
         save_merged_every_iter (bool, optional): Save merged results at every iteration. Defaults to False.
         name_prefix (str, optional): Prefix for output file names. Defaults to "Merged_seed".
-        init_segments (int, optional): Initial segments to start with. Defaults to None.
-        footprint (str, optional): Shape of erosion footprint. Defaults to "ball".
+        init_segments (int, optional): Number of segments for the first seed, defaults is None.
+            A small number of make the initial sepration faster, as normally the first seed only has a big one component
+        footprint (str, optional): Footprint shape for erosion. Defaults to "ball".
 
 
     Returns:
@@ -788,7 +791,24 @@ if __name__ == "__main__":
     if extension == '.yaml':
         with open(file_path, 'r') as file:
             config = yaml.safe_load(file)
+            
+            boundary_path = config.get('boundary_path', None)
+            background = config.get('background', 0)
+            sort = config.get('sort', True)
+            
+            no_split_limit = config.get('no_split_limit', 3)
+            min_size = config.get('min_size', 5)
+            min_split_prop = config.get('min_split_prop', 0.01)
+            min_split_sum_prop = config.get('min_split_sum_prop', 0)
+            
+            save_every_iter = config.get('save_every_iter', False)
+            save_merged_every_iter = config.get('save_merged_every_iter', False)
+            name_prefix = config.get('name_prefix', "Merged_seed")
+            init_segments = config.get('init_segments', None)
+            footprints = config.get('footprints', "ball")
+        
         load_config_yaml(config)
+        
         
     
     if isinstance(thresholds, int):
@@ -812,32 +832,57 @@ if __name__ == "__main__":
     img = imread(img_path)
     name_prefix = os.path.basename(img_path)
     
+    if boundary_path is not None:
+        boundary = imread(boundary_path)
+    else:
+        boundary = None
+    
     if seed_merging_mode == "ERO":
-        seed ,ori_combine_ids_map , output_dict=  make_seeds_merged_mp(img, 
-                                                    threshold = thresholds,
-                                                    output_folder = output_folder,
-                                                    n_iters=n_iters,segments=segments,
-                                                    num_threads = num_threads,
-                                                    min_size= 100,
-                                                    save_every_iter = True,
-                                                    name_prefix=name_prefix)
+        seed ,ori_combine_ids_map , output_dict=  make_seeds_merged_mp(img,
+                                            thresholds,
+                                            output_folder,
+                                            n_iters, 
+                                            segments,
+                                            boundary = boundary,
+                                            num_threads = num_threads,
+                                            background = background,
+                                            sort = sort,
+                                            no_split_limit =no_split_limit,
+                                            min_size=min_size,
+                                            min_split_prop = min_split_prop,
+                                            min_split_sum_prop = min_split_sum_prop,
+                                            save_every_iter = save_every_iter,
+                                            save_merged_every_iter = save_merged_every_iter,
+                                            name_prefix = name_prefix,
+                                            init_segments = init_segments,
+                                            footprint = footprints)
+    
     # pd.DataFrame(ori_combine_ids_map).to_csv(os.path.join(output_folder, 'ori_combine_ids_map.csv'),index=False)
     
     elif seed_merging_mode=="THRE":
    
-        seed ,ori_combine_ids_map , output_dict=  make_seeds_merged_by_thres_mp(img,
-                        thresholds,
-                        output_folder,
-                        n_iters = n_iters, 
-                        segments = segments,
-                        num_threads = num_threads,
-                        no_split_limit =3,
-                        sort = True,
-                        background = 0,
-                        save_every_iter = True,
-                        name_prefix = name_prefix,
-                        footprint = "ball",
-                        )
+        seed ,ori_combine_ids_map , output_dict= make_seeds_merged_by_thres_mp(img,
+                                    thresholds,
+                                    output_folder,
+                                    n_iters, 
+                                    segments,
+                                    num_threads = num_threads,
+                                    
+                                    boundary = boundary,
+                                    background = background,
+                                    sort = sort,
+                                    no_split_limit =no_split_limit,
+                                    min_size=min_size,
+                                    min_split_prop = min_split_prop,
+                                    min_split_sum_prop = min_split_sum_prop,
+                                    save_every_iter = save_every_iter,
+                                    save_merged_every_iter = save_merged_every_iter,
+                                    name_prefix = name_prefix,
+                                    init_segments = init_segments,
+                                    footprint = footprints)
+                
+
+    
     
     pd.DataFrame(output_dict).to_csv(os.path.join(output_folder, 'output_dict.csv'),index=False)
     # Track the overall end time

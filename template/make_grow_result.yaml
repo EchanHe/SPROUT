@@ -21,11 +21,6 @@ thresholds: [5000,2000,1000]
 # one element example: dilate_iters: [30]
 dilate_iters: [30,30,10]
 
-# if you want to grow on all ids, put a ~
-to_grow_ids: ~
-# Example for growing on classes 1,3,5:
-# to_grow_ids: [1,3,5]
-
 # Keep it "stop for now"
 touch_rule: "stop"
 # The name of the output folder
@@ -34,3 +29,54 @@ output_folder: "grow_2"
 
 # Save the grow result every n iters
 save_interval: 5
+
+# Number of threads
+num_threads: 10
+
+
+#### Optional parameters ####
+## Can be commented out if you want to use the default values
+
+# Path to boundary image. Defaults is None.
+boundary_path: './data/boundary.tif'
+
+# Whether grow to the very end, override the dilate_iters.
+# It will grow the result as close to the thresholded mask as possible
+# Default is False
+grow_to_end: False
+
+# The final_grow_output_folder for saving the final grow
+# Default is None, and the final_grow_output_folder will be same as output_folder
+final_grow_output_folder: None
+
+
+# The name prefix, default is "final_grow"
+name_prefix: "final_grow"
+# Whether use simple naming, the original naming can be long
+simple_naming: True
+
+# if you want to grow on all ids, put a ~
+# Default is None/~
+# Example for growing on classes 1,3,5:
+# to_grow_ids: [1,3,5]
+to_grow_ids: ~
+
+# If want to sort class id by comp size. Default is True
+is_sort: True
+# The minimum difference to consider there is a growth in a dilation iteration
+# Default is 50
+min_diff: 50
+
+# Early stop checking: 
+# Limit for consecutive no-growth iterations. Defaults is 3.
+tolerate_iters: 3
+
+
+## Optional parameters: saving mesh ##
+# Is saving meshes, default is False
+is_make_meshes: False
+# Scale for downsampling the meshes, Default is 10
+downsample_scale: 10
+# Step size in Marching Cubes alogrithms, Default is 1
+# The higher number makes the mesh simpler
+step_size: 1

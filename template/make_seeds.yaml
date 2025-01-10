@@ -1,5 +1,3 @@
-# This is a comment
-
 # The root folder for processing data
 # Workspace can be set as ""
 # Then the input_folder and output_folder need to be absolute paths
@@ -33,6 +31,7 @@ output_seed_folder: "seeds"
 output_log_file: "seed_log.json"
 
 #How to erode your images, current supports 
+# Default is "ball"
 #'ball' and 'cube' :Erosion all directions. 
 #'ball_XY', 'ball_XZ', 'ball_YZ': Erosion on the Plane. 
 # 'X', 'Y', 'Z': Erosion on the axis.

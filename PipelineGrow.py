@@ -29,9 +29,24 @@ if __name__ == "__main__":
         with open(file_path, 'r') as file:
             config = yaml.safe_load(file)
             workspace = config.get("workspace","")
+            
             to_grow_ids = config.get("to_grow_ids" , None)
             name_prefix = config.get("name_prefix" , "final_grow")
             grow_to_end = config.get("grow_to_end" , False)
+            simple_naming = config.get("simple_naming",True)
+            
+            is_sort = config.get('is_sort', True) 
+            min_diff = config.get('min_diff', 50) 
+            tolerate_iters = config.get('tolerate_iters', 3) 
+            
+            # For mesh making
+            is_make_meshes = config.get('is_make_meshes', False) 
+            downsample_scale = config.get('downsample_scale', 10) 
+            step_size  = config.get('step_size', 1)     
+            
+            
+            
+            
         load_config_yaml(config)
         
     df = pd.read_csv(csv_path)
@@ -120,8 +135,23 @@ if __name__ == "__main__":
                 workspace = None,
                 boundary_path = boundary_path,
                 output_folder = output_sub_folder,
+                
+                grow_to_end = grow_to_end,
+                to_grow_ids = to_grow_ids,    
+                
                 final_grow_output_folder = output_folder,
-                grow_to_end = grow_to_end
+                name_prefix = name_prefix,
+                simple_naming = simple_naming ,     
+
+                is_sort = is_sort,
+                min_diff = min_diff,
+                tolerate_iters = tolerate_iters,
+
+                # For mesh making
+                is_make_meshes = is_make_meshes,
+                downsample_scale = downsample_scale,
+                step_size  = step_size
+
             )
 
             df.loc[index,'final_output_path'] = output['final_output_path']

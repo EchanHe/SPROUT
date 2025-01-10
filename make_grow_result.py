@@ -175,7 +175,7 @@ def grow_mp(**kwargs):
     # For mesh making
     is_make_meshes = kwargs.get('is_make_meshes', False) 
     downsample_scale = kwargs.get('downsample_scale', 10) 
-    step_size  = kwargs.get('step_size', 2) 
+    step_size  = kwargs.get('step_size', 1) 
     
     
     default_grow_to_end_iter = 150
@@ -396,7 +396,7 @@ def main(**kwargs):
     is_make_meshes = kwargs.get('is_make_meshes', False) 
     num_threads = kwargs.get('num_threads', None) 
     downsample_scale = kwargs.get('downsample_scale', 10) 
-    step_size  = kwargs.get('step_size', 2) 
+    step_size  = kwargs.get('step_size', 1) 
     
     
     if num_threads is None:
@@ -549,24 +549,62 @@ if __name__ == "__main__":
     if extension == '.yaml':
         with open(file_path, 'r') as file:
             config = yaml.safe_load(file)
+            boundary_path = config.get('boundary_path', None)
+            
             to_grow_ids = config.get('to_grow_ids', None)
             num_threads = config.get('num_threads', None)
+            
+            
+            grow_to_end = config.get('grow_to_end', False)  
+            is_sort = config.get('is_sort', True) 
+            min_diff = config.get('min_diff', 50) 
+            tolerate_iters = config.get('tolerate_iters', 3) 
+            
+            # For mesh making
+            is_make_meshes = config.get('is_make_meshes', False) 
+            downsample_scale = config.get('downsample_scale', 10) 
+            step_size  = config.get('step_size', 1)     
+            
+            final_grow_output_folder =config.get("final_grow_output_folder",None)
+            name_prefix = config.get("name_prefix","final_grow")
+            simple_naming = config.get("simple_naming",True)
+            
+        
         load_config_yaml(config)
     
 
-    grow_dict = grow_mp(        
-        dilate_iters = dilate_iters,
-        thresholds = thresholds,
-        save_interval = save_interval,  
-        touch_rule = touch_rule, 
-        
+    grow_dict = grow_mp(
         workspace = workspace,
         img_path = img_path,
         seg_path = seg_path,
         output_folder = output_folder,
-        to_grow_ids = to_grow_ids,
+         
+        dilate_iters = dilate_iters,
+        thresholds = thresholds,
         num_threads = num_threads,
-         )
+        
+        save_interval = save_interval,  
+        touch_rule = touch_rule, 
+        
+        
+        grow_to_end = grow_to_end,
+        to_grow_ids = to_grow_ids,
+        
+        final_grow_output_folder =final_grow_output_folder,
+        name_prefix = name_prefix,
+        simple_naming = simple_naming ,
+        
+
+        is_sort = is_sort,
+        min_diff = min_diff,
+        tolerate_iters = tolerate_iters,
+        
+        # For mesh making
+        is_make_meshes = is_make_meshes,
+        downsample_scale = downsample_scale,
+        step_size  = step_size
+        
+        )
     
     vis_lib.plot_grow(pd.read_csv(grow_dict['log_path']),
               grow_dict['log_path'] +".png"

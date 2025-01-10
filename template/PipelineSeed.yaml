@@ -12,11 +12,53 @@ num_threads: 10
 # merge: use make_seeds_merged
 seed_mode: 'merge'
 
-### Optional inputs
-#Optional, if there isn't one in csv, set here for all input
+### Flexible  Inputs: either in the csv or here (.yaml) ###
+
 ero_iters: 3
 segments: 25
 output_folder: "./data/test_batch_boundary/seed_all"
 
 name_prefix: ""
+
+
+#### Optional inputs ####
+# If choosing 'all' as the seed mode:
+# Default footprints are: 'ball', 'ball_XY', 'ball_XZ', 'ball_YZ'
+# If choosing 'original' and 'merge'
+# Default footprints are: 'ball'
 footprints: "ball_XY"
+
+## Optional inputs for the "merged seeds" function ##
+
+# Background value. Defaults is 0.
+background: 0
+# Whether to sort output segment IDs. Defaults is True.
+sort: True
+
+# Early stop checking: Limit for consecutive no-split iterations. Defaults is 3.
+no_split_limit: 3
+
+# Minimum size for segments. Defaults is 5.
+min_size: 5
+
+# Minimum proportion to consider a split. Defaults is 0.01.
+min_split_prop: 0.01
+
+# Minimum proportion of (sub-segments from next step)/(current segments) to consider a split (0-1).
+# Defaults is 0.
+min_split_sum_prop: 0
+
+# Save results at every iteration. Defaults is False.
+save_every_iter: False
+# Save merged results at every iteration. Defaults is False.
+save_merged_every_iter: False
+
+# Number of segments for the first seed, 
+# Defaults is None.
+# A small number of make the initial separation faster
+# As normally the first seed only has a big one component
+init_segments: ~
+
+
+
+

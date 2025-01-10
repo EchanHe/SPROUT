@@ -46,6 +46,20 @@ if __name__ == "__main__":
         with open(file_path, 'r') as file:
             config = yaml.safe_load(file)
             
+
+            background = config.get('background', 0)
+            sort = config.get('sort', True)
+            
+            no_split_limit = config.get('no_split_limit', 3)
+            min_size = config.get('min_size', 5)
+            min_split_prop = config.get('min_split_prop', 0.01)
+            min_split_sum_prop = config.get('min_split_sum_prop', 0)
+            
+            save_every_iter = config.get('save_every_iter', False)
+            save_merged_every_iter = config.get('save_merged_every_iter', False)
+           
+            init_segments = config.get('init_segments', None)
+            
             workspace = config.get("workspace","")
         load_config_yaml(config)
     
@@ -169,13 +183,16 @@ if __name__ == "__main__":
                                 n_iters = ero_iters,
                                 segments = segments,
                                 num_threads = num_threads,
-                                no_split_limit =3,
-                                # min_size= min_size,
-                                sort = True,
-                                background = 0,
-                                save_every_iter = True,
+                                no_split_limit =no_split_limit,
+                                min_size= min_size,
+                                min_split_prop = min_split_prop,
+                                min_split_sum_prop = min_split_sum_prop,
+                                sort = sort,
+                                background = background,
+                                save_every_iter = save_every_iter,
+                                save_merged_every_iter = save_merged_every_iter ,
                                 name_prefix = output_names,
-                                init_segments = None,
+                                init_segments = init_segments,
                                 footprint= footprints
                                 )
                 
@@ -190,14 +207,17 @@ if __name__ == "__main__":
                                             boundary_path = boundary_path,
                                             n_iters = ero_iters,
                                             segments = segments,
-                                            num_threads = num_threads,
-                                            no_split_limit =3,
-                                            # min_size= min_size,
-                                            sort = True,
-                                            background = 0,
-                                            save_every_iter = True,
+                                            num_threads = num_threads,                                           
+                                            no_split_limit =no_split_limit,
+                                            min_size= min_size,
+                                            min_split_prop = min_split_prop,
+                                            min_split_sum_prop = min_split_sum_prop,
+                                            sort = sort,
+                                            background = background,
+                                            save_every_iter = save_every_iter,
+                                            save_merged_every_iter = save_merged_every_iter ,
                                             name_prefix = output_names,
-                                            init_segments = None,
+                                            init_segments = init_segments,
                                             footprint= footprints
                                             )
         except Exception as e:

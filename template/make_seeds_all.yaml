@@ -1,12 +1,50 @@
-# This is a comment
+# The root folder for processing data
+# Workspace can be set as ""
+# Then the input_folder and output_folder need to be absolute paths
+workspace: "./dataset_1/data_1"
 
+# The relative path from the workspace of input image
+# The actual path will be workspace + file_name 
+file_name: "input/img.tif"
 
-workspace: "C:\\Users\\Yichen\\OneDrive\\work\\codes\\nhm_bounti\\result\\foram_james"
-file_name: "input/ai_v2/final.20180719_VERSA_1905_ASB_OLK_st014_bl4_fo1_recon.tif"
+# num of threads, it would be best to match the length of target_thresholds
 num_threads: 2
+
+# A list of thresholds for seed generation
+# Seeds will be generated based on each individual threshold
 target_thresholds: [1,2,3]
-ero_iters: 3
+
+# one or a list of erosion iteration for seed generation
+# The current version will save seeds every iteration until ero_iters
+# Therefore, it is recommended to just set one, which is the maximum ero iteration you want
+ero_iters: [3]
+
+# Integer >=1, The algorithm keeps top <segments> largest disconnected components
 segments: 30
-output_seed_folder: "seeds"
+# Output folder for the seeds
+
+# The name of the output folder
+# A folder of workspace + output_folder
+output_folder: "seeds"
+
+# name of the log file name, will be save in the output folder
 output_log_file: "seed_log.json"
 
+
+## Optional parameters ##
+## Can be commented out if you want to use the default values
+
+# Is saving meshes, default is False
+is_make_meshes: False
+# Scale for downsampling the meshes, Default is 10
+downsample_scale: 10
+# Step size in Marching Cubes alogrithms, Default is 1
+# The higher number makes the mesh simpler
+step_size: 1
+# How to erode your images, current supports 
+# Default does erosion using 'ball', 'ball_XY', 'ball_XZ', 'ball_YZ'
+# Options are
+#'ball' and 'cube' :Erosion all directions. 
+#'ball_XY', 'ball_XZ', 'ball_YZ': Erosion on the Plane. 
+# 'X', 'Y', 'Z': Erosion on the axis.
+footprints: "ball" 

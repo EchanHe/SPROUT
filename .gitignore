@@ -6,6 +6,7 @@ PipelineSeedGrowMesh.py
 result/*
 json_configs/*
 old_codes/*
+test_codes/*
 .vscode/*
 
 ./slide/*
@@ -27,6 +28,8 @@ src/*
 test_*.bat
 test_*.py
 test_*.ipynb
+
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

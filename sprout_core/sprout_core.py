@@ -233,7 +233,7 @@ def dilation_binary_img_on_sub(input, margin, kernal_size, is_round=True):
 
 def view_ccomps(input):
     subset_3d , _= get_sub_binary_image_by_pos(input, margin = 1)
-    labeled_image = measure.label(subset_3d, background=0, return_num=False, connectivity=2)
+    labeled_image = measure.label(subset_3d, background=0, return_num=False, connectivity=3)
     # Calculate the size of each connected component
     component_sizes = np.bincount(labeled_image.ravel())[1:]  # Skip the background count
 
@@ -246,7 +246,7 @@ def keep_largest_ccomps(input):
     subset_3d , max_min_ids= get_sub_binary_image_by_pos(input, margin = 1)
     min_z, max_z, min_y ,max_y, min_x, max_x = max_min_ids
     
-    labeled_image = measure.label(subset_3d, background=0, return_num=False, connectivity=2)
+    labeled_image = measure.label(subset_3d, background=0, return_num=False, connectivity=3)
     # Calculate the size of each connected component
     # component_sizes = np.bincount(labeled_image.ravel())[1:]  # Skip the background count
 
@@ -270,7 +270,7 @@ def keep_ccomps(input, top_n=None , threshold=0):
     subset_3d , max_min_ids= get_sub_binary_image_by_pos(input, margin = 1)
     min_z, max_z, min_y ,max_y, min_x, max_x = max_min_ids
     
-    labeled_image = measure.label(subset_3d, background=0, return_num=False, connectivity=2)
+    labeled_image = measure.label(subset_3d, background=0, return_num=False, connectivity=3)
     # Calculate the size of each connected component
     # component_sizes = np.bincount(labeled_image.ravel())[1:]  # Skip the background count
 
@@ -310,7 +310,7 @@ def get_ccomps_with_size_order(volume, segments=None, min_vol = None):
         _type_: _description_
     """
     labeled_image = measure.label(volume, background=0, 
-                                  return_num=False, connectivity=2)
+                                  return_num=False, connectivity=3)
     component_sizes = np.bincount(labeled_image.ravel())[1:] 
     
     

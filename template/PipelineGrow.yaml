@@ -8,12 +8,48 @@ csv_path: "./data/test_batch_boundary/input.csv"
 touch_rule: "stop"
 num_threads: 10
 
-### Optional inputs
-#Optional, if there isn't one in csv, set here for all input
+### Flexible  Inputs: either in the csv or here (.yaml) ###
 dilate_iters: 2
 thresholds: [3400,2400]
 output_folder: "./data/test_batch_boundary/seed_all"
 save_interval: 1
 
+#### Optional inputs ####
+## Can be commented out if you want to use the default values
 
+# Whether grow to the very end, override the dilate_iters.
+# It will grow the result as close to the thresholded mask as possible
+# Default is False
+grow_to_end: False
+
+# The name prefix, default is "final_grow"
+name_prefix: "final_grow"
+# Whether use simple naming, the original naming can be long
+simple_naming: True
+
+# if you want to grow on all ids, put a ~
+# Default is None/~
+# Example for growing on classes 1,3,5:
+# to_grow_ids: [1,3,5]
+to_grow_ids: ~
+
+# If want to sort class id by comp size. Default is True
+is_sort: True
+# The minimum difference to consider there is a growth in a dilation iteration
+# Default is 50
+min_diff: 50
+
+# Early stop checking: 
+# Limit for consecutive no-growth iterations. Defaults is 3.
+tolerate_iters: 3
+
+
+## Optional parameters: saving mesh ##
+# Is saving meshes, default is False
+is_make_meshes: False
+# Scale for downsampling the meshes, Default is 10
+downsample_scale: 10
+# Step size in Marching Cubes alogrithms, Default is 1
+# The higher number makes the mesh simpler
+step_size: 1
 
