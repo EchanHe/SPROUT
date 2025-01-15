@@ -135,9 +135,14 @@ def make_seeds_all(**kwargs):
     # Seed generation related 
     ero_iters = kwargs.get('ero_iters', None)
     target_thresholds = kwargs.get('target_thresholds', None) 
+    
+    upper_thresholds = kwargs.get('upper_thresholds', None) 
 
     if isinstance(target_thresholds, int):
         target_thresholds = [target_thresholds]
+    
+    if isinstance(upper_thresholds, int):
+        upper_thresholds = [upper_thresholds]
  
     segments = kwargs.get('segments', None)  
     num_threads = kwargs.get('num_threads', None) 
@@ -154,6 +159,11 @@ def make_seeds_all(**kwargs):
     if num_threads>=max_threads:
         num_threads = max_threads-1
 
+
+    if upper_thresholds is not None:
+        assert len(target_thresholds) == len(upper_thresholds), "Thresholds and upper thresholds do not have the same length."   
+        for a, b in zip(target_thresholds, upper_thresholds):
+            assert a < b, "lower_threshold must be smaller than upper_threshold"
 
 
     # Prepare values to print
@@ -196,7 +206,10 @@ def make_seeds_all(**kwargs):
         "output_log_files":[]
     }
     
-        
+    if upper_thresholds is not None:
+        target_thresholds = list(zip(target_thresholds, upper_thresholds))
+    
+    
     for footprints, output_seed_sub_folder in zip(footprint_list,output_seed_sub_folders):
 
         # Init the folders and path for output files
@@ -216,6 +229,7 @@ def make_seeds_all(**kwargs):
             Output Folder {output_seed_sub_folder}
                 """)
         
+
 
 
         threshold_ero_iter_pairs = list(itertools.product(target_thresholds, [ero_iters]))  
@@ -295,6 +309,8 @@ if __name__ == "__main__":
     elif extension == '.yaml':
         with open(file_path, 'r') as file:
             config = yaml.safe_load(file)
+            upper_thresholds = config.get("upper_thresholds" , None)
+            
             num_threads = config.get('num_threads', None) 
         load_config_yaml(config)
         
@@ -321,13 +337,14 @@ if __name__ == "__main__":
             num_threads = num_threads,
             ero_iters = ero_iters,
             target_thresholds = target_thresholds,
-            segments = segments)
+            segments = segments,
+            upper_thresholds = upper_thresholds)
     
 
     
     # Make plot based on the seeds log json
     # Doing this after parallel/multi processing
-    plot(output_dict, os.path.join(os.path.join(workspace, output_seed_folder, "full_log.png")))
+    plot(output_dict, os.path.join(os.path.join(workspace, output_folder, "full_log.png")))
                                                      
 
     # if make_mesh:

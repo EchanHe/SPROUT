@@ -158,9 +158,11 @@ def merge_plots(plot_list, file_path):
 def plot_grow(df, fig_path):
 
     thresholds = df['cur_threshold'].unique()
-    norm = Normalize(vmin=thresholds.min(), vmax=thresholds.max())
+    norm = Normalize(0, len(thresholds))
     cmap = cm.viridis
-    colors = cmap(norm(df['cur_threshold'].unique()))
+    # colors = cmap(norm(df['cur_threshold'].unique()))
+    
+    colors =cmap(norm(list(range(len(thresholds)))))
     # Create a line plot with id as x, value as y, and threshold as color
     plt.figure(figsize=(20, 10))
 

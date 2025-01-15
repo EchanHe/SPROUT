@@ -734,15 +734,20 @@ def find_seed_by_ero_custom(volume_array, threshold , segments, ero_iter,
                     output_dir, 
                     ero_shape = 'ball',
                     SAVE_ALL_ERO= True,
-                    footprints = None):
+                    footprints = None,
+                    upper_threshold = None):
      # Capture the start time
     start_time = datetime.now()
     
-    volume_label = volume_array > threshold
+    if upper_threshold is None:
+        volume_label = volume_array >= threshold
+    else:
+        volume_label = (volume_array>=threshold) & (volume_array<=upper_threshold)
     
     log_dict = {"Method": "find_seed_by_ero_custom",
                   "volume_array shape": list(volume_array.shape),
                   "threshold": threshold,
+                  "upper threshold": upper_threshold,
                   "segments": segments,
                   "footprints": footprints,
                   "Whole Volume": int(np.sum(volume_label)),
@@ -759,7 +764,7 @@ def find_seed_by_ero_custom(volume_array, threshold , segments, ero_iter,
                                                                 #    footprint='ball_YZ')
         
         seed_file = os.path.join(output_dir , 
-                            f"seed_ero_{i_iter}_thre{threshold}_segs_{segments}.tif")
+                            f"seed_ero_{i_iter}_thre{threshold}_{upper_threshold}_segs_{segments}.tif")
         
 
         

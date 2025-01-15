@@ -77,7 +77,8 @@ def make_seeds_merged_path_wrapper(img_path,
                               save_merged_every_iter=False,
                               name_prefix="Merged_seed",
                               init_segments=None,
-                              footprint="ball"
+                              footprint="ball",
+                              upper_threshold = None
                               ):
     """
     Wrapper for make_seeds_merged_mp that performs erosion-based merged seed generation with multi-threading.
@@ -147,7 +148,8 @@ def make_seeds_merged_path_wrapper(img_path,
                         name_prefix=name_prefix,
                         init_segments=init_segments,
                         footprint=footprint,
-                        min_split_sum_prop=min_split_sum_prop)
+                        min_split_sum_prop=min_split_sum_prop,
+                        upper_threshold = upper_threshold)
 
 
     end_time = datetime.now()
@@ -176,7 +178,8 @@ def make_seeds_merged_mp(img,
                         save_merged_every_iter = False,
                         name_prefix = "Merged_seed",
                         init_segments = None,
-                        footprint = "ball"
+                        footprint = "ball",
+                        upper_threshold = None
                       ):
     """
     Erosion-based merged seed generation with multi-threading.
@@ -210,6 +213,7 @@ def make_seeds_merged_mp(img,
 
     values_to_print = {
         "Threshold": threshold,
+        "upper_threshold": upper_threshold,
         "Output Folder": output_folder,
         "Erosion Iterations": n_iters,
         "Segments": segments,
@@ -229,13 +233,19 @@ def make_seeds_merged_mp(img,
     for key, value in values_to_print.items():
         print(f"  {key}: {value}")
 
-    output_name = f"{name_prefix}_thre_{threshold}_ero_{n_iters}"
+    output_name = f"{name_prefix}_thre_{threshold}_{upper_threshold}_ero_{n_iters}"
     output_folder = os.path.join(output_folder, output_name)
     os.makedirs(output_folder,exist_ok=True)
     
     max_splits = segments
     
-    img = img>=threshold
+    
+    if upper_threshold is not None:
+        assert threshold<upper_threshold, "lower_threshold must be smaller than upper_threshold"
+        img = (img>=threshold) & (img<=upper_threshold)
+    else:
+        img = img>=threshold
+    # img = img<=threshold
 
     if boundary is not None:
         boundary = sprout_core.check_and_cast_boundary(boundary)
@@ -246,7 +256,7 @@ def make_seeds_merged_mp(img,
 
     init_seed, _ = sprout_core.get_ccomps_with_size_order(img,init_segments)
     
-    output_img_name = f'thre_{threshold}_ero_0.tif'
+    output_img_name = f'thre_{threshold}_{upper_threshold}_ero_0.tif'
     if save_every_iter:
         imwrite(os.path.join(output_folder,output_img_name), init_seed, 
             compression ='zlib')
@@ -290,7 +300,7 @@ def make_seeds_merged_mp(img,
         seed, _ = sprout_core.get_ccomps_with_size_order(img,segments)
         seed = seed.astype('uint16')
         
-        output_img_name = f'thre_{threshold}_ero_{ero_iter}.tif'
+        output_img_name = f'thre_{threshold}_{upper_threshold}_ero_{ero_iter}.tif'
         output_dict["cur_seed_name"][threshold] = output_img_name
         
         if save_every_iter:
@@ -432,7 +442,9 @@ def make_seeds_merged_by_thres_path_wrapper(img_path,
                                        save_merged_every_iter=False,
                                        name_prefix="Merged_seed",
                                        init_segments=None,
-                                       footprint="ball"
+                                       footprint="ball",
+                                       
+                                       upper_thresholds = None
                                        ):
     """
     Wrapper for make_seeds_merged_by_thres_mp that performs thresholds-based merged seed generation.
@@ -504,7 +516,9 @@ def make_seeds_merged_by_thres_path_wrapper(img_path,
                                   name_prefix=name_prefix,
                                   init_segments=init_segments,
                                   footprint=footprint,
-                                  min_split_sum_prop=min_split_sum_prop)
+                                  min_split_sum_prop=min_split_sum_prop,
+                                  
+                                  upper_thresholds = upper_thresholds)
 
     end_time = datetime.now()
     running_time = end_time - start_time
@@ -535,6 +549,8 @@ def make_seeds_merged_by_thres_mp(img,
                         name_prefix = "Merged_seed",
                         init_segments = None,
                         footprint = "ball",
+                        
+                        upper_thresholds = None
                     ):
     """
     Thresholds-based merged seed generation.
@@ -571,6 +587,7 @@ def make_seeds_merged_by_thres_mp(img,
 
     values_to_print = {
         "Thresholds": thresholds,
+        "upper_thresholds": upper_thresholds,
         "Output Folder": output_folder,
         "Erosion Iterations": n_iters,
         "Segments": segments,
@@ -600,8 +617,13 @@ def make_seeds_merged_by_thres_mp(img,
     if init_segments is None:
         init_segments = segments
 
-
-    mask = img>=thresholds[0]
+    if upper_thresholds is not None:
+        assert len(thresholds) == len(upper_thresholds), "lower_thresholds and upper_thresholds should have the same length"
+        assert thresholds[0]<upper_thresholds[0], "lower_threshold must be smaller than upper_threshold"
+        mask = (img>=thresholds[0]) & (img<=upper_thresholds[0])
+    else:
+        mask = img>=thresholds[0]
+    
     
     if boundary is not None:
         boundary = sprout_core.check_and_cast_boundary(boundary)
@@ -640,7 +662,7 @@ def make_seeds_merged_by_thres_mp(img,
     no_consec_split_count = 0
     
 
-    for threshold in thresholds[1:]:
+    for idx_threshold, threshold in enumerate(thresholds[1:]):
         print(f"working on thre {threshold}")
         
         output_dict["split_id"][threshold] = {}
@@ -648,7 +670,15 @@ def make_seeds_merged_by_thres_mp(img,
         output_dict["split_ori_id_filtered"][threshold] = {}
         output_dict["split_prop"][threshold] = {}
         
-        mask = img>=threshold
+        
+        if upper_thresholds is not None:
+            assert threshold<upper_thresholds[1 + idx_threshold], "lower_threshold must be smaller than upper_threshold"
+            mask = (img>=threshold) & (img<=upper_thresholds[1 + idx_threshold])
+        else:
+            mask = img>=threshold
+
+        # mask = img>=threshold
+        
         for ero_iter in range(1, n_iters+1):
             mask = sprout_core.erosion_binary_img_on_sub(mask, kernal_size = 1,footprint=footprint)
         seed, _ = sprout_core.get_ccomps_with_size_order(mask,segments)
@@ -770,11 +800,11 @@ def make_seeds_merged_by_thres_mp(img,
         imwrite(output_path, combine_seed, 
             compression ='zlib')    
         
-    # combine_seed,_ = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort)
-    # output_path = os.path.join(output_folder,output_name+'_sorted.tif')
-    # print(f"\tSaving final output:{output_path}")
-    # imwrite(output_path, combine_seed, 
-    #     compression ='zlib')
+    combine_seed,_ = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort)
+    output_path = os.path.join(output_folder,output_name+'_sorted.tif')
+    print(f"\tSaving final output:{output_path}")
+    imwrite(output_path, combine_seed, 
+        compression ='zlib')
     
              
     return combine_seed,ori_combine_ids_map, output_dict  
@@ -791,6 +821,8 @@ if __name__ == "__main__":
     if extension == '.yaml':
         with open(file_path, 'r') as file:
             config = yaml.safe_load(file)
+            
+            upper_thresholds = config.get('upper_thresholds', None)
             
             boundary_path = config.get('boundary_path', None)
             background = config.get('background', 0)
@@ -818,6 +850,9 @@ if __name__ == "__main__":
             if len(thresholds) == 1:
                 seed_merging_mode = "ERO"
                 thresholds = thresholds[0]
+                if upper_thresholds is not None:
+                    upper_thresholds = upper_thresholds[0]
+                
             elif len(thresholds) > 1:
                 seed_merging_mode = "THRE"
         else:
@@ -855,7 +890,8 @@ if __name__ == "__main__":
                                             save_merged_every_iter = save_merged_every_iter,
                                             name_prefix = name_prefix,
                                             init_segments = init_segments,
-                                            footprint = footprints)
+                                            footprint = footprints,
+                                            upper_threshold = upper_thresholds)
     
     # pd.DataFrame(ori_combine_ids_map).to_csv(os.path.join(output_folder, 'ori_combine_ids_map.csv'),index=False)
     
@@ -879,7 +915,8 @@ if __name__ == "__main__":
                                     save_merged_every_iter = save_merged_every_iter,
                                     name_prefix = name_prefix,
                                     init_segments = init_segments,
-                                    footprint = footprints)
+                                    footprint = footprints,
+                                    upper_thresholds = upper_thresholds)
                 
 
     

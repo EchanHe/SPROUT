@@ -1,4 +1,4 @@
-import make_seeds
+# import make_seeds
 import make_seeds_all
 import make_mesh
 import yaml
@@ -46,6 +46,7 @@ if __name__ == "__main__":
         with open(file_path, 'r') as file:
             config = yaml.safe_load(file)
             
+            upper_thresholds = config.get('upper_thresholds', None)
 
             background = config.get('background', 0)
             sort = config.get('sort', True)
@@ -153,7 +154,9 @@ if __name__ == "__main__":
                                         segments = segments,
                                         name_prefix = output_names,
                                         num_threads = num_threads,
-                                        footprints = footprints
+                                        footprints = footprints,
+                                        
+                                        upper_thresholds = upper_thresholds
                                         )
             elif seed_mode == "all":
                 output_dict = make_seeds_all.for_pipeline_wrapper(
@@ -166,6 +169,7 @@ if __name__ == "__main__":
                                 segments = segments,
                                 name_prefix = output_names,
                                 num_threads = num_threads,
+                                upper_thresholds = upper_thresholds
                                 )
             
             elif seed_mode == "merge":
@@ -193,12 +197,17 @@ if __name__ == "__main__":
                                 save_merged_every_iter = save_merged_every_iter ,
                                 name_prefix = output_names,
                                 init_segments = init_segments,
-                                footprint= footprints
+                                footprint= footprints,
+                                
+                                upper_thresholds = upper_thresholds
                                 )
                 
                 else:
                     if isinstance(seed_threshold,list) and len(seed_threshold)==1:
                         seed_threshold = seed_threshold[0]
+                    if upper_thresholds is not None:
+                        assert len(upper_thresholds)==1, "Upper threshold should have 1 element"
+                        upper_threshold = upper_thresholds[0]
                     print("Running make_seeds_merged")
                     seed ,ori_combine_ids_map , output_dict=make_seeds_merged.make_seeds_merged_path_wrapper(                           
                                             img_path= input_path,
@@ -218,7 +227,8 @@ if __name__ == "__main__":
                                             save_merged_every_iter = save_merged_every_iter ,
                                             name_prefix = output_names,
                                             init_segments = init_segments,
-                                            footprint= footprints
+                                            footprint= footprints,
+                                            upper_threshold = upper_threshold
                                             )
         except Exception as e:
             df.loc[index,'error'] = str(e)

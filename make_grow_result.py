@@ -154,6 +154,8 @@ def grow_mp(**kwargs):
     # Extract configuration values from kwargs
     dilate_iters = kwargs.get('dilate_iters', None)
     thresholds = kwargs.get('thresholds', None)  
+    upper_thresholds = kwargs.get('upper_thresholds', None)  
+    
     num_threads = kwargs.get('num_threads', None) 
     save_interval = kwargs.get('save_interval', None)  
     touch_rule = kwargs.get('touch_rule', "stop")  
@@ -193,6 +195,9 @@ def grow_mp(**kwargs):
 
     # Ensure thresholds and dilate_iters have the same length
     assert len(thresholds) == len(dilate_iters), f"thresholds and dilate_iters must have the same length, but got {len(thresholds)} and {len(dilate_iters)}."
+    if upper_thresholds is not None:
+        len(thresholds) == len(upper_thresholds), f"lower_thresholds and upper_thresholds should have the same length, but got {len(thresholds)} and {len(upper_thresholds)}."
+    
     if isinstance(save_interval, list):
         assert len(thresholds) == len(save_interval), f"Save interval list should have the same length as well"
 
@@ -226,6 +231,7 @@ def grow_mp(**kwargs):
             "grow_to_end" : grow_to_end,
             "Dilate Iterations": dilate_iters,
             "Grow Thresholds": thresholds,
+            "Grow upper thresholds": upper_thresholds,
             "Output Folder": output_folder,
             "Save Interval": save_interval,
             "num_threads": num_threads,
@@ -256,10 +262,15 @@ def grow_mp(**kwargs):
         threshold_name = "_".join(str(s) for s in thresholds[:i+1])
         dilate_name = "_".join(str(s) for s in dilate_iters[:i+1])
         
-        
-        threshold_binary = ori_img > threshold
+        if upper_thresholds is not None:
+            upper_threshold = upper_thresholds[i]
+            assert threshold<upper_threshold, "lower_threshold must be smaller than upper_threshold"
+            threshold_binary = (ori_img>=threshold) & (ori_img<=upper_threshold)
+        else:
+            threshold_binary = ori_img <= threshold
+            upper_threshold = None
         full_size = np.sum(threshold_binary)
-        print(f"Size of the threshold {threshold} mask:  {full_size}")
+        print(f"Size of the threshold {threshold} to {upper_threshold} mask: {full_size}")
         for i_dilate in range(1, dilate_iter+1):
             # Get the input size for the log
             input_size = np.sum(result!=0)
@@ -299,16 +310,24 @@ def grow_mp(**kwargs):
                 count_below_threshold >= tolerate_iters or
                 (grow_to_end == True and abs(full_size - output_size) < 0.05) ):
                 
-                if simple_naming:
-                    output_path = os.path.join(output_folder, f'{base_name}_{threshold}_{i_dilate}.tif')
+                if upper_threshold is None:
+                    cur_threshold = threshold
+                    if simple_naming:
+                        output_path = os.path.join(output_folder, f'{base_name}_{threshold}_{i_dilate}.tif')
+                    else:
+                        output_path = os.path.join(output_folder, f'{base_name}_iter_{i_dilate}_dilate_{dilate_name}_thre_{threshold_name}.tif') 
                 else:
-                    output_path = os.path.join(output_folder, f'{base_name}_iter_{i_dilate}_dilate_{dilate_name}_thre_{threshold_name}.tif')
+                    cur_threshold = f"{threshold}_{upper_threshold}"
+                    if simple_naming:
+                        output_path = os.path.join(output_folder, f'{base_name}_{threshold}_{upper_threshold}_{i_dilate}.tif')
+                    else:
+                        output_path = os.path.join(output_folder, f'{base_name}_iter_{i_dilate}_dilate_{dilate_name}_thre_{threshold_name}_{upper_threshold}.tif')
                 
                 # Write the log
                 df_log.append({'id': (i*dilate_iter)+i_dilate, 
                     'grow_size': output_size,
                     'full_size': full_size,
-                    'cur_threshold': threshold,
+                    'cur_threshold': cur_threshold,
                     "file_name": os.path.basename(output_path),
                     'full_path': os.path.abspath(output_path),
                     'cur_dilate_step': i_dilate,
@@ -549,6 +568,8 @@ if __name__ == "__main__":
     if extension == '.yaml':
         with open(file_path, 'r') as file:
             config = yaml.safe_load(file)
+            upper_thresholds = config.get('upper_thresholds', None)
+            
             boundary_path = config.get('boundary_path', None)
             
             to_grow_ids = config.get('to_grow_ids', None)
@@ -581,6 +602,7 @@ if __name__ == "__main__":
          
         dilate_iters = dilate_iters,
         thresholds = thresholds,
+        upper_thresholds = upper_thresholds,
         num_threads = num_threads,
         
         save_interval = save_interval,  

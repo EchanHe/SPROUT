@@ -157,17 +157,27 @@ def find_seed_by_ero_mp(volume, input_threshold_ero_iter_pairs , segments ,
 
     
     for threshold_ero_iter_pair in input_threshold_ero_iter_pairs:
-        threshold = threshold_ero_iter_pair[0]
+        # threshold = threshold_ero_iter_pair[0]
+        if isinstance(threshold_ero_iter_pair[0],  int):
+            threshold = threshold_ero_iter_pair[0]
+            upper_threshold = None
+        elif isinstance(threshold_ero_iter_pair[0],  tuple):
+            threshold = threshold_ero_iter_pair[0][0]
+            upper_threshold = threshold_ero_iter_pair[0][1]
+        else:
+            raise ValueError("Check input thresholds and upper thresholds")
+
         ero_iter = threshold_ero_iter_pair[1]
         
         if footprints == 'ball' or footprints == 'default':
             footprints = ['ball'] * ero_iter
         
-        print(f"Saving every seeds for thresholds {threshold} for {ero_iter} erosion")
+        print(f"Saving every seeds for thresholds {threshold} and upper thresholds {upper_threshold} with {ero_iter} erosion")
         
         log_dict = sprout_core.find_seed_by_ero_custom(volume, threshold , segments, ero_iter,
                                           output_dir =output_seed_folder,
-                                          footprints = footprints)
+                                          footprints = footprints,
+                                          upper_threshold = upper_threshold)
         
         # seed = seed.astype('uint8')
         # seed_file = os.path.join(output_seed_folder , 
@@ -260,13 +270,23 @@ def main(**kwargs):
     
     num_threads = kwargs.get('num_threads', 1) 
     
-    start_time = datetime.now()
+    upper_thresholds = kwargs.get('upper_thresholds', None) 
     
+    start_time = datetime.now()
+
+    if upper_thresholds is not None:
+        assert len(target_thresholds) == len(upper_thresholds), "Thresholds and upper thresholds do not have the same length."   
+        for a, b in zip(target_thresholds, upper_thresholds):
+            assert a < b, "lower_threshold must be smaller than upper_threshold"
+
     
     output_seed_folder =os.path.join(workspace, output_seed_folder)
     output_json_path = os.path.join(output_seed_folder,output_log_file)
     file_path = os.path.join(workspace, file_name)
     os.makedirs(output_seed_folder , exist_ok=True)
+    
+    if upper_thresholds is not None:
+        target_thresholds = list(zip(target_thresholds, upper_thresholds))
     
     print(f"""{start_time.strftime("%Y-%m-%d %H:%M:%S")}
     Making erosion seeds for 
@@ -319,78 +339,22 @@ if __name__ == "__main__":
     if extension == '.yaml':
         with open(file_path, 'r') as file:
             config = yaml.safe_load(file)
+            upper_thresholds = config.get("upper_thresholds" , None)
         load_config_yaml(config)
+    
+    main(
+        workspace = workspace,
+        file_name = file_name,
+        output_log_file = output_log_file,
+        output_seed_folder = output_seed_folder,
         
-    # ### To change your input params ####
-    # GEN_WHOLE_MESH = True
-    # workspace = r'C:\Users\Yichen\OneDrive\work\codes\nhm_bounti_pipeline\result\foram_james'
-    # # file_path = os.path.join(workspace, 'input//procaviaH4981C_0001.tif.resampled_400_600.tif')
-    # file_name = 'input/ai/final.20180802_VERSA_1905_ASB_OLK_st016_bl4_fo1_recon.tif'
-    # # file_path = r"C:\Users\Yichen\OneDrive\work\codes\nhm_monai_suture_demo\data\bones_suture\procavia\procaviaH4981C_0001.tif.resampled.tif"
-    # output_json_file = 'thre_ero_log.json' 
-     
-    # num_threads = 4
-    # ### To change the thre ranges
-    # # target_thresholds = list(range(3000, 4501, 100))
-    # target_thresholds = [0]
-    # ero_iters = [5]
-    # 
-    # segments = 25
-    
-    
-    ###################
-    output_seed_folder =os.path.join(workspace, output_seed_folder)
-    output_json_path = os.path.join(output_seed_folder,output_log_file)
-    file_path = os.path.join(workspace, file_name)
-    os.makedirs(output_seed_folder , exist_ok=True)
+        ero_iters = ero_iters,
+        target_thresholds = target_thresholds,
+        segments = segments,
+        footprints = footprints,
 
-
-    start_time = datetime.now()
-    print(f"""{start_time.strftime("%Y-%m-%d %H:%M:%S")}
-    Making erosion seeds for 
-        Img: {file_path}
-        Threshold for Img {target_thresholds}
-        Erode {ero_iters} iterations
-        Keeping {segments} components
-        Erosion footprints {footprints}
-            """)
-    
-
-
-    threshold_ero_iter_pairs = list(itertools.product(target_thresholds, ero_iters))
-
-    volume = tifffile.imread(file_path)
-    
-    
-    
-    # find_seg_by_ero(volume, 4500, 25,[2])
-    # sys.exit(0)
-    # find_seg_by_ero_v2(volume, threshold_ero_iter_pairs , segments)
-    
-   
-    sublists = [threshold_ero_iter_pairs[i::num_threads] for i in range(num_threads)]
-
-    # Create a list to hold the threads
-    threads = []
-
-
-    # Start a new thread for each sublist
-    for sublist in sublists:
-        # thread = threading.Thread(target=find_seg_by_ero_v2, args=(volume,sublist, segments ))
-        thread = threading.Thread(target=find_seed_by_ero_mp, args=(volume,sublist, segments,
-                                                                    output_seed_folder,output_json_path, footprints ))
-        threads.append(thread)
-        thread.start()
+        num_threads = num_threads,
+        upper_thresholds = upper_thresholds
+                
+    )
         
-    # Wait for all threads to complete
-    for thread in threads:
-        thread.join()
-
-    # print(f"All threads have completed. Log is saved at {output_json_path},seeds are saved at {output_seed_folder}")
-
-    
-    end_time = datetime.now()
-    running_time = end_time - start_time
-    total_seconds = running_time.total_seconds()
-    minutes, _ = divmod(total_seconds, 60)
-    print(f"Running time:{minutes}")
