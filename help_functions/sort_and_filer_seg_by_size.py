@@ -58,10 +58,17 @@ if __name__ == "__main__":
     #     [3, 3, 0, 4, 4, 4],
     #     [3, 3, 0, 4, 4, 4]
     # ])
+    
+    ### Input parameter
+    segmentation_path = "./result/foram_james/seeds/combine/combined.tif"
+    min_size = 5
+    output_path = "./result/foram_james/seeds/combine/combined_sorted.tif"
 
-    segmentation = tifffile.imread("./result/foram_james/seeds/combine/combined.tif")
+    #####
 
-    reordered_segmentation, class_mapping = reorder_segmentation(segmentation, min_size=5)
+    segmentation = tifffile.imread(segmentation_path)
+
+    reordered_segmentation, class_mapping = reorder_segmentation(segmentation, min_size=min_size)
 
     # print("Original Segmentation:")
     # print(segmentation)
@@ -72,6 +79,6 @@ if __name__ == "__main__":
     print("\nClass Mapping:")
     print(class_mapping)
 
-    # tifffile.imwrite("./result/foram_james/seeds/combine/combined_sorted.tif", 
-    #                  reordered_segmentation,
-    #                  compression='zlib')
+    tifffile.imwrite(output_path, 
+                     reordered_segmentation,
+                     compression='zlib')

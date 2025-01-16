@@ -8,29 +8,7 @@ lib_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '../sprout_co
 sys.path.insert(0, lib_path)
 import sprout_core
 
-def replace_values_in_array(arr, values_to_replace, target_value):
-    try:
-        # Check if the input is a NumPy array
-        if not isinstance(arr, np.ndarray):
-            raise ValueError("Input is not a NumPy array")
 
-        # Check if the array is 3D
-        if arr.ndim != 3:
-            raise ValueError("Input array is not 3-dimensional")
-
-        # Check if values_to_replace is a list
-        if not isinstance(values_to_replace, list):
-            raise ValueError("values_to_replace should be a list")
-
-        # Perform the replacement
-        for value in values_to_replace:
-            arr[arr == value] = target_value
-
-        return arr
-    except Exception as e:
-        print(f"Error processing the array: {e}")
-        traceback.print_exc()
-        return None
 
 # Example usage
 # file_path = 'example.tiff'
