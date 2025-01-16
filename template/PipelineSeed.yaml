@@ -1,8 +1,8 @@
 ### Must-have inputs
 
 # The path to the CSV file
-# Must have column: img_path, seg_path
-# If boundary_path is included, seed generation will read in boundary as well
+# Must have column: `img_path`
+# If `boundary_path` is included, seed generation will read in boundary as well
 csv_path: "./data/test_batch_boundary/input.csv"
 
 num_threads: 10
@@ -13,7 +13,7 @@ num_threads: 10
 seed_mode: 'merge'
 
 ### Flexible  Inputs: either in the csv or here (.yaml) ###
-
+seed_threshold: [1,2,3]
 ero_iters: 3
 segments: 25
 output_folder: "./data/test_batch_boundary/seed_all"

@@ -20,6 +20,12 @@ segments: 25
 num_threads: 5
 
 #### Optional inputs ####
+
+# The upper thresholds, should be bigger than threshold
+# Can be one number or a list, should be same length as the thresholds
+# If specified, if you want binary to be img>= threshold & img<=upper_threshold
+upper_thresholds: [50,60]
+
 # Path to boundary image. Defaults is None.
 boundary_path: './data/boundary.tif'
 # Background value. Defaults is 0.

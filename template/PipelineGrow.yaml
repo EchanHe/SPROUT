@@ -1,8 +1,8 @@
 ### Must-have inputs
 
 # The path to the CSV file
-# Must have column: img_path, seg_path
-# If boundary_path is included, seed generation will read in boundary as well
+# Must have column: `img_path`, `seg_path`
+# If `boundary_path` is included, seed generation will read in boundary as well
 csv_path: "./data/test_batch_boundary/input.csv"
 
 touch_rule: "stop"

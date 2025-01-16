@@ -1,4 +1,4 @@
 img_path,seg_path,thresholds,dilate_iters
-C:\\Users\\Yichen\\OneDrive\\work\\codes\\nhm_bounti\\result\\procavia\\input\\procaviaH4981C_0001_200_400.tif,C:\\Users\\Yichen\\OneDrive\\work\\codes\\nhm_bounti\\result\\procavia\\seeds_batch\\procaviaH4981C_0001_200_400\\seeds_ball\\seed_ero_3_thre2000_segs_25.tif,"[3500,2500]","[1,2]"
-C:\\Users\\Yichen\\OneDrive\\work\\codes\\nhm_bounti\\result\\procavia\\input\\procaviaH4981C_0001_200_400.tif,C:\\Users\\Yichen\\OneDrive\\work\\codes\\nhm_bounti\\result\\procavia\\seeds_batch\\procaviaH4981C_0001_200_400\\seeds_ball\\seed_ero_0_thre1000_segs_25.tif,"[3000,2000,1000]","[3,2,1]"
-C:\\Users\\Yichen\\OneDrive\\work\\codes\\nhm_bounti\\result\\procavia\\input\\procaviaH4981C_0001_200_400.tif,C:\\Users\\Yichen\\OneDrive\\work\\codes\\nhm_bounti\\result\\procavia\\seeds_batch\\procaviaH4981C_0001_200_400\\seeds_YZ\\seed_ero_3_thre2000_segs_25.tif,[2000],[4]
+./data/img/a.tif,./data/seg/a.tif,"[3500,2500]","[1,2]"
+./data/img/b.tif,./data/seg/b.tif,"[3000,2000,1000]","[3,2,1]"
+./data/img/c.tif,./data/seg/c.tif,[2000],[4]

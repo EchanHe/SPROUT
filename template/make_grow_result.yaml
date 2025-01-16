@@ -37,6 +37,11 @@ num_threads: 10
 #### Optional parameters ####
 ## Can be commented out if you want to use the default values
 
+# The upper thresholds, should be bigger than threshold
+# Can be one number or a list, should be same length as the thresholds
+# If specified, if you want binary to be img>= threshold & img<=upper_threshold
+upper_thresholds: [50,60]
+
 # Path to boundary image. Defaults is None.
 boundary_path: './data/boundary.tif'
 

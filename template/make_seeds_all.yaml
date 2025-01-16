@@ -34,13 +34,14 @@ output_log_file: "seed_log.json"
 ## Optional parameters ##
 ## Can be commented out if you want to use the default values
 
-# Is saving meshes, default is False
-is_make_meshes: False
-# Scale for downsampling the meshes, Default is 10
-downsample_scale: 10
-# Step size in Marching Cubes alogrithms, Default is 1
-# The higher number makes the mesh simpler
-step_size: 1
+# The upper thresholds, should be bigger than threshold
+# Can be one number or a list, should be same length as the thresholds
+# If specified, if you want binary to be img>= threshold & img<=upper_threshold
+upper_thresholds: [50,60]
+
+# Path to boundary image. Defaults is None.
+boundary_path: './data/boundary.tif'
+
 # How to erode your images, current supports 
 # Default does erosion using 'ball', 'ball_XY', 'ball_XZ', 'ball_YZ'
 # Options are
@@ -48,3 +49,11 @@ step_size: 1
 #'ball_XY', 'ball_XZ', 'ball_YZ': Erosion on the Plane. 
 # 'X', 'Y', 'Z': Erosion on the axis.
 footprints: "ball" 
+
+# Is saving meshes, default is False
+is_make_meshes: False
+# Scale for downsampling the meshes, Default is 10
+downsample_scale: 10
+# Step size in Marching Cubes alogrithms, Default is 1
+# The higher number makes the mesh simpler
+step_size: 1

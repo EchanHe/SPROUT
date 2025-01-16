@@ -1,11 +1,4 @@
-file_name,target_thresholds
-C:\\Users\\Yichen\\OneDrive\\work\\codes\\nhm_bounti\\result\\procavia\\input\\procaviaH4981C_0001_200_400.tif,"[1000,2000]"
-C:\\Users\\Yichen\\OneDrive\\work\\codes\\nhm_bounti\\result\\procavia\\input\\procaviaH4981C_0001_400_600.tif,"[3000,4000]"
-C:\\Users\\Yichen\\OneDrive\\work\\codes\\nhm_bounti\\result\\procavia\\input\\procaviaH4981C_0001_600_800.tif,"[5000,6000]"
-,
-,
-D:\\yichen_data\\mammal\\nas\\26_Macrotis_lagotis\\input\\Macrotis_lagotis_8bits.tif,"[75, 100,120]"
-D:\\yichen_data\\mammal\\nas\\27_Marmosa_constantiae\\input\\Marmosa_constantiae_8bits.tif,"[85,95]"
-D:\\yichen_data\\mammal\\nas\\28_Marmosa_robinsoni\\input\\Marmosa_robinsoni.tif,"[20000,27000,35000]"
-D:\\yichen_data\\mammal\\nas\\29_Marmosops_dorothea\\input\\Marmosops_dorothea.tif,"[35000,45000]"
-D:\\yichen_data\\mammal\\nas\\30_Metachirus_nudicaudatus\\input\\Metachirus_nudicaudatus_8bits.tif,"[152,187]"
+img_path,seed_threshold
+./data/img/a.tif,"[1000,2000]"
+./data/img/b.tif,"[3000,4000]"
+./data/img/c.tif,"[5000,6000]"
