@@ -28,23 +28,23 @@ if __name__ == "__main__":
     if extension == '.yaml':
         with open(file_path, 'r') as file:
             config = yaml.safe_load(file)
-            upper_thresholds = config.get('upper_thresholds', None)
+            # upper_thresholds = config.get('upper_thresholds', None)
             
-            workspace = config.get("workspace","")
+            # workspace = config.get("workspace","")
             
-            to_grow_ids = config.get("to_grow_ids" , None)
-            name_prefix = config.get("name_prefix" , "final_grow")
-            grow_to_end = config.get("grow_to_end" , False)
-            simple_naming = config.get("simple_naming",True)
+            # to_grow_ids = config.get("to_grow_ids" , None)
+            # name_prefix = config.get("name_prefix" , "final_grow")
+            # grow_to_end = config.get("grow_to_end" , False)
+            # simple_naming = config.get("simple_naming",True)
             
-            is_sort = config.get('is_sort', True) 
-            min_diff = config.get('min_diff', 50) 
-            tolerate_iters = config.get('tolerate_iters', 3) 
+            # is_sort = config.get('is_sort', True) 
+            # min_diff = config.get('min_diff', 50) 
+            # tolerate_iters = config.get('tolerate_iters', 3) 
             
-            # For mesh making
-            is_make_meshes = config.get('is_make_meshes', False) 
-            downsample_scale = config.get('downsample_scale', 10) 
-            step_size  = config.get('step_size', 1)     
+            # # For mesh making
+            # is_make_meshes = config.get('is_make_meshes', False) 
+            # downsample_scale = config.get('downsample_scale', 10) 
+            # step_size  = config.get('step_size', 1)     
             
             
             
@@ -103,6 +103,12 @@ if __name__ == "__main__":
         if "save_interval" in either_keys_info["keys_in_df"]:    
             save_interval = row['save_interval']
 
+
+        # Assign the optional parameters per row
+        optional_params = sprout_core.assign_config_values_pipeline(config,row,
+                                                  sprout_core.optional_params_default_grow)
+        
+
         # Check if both are int
         if isinstance(dilate_iters, int) and isinstance(grow_thresholds, int):
             grow_thresholds = [grow_thresholds]
@@ -141,23 +147,23 @@ if __name__ == "__main__":
                 boundary_path = boundary_path,
                 output_folder = output_sub_folder,
                 
-                grow_to_end = grow_to_end,
-                to_grow_ids = to_grow_ids,    
+                grow_to_end = optional_params["grow_to_end"],
+                to_grow_ids = optional_params["to_grow_ids"],
                 
                 final_grow_output_folder = output_folder,
-                name_prefix = name_prefix,
-                simple_naming = simple_naming ,     
+                name_prefix =  optional_params["name_prefix"],
+                simple_naming =  optional_params["simple_naming"],    
 
-                is_sort = is_sort,
-                min_diff = min_diff,
-                tolerate_iters = tolerate_iters,
+                is_sort = optional_params['is_sort'],
+                min_diff = optional_params['min_diff'],
+                tolerate_iters = optional_params['tolerate_iters'],
 
                 # For mesh making
-                is_make_meshes = is_make_meshes,
-                downsample_scale = downsample_scale,
-                step_size  = step_size,
+                is_make_meshes = optional_params['is_make_meshes'],
+                downsample_scale = optional_params['downsample_scale'],
+                step_size  = optional_params['step_size'],
                 
-                upper_thresholds = upper_thresholds
+                upper_thresholds = optional_params["upper_thresholds"]
 
             )
 

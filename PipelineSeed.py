@@ -35,6 +35,8 @@ pipeline_seed_required_keys = [
 ]
 
 
+
+
 if __name__ == "__main__":
 
     # Get the file path from the first command-line argument or use the default
@@ -46,22 +48,6 @@ if __name__ == "__main__":
         with open(file_path, 'r') as file:
             config = yaml.safe_load(file)
             
-            upper_thresholds = config.get('upper_thresholds', None)
-
-            background = config.get('background', 0)
-            sort = config.get('sort', True)
-            
-            no_split_limit = config.get('no_split_limit', 3)
-            min_size = config.get('min_size', 5)
-            min_split_prop = config.get('min_split_prop', 0.01)
-            min_split_sum_prop = config.get('min_split_sum_prop', 0)
-            
-            save_every_iter = config.get('save_every_iter', False)
-            save_merged_every_iter = config.get('save_merged_every_iter', False)
-           
-            init_segments = config.get('init_segments', None)
-            
-            workspace = config.get("workspace","")
         load_config_yaml(config)
     
 
@@ -123,6 +109,9 @@ if __name__ == "__main__":
             seed_threshold = eval(row['seed_threshold']) if isinstance(row['seed_threshold'], str) else row['seed_threshold'] 
 
  
+        # Assign the optional parameters per row
+        optional_params = sprout_core.assign_config_values_pipeline(config,row,
+                                                  sprout_core.optional_params_default_seeds) 
         
         output_names = f"{name_prefix}_{os.path.splitext(os.path.basename(input_path))[0]}"
         
@@ -156,7 +145,7 @@ if __name__ == "__main__":
                                         num_threads = num_threads,
                                         footprints = footprints,
                                         
-                                        upper_thresholds = upper_thresholds
+                                        upper_thresholds = optional_params['upper_thresholds']
                                         )
             elif seed_mode == "all":
                 output_dict = make_seeds_all.for_pipeline_wrapper(
@@ -169,7 +158,7 @@ if __name__ == "__main__":
                                 segments = segments,
                                 name_prefix = output_names,
                                 num_threads = num_threads,
-                                upper_thresholds = upper_thresholds
+                                upper_thresholds = optional_params['upper_thresholds']
                                 )
             
             elif seed_mode == "merge":
@@ -180,34 +169,38 @@ if __name__ == "__main__":
             
                     print("Running make_seeds_merged_by_thres_mp")
                     seed ,ori_combine_ids_map , output_dict=make_seeds_merged.make_seeds_merged_by_thres_path_wrapper(                           
-                                img_path= input_path,
-                                thresholds= seed_threshold,
-                                output_folder=output_folder,
-                                boundary_path = boundary_path,
-                                n_iters = ero_iters,
-                                segments = segments,
-                                num_threads = num_threads,
-                                no_split_limit =no_split_limit,
-                                min_size= min_size,
-                                min_split_prop = min_split_prop,
-                                min_split_sum_prop = min_split_sum_prop,
-                                sort = sort,
-                                background = background,
-                                save_every_iter = save_every_iter,
-                                save_merged_every_iter = save_merged_every_iter ,
-                                name_prefix = output_names,
-                                init_segments = init_segments,
-                                footprint= footprints,
+                                        img_path= input_path,
+                                        thresholds= seed_threshold,
+                                        output_folder=output_folder,
+                                        boundary_path = boundary_path,
+                                        n_iters = ero_iters,
+                                        segments = segments,
+                                        num_threads = num_threads,
+                                        
+                                        sort = optional_params['sort'],
+                                        background = optional_params['background'],
+                                        
+                                        no_split_limit = optional_params['no_split_limit'],
+                                        min_size= optional_params['min_size'],
+                                        min_split_prop = optional_params['min_split_prop'],
+                                        min_split_sum_prop = optional_params['min_split_sum_prop'],
+
+                                        save_every_iter = optional_params["save_every_iter"],
+                                        save_merged_every_iter = optional_params["save_merged_every_iter"],
+                                        name_prefix = output_names,
+                                        init_segments = optional_params["init_segments"],
+                                        footprint= footprints,
+                                        
+                                        upper_thresholds = optional_params["upper_thresholds"]     
                                 
-                                upper_thresholds = upper_thresholds
                                 )
                 
                 else:
                     if isinstance(seed_threshold,list) and len(seed_threshold)==1:
                         seed_threshold = seed_threshold[0]
-                    if upper_thresholds is not None:
-                        assert len(upper_thresholds)==1, "Upper threshold should have 1 element"
-                        upper_threshold = upper_thresholds[0]
+                    if optional_params["upper_thresholds"] is not None:
+                        assert len(optional_params["upper_thresholds"])==1, "Upper threshold should have 1 element"
+                        upper_threshold = optional_params["upper_thresholds"][0]
                     print("Running make_seeds_merged")
                     seed ,ori_combine_ids_map , output_dict=make_seeds_merged.make_seeds_merged_path_wrapper(                           
                                             img_path= input_path,
@@ -216,17 +209,20 @@ if __name__ == "__main__":
                                             boundary_path = boundary_path,
                                             n_iters = ero_iters,
                                             segments = segments,
-                                            num_threads = num_threads,                                           
-                                            no_split_limit =no_split_limit,
-                                            min_size= min_size,
-                                            min_split_prop = min_split_prop,
-                                            min_split_sum_prop = min_split_sum_prop,
-                                            sort = sort,
-                                            background = background,
-                                            save_every_iter = save_every_iter,
-                                            save_merged_every_iter = save_merged_every_iter ,
+                                            num_threads = num_threads, 
+                                            
+                                            background = optional_params["background"],
+                                            sort = optional_params["sort"],
+                                                                                       
+                                            no_split_limit =optional_params["no_split_limit"],
+                                            min_size=optional_params["min_size"],
+                                            min_split_prop = optional_params["min_split_prop"],
+                                            min_split_sum_prop = optional_params["min_split_sum_prop"],
+
+                                            save_every_iter = optional_params["save_every_iter"],
+                                            save_merged_every_iter = optional_params["save_merged_every_iter"],
                                             name_prefix = output_names,
-                                            init_segments = init_segments,
+                                            init_segments = optional_params["init_segments"],
                                             footprint= footprints,
                                             upper_threshold = upper_threshold
                                             )

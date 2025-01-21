@@ -31,19 +31,6 @@ def load_config_yaml(config, parent_key=''):
         else:
             globals()[parent_key + key] = value
             
-
-# Define a function to read the configuration and set variables dynamically
-def load_config_json(file_path):
-    with open(file_path, 'r') as config_file:
-        config = json.load(config_file)
-
-    # Dynamically set variables in the global namespace
- 
-    for key, value in config.items():
-        globals()[key] = value
-
-
-
 pre_set_footprint_list = [
     ["ball"],
     ["ball_XY"],
@@ -134,12 +121,12 @@ def make_seeds_all(**kwargs):
     
     # Seed generation related 
     ero_iters = kwargs.get('ero_iters', None)
-    target_thresholds = kwargs.get('target_thresholds', None) 
+    thresholds = kwargs.get('thresholds', None) 
     
     upper_thresholds = kwargs.get('upper_thresholds', None) 
 
-    if isinstance(target_thresholds, int):
-        target_thresholds = [target_thresholds]
+    if isinstance(thresholds, int):
+        thresholds = [thresholds]
     
     if isinstance(upper_thresholds, int):
         upper_thresholds = [upper_thresholds]
@@ -161,35 +148,10 @@ def make_seeds_all(**kwargs):
 
 
     if upper_thresholds is not None:
-        assert len(target_thresholds) == len(upper_thresholds), "Thresholds and upper thresholds do not have the same length."   
-        for a, b in zip(target_thresholds, upper_thresholds):
+        assert len(thresholds) == len(upper_thresholds), "Thresholds and upper thresholds do not have the same length."   
+        for a, b in zip(thresholds, upper_thresholds):
             assert a < b, "lower_threshold must be smaller than upper_threshold"
 
-
-    # Prepare values to print
-    # values_to_print = {
-    #     "Output Folder": output_folder,
-    #     "Name Prefix": name_prefix,
-    #     "Erosion Iterations": ero_iters,
-    #     "Target Thresholds": target_thresholds,
-    #     "Segments": segments,
-    #     "Number of Threads": num_threads,
-    #     "Make Meshes": is_make_meshes,
-    #     "Downsample Scale": downsample_scale,
-    #     "Step Size": step_size,
-    #     "Footprints": footprints,
-    #     "pre_set_sub_folders": pre_set_sub_folders
-    # }
-
-    # # Print values
-    # print("Pipeline Configuration:")
-    # for key, value in values_to_print.items():
-    #     print(f"  {key}: {value}")
-
-
-    if boundary is not None:
-        boundary = sprout_core.check_and_cast_boundary(boundary)
-        img[boundary] = False
     
     if footprints is None:
         footprint_list = [footprint*ero_iters for footprint in pre_set_footprint_list]
@@ -207,7 +169,7 @@ def make_seeds_all(**kwargs):
     }
     
     if upper_thresholds is not None:
-        target_thresholds = list(zip(target_thresholds, upper_thresholds))
+        thresholds = list(zip(thresholds, upper_thresholds))
     
     
     for footprints, output_seed_sub_folder in zip(footprint_list,output_seed_sub_folders):
@@ -221,7 +183,7 @@ def make_seeds_all(**kwargs):
         print(f"""{start_time.strftime("%Y-%m-%d %H:%M:%S")}
         Making erosion seeds for 
             Img: {img_name}
-            Threshold for Img {target_thresholds}
+            Threshold for Img {thresholds}
             Erode {ero_iters} iterations
             Keeping {segments} components
             Erosion footprints {footprints}
@@ -232,7 +194,7 @@ def make_seeds_all(**kwargs):
 
 
 
-        threshold_ero_iter_pairs = list(itertools.product(target_thresholds, [ero_iters]))  
+        threshold_ero_iter_pairs = list(itertools.product(thresholds, [ero_iters]))  
         sublists = [threshold_ero_iter_pairs[i::num_threads] for i in range(num_threads)]
 
         # Create a list to hold the threads
@@ -243,7 +205,8 @@ def make_seeds_all(**kwargs):
         for sublist in sublists:
            
             thread = threading.Thread(target=make_seeds.find_seed_by_ero_mp, args=(img,sublist, segments,
-                                                                        output_seed_sub_folder,output_json_path, footprints ))
+                                                                        output_seed_sub_folder,output_json_path, footprints,
+                                                                        boundary))
             threads.append(thread)
             thread.start()
             
@@ -303,42 +266,31 @@ if __name__ == "__main__":
     
     _, extension = os.path.splitext(file_path)
     print(f"processing config the file {file_path}")
-    if extension == '.json':
-        
-        load_config_json(file_path)
-    elif extension == '.yaml':
+
+    if extension == '.yaml':
         with open(file_path, 'r') as file:
             config = yaml.safe_load(file)
-            upper_thresholds = config.get("upper_thresholds" , None)
-            
-            num_threads = config.get('num_threads', None) 
+
         load_config_yaml(config)
+        optional_params = sprout_core.assign_optional_params(config, sprout_core.optional_params_default_seeds)
         
-    # ### To change your input params ####
-    # GEN_WHOLE_MESH = True
-    # workspace = r'C:\Users\Yichen\OneDrive\work\codes\nhm_bounti_pipeline\result\foram_james'
-    # # file_path = os.path.join(workspace, 'input//procaviaH4981C_0001.tif.resampled_400_600.tif')
-    # file_name = 'input/ai/final.20180802_VERSA_1905_ASB_OLK_st016_bl4_fo1_recon.tif'
-    # # file_path = r"C:\Users\Yichen\OneDrive\work\codes\nhm_monai_suture_demo\data\bones_suture\procavia\procaviaH4981C_0001.tif.resampled.tif"
-    # output_json_file = 'thre_ero_log.json' 
-     
-    # num_threads = 4
-    # ### To change the thre ranges
-    # # target_thresholds = list(range(3000, 4501, 100))
-    # target_thresholds = [0]
-    # ero_iters = [5]
-    # 
-    # segments = 25
     
-    output_dict = make_seeds_all(workspace= workspace,
+    if optional_params['boundary_path'] is not None:
+        boundary = tifffile.imread(optional_params['boundary_path'])
+    else:
+        boundary = None
+    
+    output_dict = make_seeds_all(
+        boundary = boundary,
+        workspace= workspace,
             file_name= file_name,
             output_log_file = output_log_file,
             output_folder = output_folder,
-            num_threads = num_threads,
+            num_threads = optional_params['num_threads'],
             ero_iters = ero_iters,
-            target_thresholds = target_thresholds,
+            thresholds = thresholds,
             segments = segments,
-            upper_thresholds = upper_thresholds)
+            upper_thresholds = optional_params['upper_thresholds'])
     
 
     

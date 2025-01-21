@@ -822,25 +822,9 @@ if __name__ == "__main__":
         with open(file_path, 'r') as file:
             config = yaml.safe_load(file)
             
-            upper_thresholds = config.get('upper_thresholds', None)
-            
-            boundary_path = config.get('boundary_path', None)
-            background = config.get('background', 0)
-            sort = config.get('sort', True)
-            
-            no_split_limit = config.get('no_split_limit', 3)
-            min_size = config.get('min_size', 5)
-            min_split_prop = config.get('min_split_prop', 0.01)
-            min_split_sum_prop = config.get('min_split_sum_prop', 0)
-            
-            save_every_iter = config.get('save_every_iter', False)
-            save_merged_every_iter = config.get('save_merged_every_iter', False)
-            name_prefix = config.get('name_prefix', "Merged_seed")
-            init_segments = config.get('init_segments', None)
-            footprints = config.get('footprints', "ball")
-        
+
         load_config_yaml(config)
-        
+        optional_params = sprout_core.assign_optional_params(config, sprout_core.optional_params_default_seeds)
         
     
     if isinstance(thresholds, int):
@@ -867,8 +851,8 @@ if __name__ == "__main__":
     img = imread(img_path)
     name_prefix = os.path.basename(img_path)
     
-    if boundary_path is not None:
-        boundary = imread(boundary_path)
+    if optional_params['boundary_path'] is not None:
+        boundary = imread(optional_params['boundary_path'])
     else:
         boundary = None
     
@@ -880,43 +864,50 @@ if __name__ == "__main__":
                                             segments,
                                             boundary = boundary,
                                             num_threads = num_threads,
-                                            background = background,
-                                            sort = sort,
-                                            no_split_limit =no_split_limit,
-                                            min_size=min_size,
-                                            min_split_prop = min_split_prop,
-                                            min_split_sum_prop = min_split_sum_prop,
-                                            save_every_iter = save_every_iter,
-                                            save_merged_every_iter = save_merged_every_iter,
-                                            name_prefix = name_prefix,
-                                            init_segments = init_segments,
-                                            footprint = footprints,
-                                            upper_threshold = upper_thresholds)
+                                            background = optional_params["background"],
+                                            sort = optional_params["sort"],
+                                            
+                                            no_split_limit =optional_params["no_split_limit"],
+                                            min_size=optional_params["min_size"],
+                                            min_split_prop = optional_params["min_split_prop"],
+                                            min_split_sum_prop = optional_params["min_split_sum_prop"],
+                                            
+                                            save_every_iter = optional_params["save_every_iter"],
+                                            save_merged_every_iter = optional_params["save_merged_every_iter"],
+                                            name_prefix = optional_params["name_prefix"],
+                                            init_segments = optional_params["init_segments"],
+                                            footprint = optional_params["footprints"],
+                                            upper_threshold = optional_params["upper_thresholds"]
+                                    )
     
     # pd.DataFrame(ori_combine_ids_map).to_csv(os.path.join(output_folder, 'ori_combine_ids_map.csv'),index=False)
     
     elif seed_merging_mode=="THRE":
    
         seed ,ori_combine_ids_map , output_dict= make_seeds_merged_by_thres_mp(img,
-                                    thresholds,
-                                    output_folder,
-                                    n_iters, 
-                                    segments,
-                                    num_threads = num_threads,
-                                    
-                                    boundary = boundary,
-                                    background = background,
-                                    sort = sort,
-                                    no_split_limit =no_split_limit,
-                                    min_size=min_size,
-                                    min_split_prop = min_split_prop,
-                                    min_split_sum_prop = min_split_sum_prop,
-                                    save_every_iter = save_every_iter,
-                                    save_merged_every_iter = save_merged_every_iter,
-                                    name_prefix = name_prefix,
-                                    init_segments = init_segments,
-                                    footprint = footprints,
-                                    upper_thresholds = upper_thresholds)
+                                            thresholds,
+                                            output_folder,
+                                            n_iters, 
+                                            segments,
+                                            num_threads = num_threads,
+                                            
+                                            boundary = boundary,
+                                            
+                                            background = optional_params["background"],
+                                            sort = optional_params["sort"],
+                                            
+                                            no_split_limit =optional_params["no_split_limit"],
+                                            min_size=optional_params["min_size"],
+                                            min_split_prop = optional_params["min_split_prop"],
+                                            min_split_sum_prop = optional_params["min_split_sum_prop"],
+                                            
+                                            save_every_iter = optional_params["save_every_iter"],
+                                            save_merged_every_iter = optional_params["save_merged_every_iter"],
+                                            name_prefix = optional_params["name_prefix"],
+                                            init_segments = optional_params["init_segments"],
+                                            footprint = optional_params["footprints"],
+                                            upper_thresholds = optional_params["upper_thresholds"]                                    
+                                    )
                 
 
     

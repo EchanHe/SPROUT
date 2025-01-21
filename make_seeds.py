@@ -141,7 +141,8 @@ def find_seg_by_ero_v2(volume, input_threshold_ero_iter_pairs , segments):
             write_json(output_json_path, log_dict)   
 
 def find_seed_by_ero_mp(volume, input_threshold_ero_iter_pairs , segments , 
-                        output_seed_folder, output_json_path,  footprints = 'default',):
+                        output_seed_folder, output_json_path,  footprints = 'default',
+                        boundary = None):
     """
     Seed generation using erosion and thresholds for multi-threading.
 
@@ -152,6 +153,7 @@ def find_seed_by_ero_mp(volume, input_threshold_ero_iter_pairs , segments ,
         output_seed_folder (str): Directory to save seed outputs.
         output_json_path (str): Path to save the log JSON.
         footprints (str): Footprint type for erosion (default is 'default').
+        boundary (np.ndarray): Boundary for defining non-target area (default: None).
     """
     
 
@@ -177,7 +179,8 @@ def find_seed_by_ero_mp(volume, input_threshold_ero_iter_pairs , segments ,
         log_dict = sprout_core.find_seed_by_ero_custom(volume, threshold , segments, ero_iter,
                                           output_dir =output_seed_folder,
                                           footprints = footprints,
-                                          upper_threshold = upper_threshold)
+                                          upper_threshold = upper_threshold,
+                                          boundary = boundary)
         
         # seed = seed.astype('uint8')
         # seed_file = os.path.join(output_seed_folder , 
@@ -259,24 +262,26 @@ def main(**kwargs):
         tuple: Output folder and log file paths.
     """    
     ero_iters = kwargs.get('ero_iters', None)
-    target_thresholds = kwargs.get('target_thresholds', None)  
+    thresholds = kwargs.get('thresholds', None)  
     segments = kwargs.get('segments', None)  
     footprints = kwargs.get('footprints', None)  
     
     workspace = kwargs.get('workspace', None)
     file_name = kwargs.get('file_name', None)
     output_log_file = kwargs.get('output_log_file', None) 
-    output_seed_folder = kwargs.get('output_seed_folder', None) 
+    output_seed_folder = kwargs.get('output_folder', None) 
     
     num_threads = kwargs.get('num_threads', 1) 
     
     upper_thresholds = kwargs.get('upper_thresholds', None) 
     
+    boundary = kwargs.get('boundary', None) 
+    
     start_time = datetime.now()
 
     if upper_thresholds is not None:
-        assert len(target_thresholds) == len(upper_thresholds), "Thresholds and upper thresholds do not have the same length."   
-        for a, b in zip(target_thresholds, upper_thresholds):
+        assert len(thresholds) == len(upper_thresholds), "Thresholds and upper thresholds do not have the same length."   
+        for a, b in zip(thresholds, upper_thresholds):
             assert a < b, "lower_threshold must be smaller than upper_threshold"
 
     
@@ -286,19 +291,19 @@ def main(**kwargs):
     os.makedirs(output_seed_folder , exist_ok=True)
     
     if upper_thresholds is not None:
-        target_thresholds = list(zip(target_thresholds, upper_thresholds))
+        thresholds = list(zip(thresholds, upper_thresholds))
     
     print(f"""{start_time.strftime("%Y-%m-%d %H:%M:%S")}
     Making erosion seeds for 
         Img: {file_path}
-        Threshold for Img {target_thresholds}
+        Threshold for Img {thresholds}
         Erode {ero_iters} iterations
         Keeping {segments} components
         Erosion footprints {footprints}
         Using {num_threads} threads
             """)
     
-    threshold_ero_iter_pairs = list(itertools.product(target_thresholds, ero_iters))
+    threshold_ero_iter_pairs = list(itertools.product(thresholds, ero_iters))
 
     volume = tifffile.imread(file_path)
     
@@ -312,7 +317,8 @@ def main(**kwargs):
     for sublist in sublists:
         # thread = threading.Thread(target=find_seg_by_ero_v2, args=(volume,sublist, segments ))
         thread = threading.Thread(target=find_seed_by_ero_mp, args=(volume,sublist, segments,
-                                                                    output_seed_folder, output_json_path, footprints ))
+                                                                    output_seed_folder, output_json_path, footprints,
+                                                                    boundary))
         threads.append(thread)
         thread.start()
         
@@ -341,20 +347,28 @@ if __name__ == "__main__":
             config = yaml.safe_load(file)
             upper_thresholds = config.get("upper_thresholds" , None)
         load_config_yaml(config)
-    
+        optional_params = sprout_core.assign_optional_params(config, 
+                                                             sprout_core.optional_params_default_seeds)
+
+    if optional_params['boundary_path'] is not None:
+        boundary = tifffile.imread(optional_params['boundary_path'])
+    else:
+        boundary = None
+
     main(
         workspace = workspace,
         file_name = file_name,
         output_log_file = output_log_file,
-        output_seed_folder = output_seed_folder,
+        output_seed_folder = output_folder,
         
         ero_iters = ero_iters,
-        target_thresholds = target_thresholds,
+        thresholds = thresholds,
         segments = segments,
         footprints = footprints,
 
         num_threads = num_threads,
-        upper_thresholds = upper_thresholds
+        upper_thresholds = optional_params['upper_thresholds'],
+        boundary = boundary
                 
     )
         
