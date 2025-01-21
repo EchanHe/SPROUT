@@ -68,14 +68,14 @@ to_grow_ids: ~
 
 # If want to sort class id by comp size. Default is True
 is_sort: True
-# The minimum difference to consider there is a growth in a dilation iteration
-# Default is 50
-min_diff: 50
 
 # Early stop checking: 
 # Limit for consecutive no-growth iterations. Defaults is 3.
 tolerate_iters: 3
 
+# The minimum difference to consider there is a growth in a dilation iteration
+# Default is 50
+min_diff: 50
 
 ## Optional parameters: saving mesh ##
 # Is saving meshes, default is False

@@ -12,7 +12,7 @@ num_threads: 2
 
 # A list of thresholds for seed generation
 # Seeds will be generated based on each individual threshold
-target_thresholds: [1,2,3]
+thresholds: [1,2,3]
 
 # one or a list of erosion iteration for seed generation
 # The current version will save seeds every iteration until ero_iters
@@ -25,7 +25,7 @@ segments: 30
 
 # The name of the output folder
 # A folder of workspace + output_folder
-output_seed_folder: "seeds"
+output_folder: "seeds"
 
 # name of the log file name, will be save in the output folder
 output_log_file: "seed_log.json"

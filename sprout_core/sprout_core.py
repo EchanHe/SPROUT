@@ -5,6 +5,112 @@ from datetime import datetime
 import os
 import tifffile
 
+required_eval_params =[
+    'upper_thresholds',
+    'to_grow_ids'
+    
+]
+
+optional_params_default_grow = {
+    'upper_thresholds': None,
+    'boundary_path' : None,
+    'to_grow_ids': None,
+    'background': 0,
+    
+    'num_threads': None,
+    
+    'grow_to_end': False,
+    'is_sort': True,
+    
+    'min_diff': 50,
+    'tolerate_iters': 3,
+    
+    # For mesh making
+    'is_make_meshes': False,
+    'downsample_scale': 10,
+    'step_size': 1,  
+    
+    "final_grow_output_folder": None,
+    "name_prefix" : "final_grow",
+    "simple_naming": True
+}
+
+optional_params_default_seeds = {
+    'upper_thresholds': None,
+    'boundary_path' : None,
+
+    'background': 0,
+    
+    'num_threads': None,
+
+    'sort': True,
+    
+    'no_split_limit': 3,
+    'min_size': 5,
+    'min_split_prop': 0.01,
+    'min_split_sum_prop': 0,
+    
+    'save_every_iter': False,
+    'save_merged_every_iter': False,
+    'name_prefix': "Merged_seed",
+    'init_segments': None,
+    'footprints': "ball"
+}
+
+
+
+def assign_optional_params(config, keys_with_defaults):
+    """
+    Assign configuration values from YAML or DataFrame, falling back to default values if missing.
+
+    Args:
+        config (dict): Parsed YAML configuration as a dictionary.
+        keys_with_defaults (dict): Dictionary of keys and their default values.
+
+    Returns:
+        dict: A dictionary of configuration values with assigned defaults if missing.
+    """
+    config_values = {}
+    
+    for key, default in keys_with_defaults.items():
+        # Check if the key exists in YAML
+        if config and key in config:
+            config_values[key] = config[key]
+        else:
+            config_values[key] = default
+    
+    return config_values
+
+def assign_config_values_pipeline(yaml_config, row, keys_with_defaults):
+    """
+    Assign configuration values from YAML or a row of aDataFrame, falling back to default values if missing.
+
+    Args:
+        yaml_config (dict): Parsed YAML configuration as a dictionary.
+        row (pd.DataFrame): DataFrame row
+        keys_with_defaults (dict): Dictionary of keys and their default values.
+
+    Returns:
+        dict: A dictionary of configuration values with assigned defaults if missing.
+    """
+    config_values = {}
+    
+    for key, default in keys_with_defaults.items():
+        # Check if the key exists in YAML
+        if yaml_config and key in yaml_config:
+            config_values[key] = yaml_config[key]
+        # Check if the key exists in the DataFrame
+        elif row is not None and key in row:
+            if key in required_eval_params:
+                config_values[key] = eval(row[key])
+            else:
+                config_values[key] = row[key]  
+            
+        # Assign default if not found
+        else:
+            config_values[key] = default
+    
+    return config_values
 
 
 def check_required_keys(data, required_keys):
@@ -735,7 +841,8 @@ def find_seed_by_ero_custom(volume_array, threshold , segments, ero_iter,
                     ero_shape = 'ball',
                     SAVE_ALL_ERO= True,
                     footprints = None,
-                    upper_threshold = None):
+                    upper_threshold = None,
+                    boundary = None):
      # Capture the start time
     start_time = datetime.now()
     
@@ -743,6 +850,10 @@ def find_seed_by_ero_custom(volume_array, threshold , segments, ero_iter,
         volume_label = volume_array >= threshold
     else:
         volume_label = (volume_array>=threshold) & (volume_array<=upper_threshold)
+        
+    if boundary is not None:
+        boundary = check_and_cast_boundary(boundary)
+        volume_label[boundary] = False
     
     log_dict = {"Method": "find_seed_by_ero_custom",
                   "volume_array shape": list(volume_array.shape),
