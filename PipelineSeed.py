@@ -201,6 +201,8 @@ if __name__ == "__main__":
                     if optional_params["upper_thresholds"] is not None:
                         assert len(optional_params["upper_thresholds"])==1, "Upper threshold should have 1 element"
                         upper_threshold = optional_params["upper_thresholds"][0]
+                    else:
+                        upper_threshold = None
                     print("Running make_seeds_merged")
                     seed ,ori_combine_ids_map , output_dict=make_seeds_merged.make_seeds_merged_path_wrapper(                           
                                             img_path= input_path,
