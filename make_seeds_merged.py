@@ -834,8 +834,8 @@ if __name__ == "__main__":
             if len(thresholds) == 1:
                 seed_merging_mode = "ERO"
                 thresholds = thresholds[0]
-                if upper_thresholds is not None:
-                    upper_thresholds = upper_thresholds[0]
+                if optional_params['upper_thresholds'] is not None:
+                    optional_params['upper_thresholds'] = optional_params['upper_thresholds'][0]
                 
             elif len(thresholds) > 1:
                 seed_merging_mode = "THRE"

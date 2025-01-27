@@ -267,7 +267,7 @@ def grow_mp(**kwargs):
             assert threshold<upper_threshold, "lower_threshold must be smaller than upper_threshold"
             threshold_binary = (ori_img>=threshold) & (ori_img<=upper_threshold)
         else:
-            threshold_binary = ori_img <= threshold
+            threshold_binary = ori_img >= threshold
             upper_threshold = None
         full_size = np.sum(threshold_binary)
         print(f"Size of the threshold {threshold} to {upper_threshold} mask: {full_size}")
