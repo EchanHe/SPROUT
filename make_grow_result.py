@@ -11,6 +11,7 @@ import multiprocessing
 import threading
 
 import sprout_core.sprout_core as sprout_core 
+import sprout_core.config_core as config_core 
 import sprout_core.vis_lib as vis_lib
 import make_mesh
 
@@ -21,19 +22,6 @@ lock = threading.Lock()
 
 
 # Function to recursively create global variables from the config dictionary
-def load_config_yaml(config, parent_key=''):
-    """
-    Recursively load configuration values from a YAML dictionary into global variables.
-
-    Args:
-        config (dict): The configuration dictionary.
-        parent_key (str): Key prefix for nested configurations.
-    """
-    for key, value in config.items():
-        if isinstance(value, dict):
-            load_config_yaml(value, parent_key='')
-        else:
-            globals()[parent_key + key] = value
             
 
 def grow_function(result, threshold_binary, label_id_list,touch_rule,non_bg_mask):
@@ -350,7 +338,7 @@ def grow_mp(**kwargs):
                     print(f"\tGrow size is similar to the threshold size\nBreaking at iteration {i_dilate}: Input size = {input_size}, Output_size = {output_size} and size of threshold binary = {full_size}")
                     break
             
-        print(f"\tFinish growing. Last Input size = {input_size} and Output_size = {output_size}")
+        print(f"\tFinish growing. Last Input size = {input_size} and Output_size = {output_size}\n")
     
     ## Save the final grow output as the final_<img_name>
     if final_grow_output_folder is not None:
@@ -364,7 +352,7 @@ def grow_mp(**kwargs):
 
     total_seconds = (datetime.now() - start_time).total_seconds()
     minutes, s = divmod(total_seconds, 60)
-    print(f"Running time:{minutes} minutes {round(s,2)} sec")
+    print(f"Running time:{minutes} minutes {round(s,2)} sec\n")
     
     # Save the dataframe of the growing log
     df_log = pd.DataFrame(df_log)
@@ -394,172 +382,6 @@ def grow_mp(**kwargs):
     return grow_dict
 
 
-def main(**kwargs):
-    
-    dilate_iters = kwargs.get('dilate_iters', None)
-    thresholds = kwargs.get('thresholds', None)  
-    save_interval = kwargs.get('save_interval', None)  
-    touch_rule = kwargs.get('touch_rule', "stop")  
-    
-    workspace = kwargs.get('workspace', None)
-    img_path = kwargs.get('img_path', None)
-    seg_path = kwargs.get('seg_path', None) 
-    output_folder = kwargs.get('output_folder', None) 
-    to_grow_ids = kwargs.get('to_grow_ids', None) 
-    
-    is_sort = kwargs.get('is_sort', True) 
-    
-    min_diff = kwargs.get('min_diff', 50) 
-    tolerate_iters = kwargs.get('tolerate_iters', 3) 
-    
-    is_make_meshes = kwargs.get('is_make_meshes', False) 
-    num_threads = kwargs.get('num_threads', None) 
-    downsample_scale = kwargs.get('downsample_scale', 10) 
-    step_size  = kwargs.get('step_size', 1) 
-    
-    
-    if num_threads is None:
-        num_threads = max_threads-1
-    # Test if the grown result and input's diff is more than this. Default is 10.
-    # min_diff = 50
-    # The number of iters for diff is less than diff_threshold
-    
-    
-    
-    assert len(thresholds) == len(dilate_iters), f"thresholds and dilate_iters must have the same length, but got {len(thresholds)} and {len(dilate_iters)}."
-    if isinstance(save_interval, list):
-        assert len(thresholds) == len(save_interval), f"Save interval list should have the same length as well"
-
-    
-    if workspace is not None:
-        img_path = os.path.join(workspace, 
-                                img_path)
-        seg_path = os.path.join(workspace, seg_path)
-        output_folder = os.path.join(workspace, output_folder)
-    
-    base_name = os.path.basename(seg_path)
-    input_mask = tifffile.imread(seg_path)
-    ori_img = tifffile.imread(img_path)
-
-
-    os.makedirs(output_folder , exist_ok=True)
-    
-    # Record the start time
-    start_time = datetime.now()
-    print(f"""{start_time.strftime("%Y-%m-%d %H:%M:%S")}
-    Making growing for 
-        Img: {img_path}
-        Threshold for Img {thresholds}
-        Seed {seg_path} to grow {dilate_iters} iterations
-        Early stopping: min_diff = {min_diff} and tolerate_iters = {tolerate_iters}
-            """)
-    
-    df_log = []
-
-    result = input_mask.copy()
-    result = result.astype('uint8')
-    for i, (threshold,dilate_iter) in enumerate(zip(thresholds,dilate_iters)):
-        # Set the count for check diff for each growing threshold
-        count_below_threshold = 0
-        
-        if isinstance(save_interval, list):
-                real_save_interval = save_interval[i]
-        elif isinstance(save_interval, int):
-            real_save_interval = save_interval
-        
-        threshold_name = "_".join(str(s) for s in thresholds[:i+1])
-        dilate_name = "_".join(str(s) for s in dilate_iters[:i+1])
-        
-        
-        print(f"threshold:{threshold} dilate_iter:{dilate_iter}.real_save_interval:{real_save_interval}")
-        for i_dilate in range(1, dilate_iter+1):
-            threshold_binary = ori_img > threshold
-            
-            # Get the input size for the log
-            input_size = np.sum(result!=0)
-            
-            ## Making grow for one iteration
-            result = sprout_core.dilation_one_iter(result, threshold_binary ,
-                                            touch_rule = touch_rule,
-                                            to_grow_ids=to_grow_ids)
-            
-            # Get the output size for the log
-            output_size = np.sum(result!=0)
-            
-            output_path = os.path.join(output_folder, f'{base_name}_iter_{i_dilate}_dilate_{dilate_name}_thre_{threshold_name}.tif')
-            
-                
-            if i_dilate%real_save_interval==0 or count_below_threshold >= tolerate_iters:
-                df_log.append({'id': (i*dilate_iter)+i_dilate, 
-                            'grow_size': output_size,
-                            'full_size':np.sum(threshold_binary),
-                            'cur_threshold': threshold,
-                            "file_name": os.path.basename(output_path),
-                            'full_path': os.path.abspath(output_path),
-                            'cur_dilate_step': i_dilate,
-                            })
-            
-            ## Check if output size and input 's diff is bigger than min_diff
-            if output_size - input_size < min_diff:
-                count_below_threshold += 1
-            else:
-                count_below_threshold = 0
-            if i_dilate%real_save_interval==0 or i_dilate ==dilate_iter or count_below_threshold >= tolerate_iters:
-                
-                result,_ = sprout_core.reorder_segmentation(result, sort_ids=is_sort)
-                tifffile.imwrite(output_path, 
-                    result,
-                    compression ='zlib')
-                print(f"\tGrown result has been saved {output_path}")
-                print(f"\tIter:{i_dilate}. Last Input size = {input_size} and Output_size = {output_size}")
-
-                
-                if count_below_threshold >= tolerate_iters:
-                    print(f"\tBreaking at iteration {i_dilate} with Input size = {input_size} and Output_size = {output_size}")
-                    break
-            
-            # if i_dilate%real_save_interval==0 or i_dilate ==dilate_iter:
-            #     # output_path = os.path.join(workspace, f'result/ai/dila_{dilate_iter}_{threshold}_rule_{touch_rule}.tif')
-              
-                
-            #     print(f"\tGrown result has been saved {output_path}")
-            #     print(f"\tIter:{i_dilate}. Last Input size = {input_size} and Output_size = {output_size}")
-            #     tifffile.imwrite(output_path, 
-            #     result,
-            #     compression ='zlib')
-        print(f"\tFinish growing. Last Input size = {input_size} and Output_size = {output_size}")
-    
-    end_time = datetime.now()
-    running_time = end_time - start_time
-    total_seconds = running_time.total_seconds()
-    minutes, _ = divmod(total_seconds, 60)
-    print(f"Running time:{minutes}")
-    
-    df_log = pd.DataFrame(df_log)
-    
-    log_path =  os.path.join(output_folder, f'grow_log_{base_name}.csv')   
-    df_log.to_csv(log_path, index = False)
-
-    grow_dict = {
-        "log_path":log_path,
-        "output_folder": output_folder
-    }
-    
-    # Make meshes  
-    if is_make_meshes:  
-        tif_files = glob.glob(os.path.join(output_folder, '*.tif'))
-
-        for tif_file in tif_files:
-            make_mesh.make_mesh_for_tiff(tif_file,output_folder,
-                                num_threads=num_threads,no_zero = True,
-                                colormap = "color10",
-                                downsample_scale=downsample_scale,
-                                step_size=step_size)
-    
-    return grow_dict
-
-
-
 if __name__ == "__main__":
     
     # Get the file path from the first command-line argument or use the default
@@ -570,26 +392,23 @@ if __name__ == "__main__":
     if extension == '.yaml':
         with open(file_path, 'r') as file:
             config = yaml.safe_load(file)
-           
-            
-            
+            optional_params = config_core.validate_input_yaml(config, config_core.input_val_make_grow)
         
-        load_config_yaml(config)
-        optional_params = sprout_core.assign_optional_params(config, sprout_core.optional_params_default_grow)
+        # optional_params_2 = sprout_core.assign_optional_params(config, sprout_core.optional_params_default_grow)
 
     grow_dict = grow_mp(
-        workspace = workspace,
-        img_path = img_path,
-        seg_path = seg_path,
-        output_folder = output_folder,
+        workspace = config['workspace'],
+        img_path = config['img_path'] ,
+        seg_path = config['seg_path'],
+        output_folder = config['output_folder'],
          
-        dilate_iters = dilate_iters,
-        thresholds = thresholds,
+        dilate_iters = config['dilate_iters'],
+        thresholds = config['thresholds'],
         upper_thresholds = optional_params["upper_thresholds"],
-        num_threads = optional_params["num_threads"],
+        num_threads = config['num_threads'],
         
-        save_interval = save_interval,  
-        touch_rule = touch_rule, 
+        save_interval = config['save_interval'],  
+        touch_rule = config['touch_rule'], 
         
         
         grow_to_end = optional_params["grow_to_end"],

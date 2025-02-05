@@ -66,6 +66,85 @@ def get_largest(label, segments):
             number = i
     return largest,number, bincount_sorted[:segments]
 
+def find_seg_by_morpho_trans(input_mask, threshold_binary,  dilate_iter,
+                             touch_rule = 'stop',
+                             segments=None, ero_shape = 'ball'):
+    # if segments is None:
+    #     total_segs = len(np.unique(input_mask))
+    # else:
+    #     total_segs = segments+1
+    label_id_list = np.unique(input_mask)
+    label_id_list = label_id_list[label_id_list!=0]
+    
+    result = input_mask.copy()  
+    
+    ### Option 1 do all dilation iterations for every label
+    
+    # for label_id in range(1, total_segs):
+    # for label_id in label_id_list:
+    #     # First iteration. For the label
+    #     # Get the result for dilaition
+    #     dilated_binary_label_id = (result ==label_id)
+    #     for i in range(dilate_iter):
+    #         dilated_binary_label_id = sprout_core.dilation_binary_img_on_sub(dilated_binary_label_id, 
+    #                                                                             margin = 2, kernal_size = 1)
+    #         print(f"Size of each iter for label:{label_id} is {np.sum(dilated_binary_label_id)}")
+    #     if touch_rule == 'stop':
+    #         # This is the binary for non-label of the updated mask
+    #         binary_non_label = (result !=label_id) & (result != 0)
+    #         # See if original mask overlay with grown label_id mask
+    #         overlay = np.logical_and(binary_non_label, dilated_binary_label_id)
+    #         # Check if there are any True values in the resulting array
+    #         HAS_OVERLAY = np.any(overlay)
+            
+    #         print(f"""
+    #               np.sum((result ==label_id)){np.sum((result ==label_id))},
+    #               np.sum(dilated_binary_label_id){np.sum(dilated_binary_label_id)},
+    #               np.sum(overlay){np.sum(overlay)},
+    #               np.sum(binary_non_label){np.sum(binary_non_label)}
+    #               """)
+            
+    #         if HAS_OVERLAY:
+    #             dilated_binary_label_id[overlay] = False
+    #     result[dilated_binary_label_id & threshold_binary] = label_id
+        # result[dilated_binary_label_id] = label_id
+        
+    ### Option 2 do all the label grow for every dilation iteration 
+    
+    for i in range(dilate_iter):
+        print(f"Growing on {i} iter, with Rule:{touch_rule}")
+        for label_id in label_id_list:
+            dilated_binary_label_id = (result ==label_id)
+            dilated_binary_label_id = dilation_binary_img_on_sub(dilated_binary_label_id, 
+                                                                    margin = 2, kernal_size = 1)
+            
+            
+            if touch_rule == 'stop':
+                # This is the binary for non-label of the updated mask
+                binary_non_label = (result !=label_id) & (result != 0)
+                # See if original mask overlay with grown label_id mask
+                overlay = np.logical_and(binary_non_label, dilated_binary_label_id)
+                # Check if there are any True values in the resulting array
+                HAS_OVERLAY = np.any(overlay)
+                
+                print(f"""
+                    np.sum((result ==label_id)){np.sum((result ==label_id))},
+                    np.sum(dilated_binary_label_id){np.sum(dilated_binary_label_id)},
+                    np.sum(overlay){np.sum(overlay)},
+                    np.sum(binary_non_label){np.sum(binary_non_label)}
+                    """)
+                
+                if HAS_OVERLAY:
+                    dilated_binary_label_id[overlay] = False
+            
+            result[dilated_binary_label_id & threshold_binary] = label_id  
+        
+        ## Save the results if there is needed         
+    
+    return result
+
+
+
 def get_ccomps_with_size_order(volume, segments, min_vol = None):
     """Get the largest ccomp
 

@@ -17,19 +17,13 @@ max_threads = multiprocessing.cpu_count()
 
 # import configparser
 import sprout_core.sprout_core as sprout_core
+import sprout_core.config_core as config_core
+import sprout_core.vis_lib as vis_lib
+
 import make_seeds
 
-import sprout_core.vis_lib as vis_lib
+
 import json, yaml
-
-
-# Function to recursively create global variables from the config dictionary
-def load_config_yaml(config, parent_key=''):
-    for key, value in config.items():
-        if isinstance(value, dict):
-            load_config_yaml(value, parent_key='')
-        else:
-            globals()[parent_key + key] = value
             
 pre_set_footprint_list = [
     ["ball"],
@@ -47,10 +41,24 @@ pre_set_sub_folders = [
 ]
 
 
+pre_set_footprint_list_2d = [
+    ["disk"],
+    ["X"],
+    ["Y"] 
+]
+
+pre_set_sub_folders_2d = [
+    "seeds_disk",
+    "seeds_X",
+    "seeds_Y"]
+
+
 support_footprints =['ball','cube',
                      'ball_XY','ball_XZ','ball_YZ',
                      'X','Y','Z',
                      '2XZ_1Y','2XY_1Z','2YZ_1X']
+
+
 
 
 output_log_file =  "seed_log.json"
@@ -152,10 +160,15 @@ def make_seeds_all(**kwargs):
         for a, b in zip(thresholds, upper_thresholds):
             assert a < b, "lower_threshold must be smaller than upper_threshold"
 
+    is_3d = (img.ndim == 3)
     
     if footprints is None:
-        footprint_list = [footprint*ero_iters for footprint in pre_set_footprint_list]
-        output_seed_sub_folders = pre_set_sub_folders
+        if is_3d:
+            footprint_list = [footprint*ero_iters for footprint in pre_set_footprint_list]
+            output_seed_sub_folders = pre_set_sub_folders
+        else:
+            footprint_list = [footprint*ero_iters for footprint in pre_set_footprint_list_2d]
+            output_seed_sub_folders = pre_set_sub_folders_2d
     else:
         check_support_footprint = [footprint in support_footprints for footprint in footprints]
         if not np.all(check_support_footprint):
@@ -183,6 +196,7 @@ def make_seeds_all(**kwargs):
         print(f"""{start_time.strftime("%Y-%m-%d %H:%M:%S")}
         Making erosion seeds for 
             Img: {img_name}
+            Is 3D image: {is_3d}
             Threshold for Img {thresholds}
             Erode {ero_iters} iterations
             Keeping {segments} components
@@ -191,8 +205,6 @@ def make_seeds_all(**kwargs):
             Output Folder {output_seed_sub_folder}
                 """)
         
-
-
 
         threshold_ero_iter_pairs = list(itertools.product(thresholds, [ero_iters]))  
         sublists = [threshold_ero_iter_pairs[i::num_threads] for i in range(num_threads)]
@@ -270,9 +282,9 @@ if __name__ == "__main__":
     if extension == '.yaml':
         with open(file_path, 'r') as file:
             config = yaml.safe_load(file)
-
-        load_config_yaml(config)
-        optional_params = sprout_core.assign_optional_params(config, sprout_core.optional_params_default_seeds)
+            optional_params = config_core.validate_input_yaml(config, config_core.input_val_make_seeds_all)
+            
+        # optional_params_2 = sprout_core.assign_optional_params(config, sprout_core.optional_params_default_seeds)
         
     
     if optional_params['boundary_path'] is not None:
@@ -282,21 +294,25 @@ if __name__ == "__main__":
     
     output_dict = make_seeds_all(
         boundary = boundary,
-        workspace= workspace,
-            file_name= file_name,
+        workspace= config['workspace'],
+            file_name= config['file_name'],
             output_log_file = output_log_file,
-            output_folder = output_folder,
-            num_threads = optional_params['num_threads'],
-            ero_iters = ero_iters,
-            thresholds = thresholds,
-            segments = segments,
-            upper_thresholds = optional_params['upper_thresholds'])
+            output_folder = config['output_folder'],
+            num_threads = config['num_threads'],
+            ero_iters = config['ero_iters'],
+            thresholds = config['thresholds'],
+            segments = config['segments'],
+            upper_thresholds = optional_params['upper_thresholds'],
+            
+            is_make_meshes = optional_params['is_make_meshes'],
+            downsample_scale = optional_params['downsample_scale'],
+            step_size  = optional_params['step_size']
+            )
     
-
     
     # Make plot based on the seeds log json
     # Doing this after parallel/multi processing
-    plot(output_dict, os.path.join(os.path.join(workspace, output_folder, "full_log.png")))
+    plot(output_dict, os.path.join(os.path.join(config['workspace'], config['output_folder'], "full_log.png")))
                                                      
 
     # if make_mesh:

@@ -6,9 +6,12 @@ import tifffile
 import threading
 from datetime import datetime
 import matplotlib.pyplot as plt
-import json, yaml
+import yaml
 from skimage.draw import polygon
 from PIL import Image
+import sys
+
+import sprout_core.config_core as config_core
 
 # Function to recursively create global variables from the config dictionary
 def load_config_yaml(config, parent_key=''):
@@ -18,16 +21,6 @@ def load_config_yaml(config, parent_key=''):
         else:
             globals()[parent_key + key] = value
             
-
-# Define a function to read the configuration and set variables dynamically
-def load_config_json(file_path):
-    with open(file_path, 'r') as config_file:
-        config = json.load(config_file)
-
-    # Dynamically set variables in the global namespace
- 
-    for key, value in config.items():
-        globals()[key] = value
 
 
 def stack_to_mesh(bone_id_list , output_dir, downsample_scale=10,step_size = 1):
@@ -384,27 +377,38 @@ def make_mesh_for_tiff(tif_file,output_folder,
     print(f"{tif_file} has completed.\n")
 if __name__ == "__main__":
 
-    ############ Config
-    file_path = './make_mesh.yaml'
-    
+
+    # Get the file path from the first command-line argument or use the default
+    file_path = sys.argv[1] if len(sys.argv) > 1 else './make_mesh.yaml' 
+       
     _, extension = os.path.splitext(file_path)
     print(f"processing config the file {file_path}")
-    if extension == '.json':
-        
-        load_config_json(file_path)
-    elif extension == '.yaml':
+
+    if extension == '.yaml':
         with open(file_path, 'r') as file:
             config = yaml.safe_load(file)
-            downsample_scale = config.get('downsample_scale', 10)
-            step_size = config.get('step_size', 1)
-        load_config_yaml(config)
+            optional_params = config_core.validate_input_yaml(config, 
+                                                              config_core.input_val_make_mesh)
+            # downsample_scale = config.get('downsample_scale', 10)
+            # step_size = config.get('step_size', 1)
+        # load_config_yaml(config)
     
     
     start_time = datetime.now()
+    
+    if (optional_params['input_folder'] is None and optional_params['img_path'] is None) or \
+        (optional_params['input_folder'] is not None and optional_params['img_path'] is not None):
+        raise ValueError("Error: Either 'input_folder' or 'img_file' must be None, but not both.")
+    elif optional_params['input_folder']:
+        MULTI_FILES = True
+    else:
+        MULTI_FILES = False
+
+    
     print(f"""{start_time.strftime("%Y-%m-%d %H:%M:%S")}
-    Mode WHOLE_MESH:{SINGLE}
     Mode MULTI_FILES:{MULTI_FILES}
             """)
+    # os.makedirs(config['output_folder'],exist_ok=True)
     ################
 
     
@@ -412,76 +416,25 @@ if __name__ == "__main__":
     # MULTI_FILES = True                                       
     # num_threads = 13
     if MULTI_FILES:
-        output_folder = os.path.join(workspace, output_folder)
-        # workspace = r'C:\Users\Yichen\OneDrive\work\codes\nhm_bounti_pipeline\result\foram_james'    
-        # input_folder = 'result/ai/'
-        # output_folder = 'result/ai/'
-
-        input_folder = os.path.join(workspace, input_folder)
         print(f"""
-        Input folder {input_folder}      
-        output_folder:{output_folder}
+        Input folder {config['input_folder']}      
+        output_folder:{config['output_folder']}
                 """)
             
         
-        tif_files = glob.glob(os.path.join(input_folder, '*.tif'))
+        tif_files = glob.glob(os.path.join(config['input_folder'], '*.tif')) + glob.glob(os.path.join(config['input_folder'], '*.tiff'))
         
         for tif_file in tif_files:
-            make_mesh_for_tiff(tif_file,output_folder,
-                               num_threads,no_zero = True,
-                               downsample_scale=downsample_scale,
-                               step_size=step_size)
-
-
-    # Only for 
-    if SINGLE:
-        ### To change your input params ####
-        # tif_path = "output_procavia/seg_6000_3000.tif"
-        # output_dir = "output_procavia/mesh_seg_6000_3000"
+            make_mesh_for_tiff(tif_file,config['output_folder'],
+                               config['num_threads'],
+                               no_zero = True,
+                               downsample_scale=optional_params['downsample_scale'],
+                               step_size=optional_params['step_size'])
+    else:        
         
-        os.makedirs(output_folder,exist_ok=True)
-
-        make_mesh_for_tiff(img_file,output_folder, num_threads,
+        make_mesh_for_tiff(config['img_path'],config['output_folder'], 
+                           config['num_threads'],
                            no_zero = True,
-                           downsample_scale=downsample_scale,
-                           step_size=step_size)   
+                            downsample_scale=optional_params['downsample_scale'],
+                            step_size=optional_params['step_size'])
         
-
-
-        
-        
-#### Old codes for multi files
-            # print(f"Creating meshes for {tif_file}")
-            # # Extract the base name without extension
-            # base_name = os.path.basename(tif_file)
-            # folder_name = os.path.splitext(base_name)[0]
-            
-            # # Create a new directory with the name of the .tif file (without extension)
-            # output_sub_dir = os.path.join(output_folder, folder_name)
-            # os.makedirs(output_sub_dir, exist_ok=True)
-            
-            
-            # volume = tifffile.imread(tif_file)
-            # volume_array = np.array(volume)
-
-            # #Create ID for non background (e.g. 0)
-            # all_id = np.unique(volume_array)
-            # bone_id_list =  [x for x in all_id if x !=0]
-            
-            
-            # sublists = [bone_id_list[i::num_threads] for i in range(num_threads)]
-
-            # # Create a list to hold the threads
-            # threads = []
-
-            # # Start a new thread for each sublist
-            # for sublist in sublists:
-            #     thread = threading.Thread(target=stack_to_mesh, args=(sublist,output_sub_dir,))
-            #     threads.append(thread)
-            #     thread.start()
-                
-            # # Wait for all threads to complete
-            # for thread in threads:
-            #     thread.join()
-
-            # print(f"{tif_file} has completed.\n")

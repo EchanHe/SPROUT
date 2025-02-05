@@ -4,12 +4,16 @@ from skimage import measure
 from datetime import datetime
 import os
 import tifffile
-
+# eval() the Dataframe 
 required_eval_params =[
     'upper_thresholds',
     'to_grow_ids'
     
 ]
+
+
+
+
 
 optional_params_default_grow = {
     'upper_thresholds': None,
@@ -40,8 +44,6 @@ optional_params_default_seeds = {
     'boundary_path' : None,
 
     'background': 0,
-    
-    'num_threads': None,
 
     'sort': True,
     
@@ -264,6 +266,14 @@ fp_Y = np.array(
                     [0, 0, 0],
                     [0, 0, 0]]], dtype=np.uint8)
 
+fp_X_2d = np.array([[0, 0, 0],
+                    [1, 1, 1],
+                    [0, 0, 0]],  dtype=np.uint8)
+
+fp_Y_2d = np.array([[0, 1, 0],
+                    [0, 1, 0],
+                    [0, 1, 0]],  dtype=np.uint8)
+
 def get_sub_binary_image_by_pos(image_3d, margin):
 
 
@@ -309,6 +319,9 @@ def get_sub_binary_image_by_pos(image_3d, margin):
 
 def dilation_binary_img_on_sub(input, margin, kernal_size, is_round=True):
     
+    if margin <=kernal_size:
+        margin = kernal_size + 1
+    
     is_3d = (input.ndim == 3)
     if is_3d:
         
@@ -326,120 +339,16 @@ def dilation_binary_img_on_sub(input, margin, kernal_size, is_round=True):
 
             input[min_z:max_z+1, min_y:max_y+1, min_x:max_x+1] = subset_3d
     else:
+        subset_2d , max_min_ids= get_sub_binary_image_by_pos(input, margin = margin)
+        min_y ,max_y, min_x, max_x = max_min_ids
 
         if is_round:
-            input = binary_dilation(input, disk(kernal_size))
+            subset_2d = binary_dilation(subset_2d, disk(kernal_size))
         else:
-            input = binary_dilation(input, square(kernal_size))
-        
+            subset_2d = binary_dilation(subset_2d, square(kernal_size))
+        input[min_y:max_y+1, min_x:max_x+1] = subset_2d
     
     return input
-
-#### CCOMPS stuffs
-
-def view_ccomps(input):
-    subset_3d , _= get_sub_binary_image_by_pos(input, margin = 1)
-    labeled_image = measure.label(subset_3d, background=0, return_num=False, connectivity=3)
-    # Calculate the size of each connected component
-    component_sizes = np.bincount(labeled_image.ravel())[1:]  # Skip the background count
-
-    # Print the size of each component
-    for i, size in enumerate(component_sizes, start=1):
-        print(f"Component {i}: Size = {size}")
-
-def keep_largest_ccomps(input):
-    
-    subset_3d , max_min_ids= get_sub_binary_image_by_pos(input, margin = 1)
-    min_z, max_z, min_y ,max_y, min_x, max_x = max_min_ids
-    
-    labeled_image = measure.label(subset_3d, background=0, return_num=False, connectivity=3)
-    # Calculate the size of each connected component
-    # component_sizes = np.bincount(labeled_image.ravel())[1:]  # Skip the background count
-
-    # Calculate the size of each connected component
-    component_sizes = np.bincount(labeled_image.ravel())[1:]  # Skip the background count
-
-    # Identify the largest component
-    largest_component_label = np.argmax(component_sizes) + 1  # Labels are 1-based
-
-    # Create a new binary image with only the largest component
-    largest_component = (labeled_image == largest_component_label).astype(int)
-
-    output = np.zeros(input.shape)
-
-    output[min_z:max_z+1, min_y:max_y+1, min_x:max_x+1] = largest_component
-
-    return output
-
-def keep_ccomps(input, top_n=None , threshold=0):
-    
-    subset_3d , max_min_ids= get_sub_binary_image_by_pos(input, margin = 1)
-    min_z, max_z, min_y ,max_y, min_x, max_x = max_min_ids
-    
-    labeled_image = measure.label(subset_3d, background=0, return_num=False, connectivity=3)
-    # Calculate the size of each connected component
-    # component_sizes = np.bincount(labeled_image.ravel())[1:]  # Skip the background count
-
-    # Calculate the size of each connected component
-    component_sizes = np.bincount(labeled_image.ravel())[1:]  # Skip the background count
-
-    if threshold==0:
-        component_labels = np.unique(labeled_image)[1:]
-    else:  
-        # Get component labels that are above the specified size
-        component_labels = np.where(component_sizes >= threshold)[0] + 1  # Labels are 1-based
-
-    if top_n is not None:
-        largest_labels = component_labels[np.argsort(component_sizes[component_labels - 1])[-top_n:]]
-    else:
-        largest_labels = component_labels
-
-    # Create an output image with only the desired components retained
-    output_sub = np.zeros_like(subset_3d)
-    for label in largest_labels:
-        output_sub[labeled_image == label] = 1
-        
-    output = np.zeros_like(input)
-    output[min_z:max_z+1, min_y:max_y+1, min_x:max_x+1] = output_sub
-    
-    return output
-
-
-def get_ccomps_with_size_order(volume, segments=None, min_vol = None):
-    """Get the largest ccomp
-
-    Args:
-        label (_type_): _description_
-        segments (_type_): _description_
-
-    Returns:
-        _type_: _description_
-    """
-    labeled_image = measure.label(volume, background=0, 
-                                  return_num=False, connectivity=3)
-    component_sizes = np.bincount(labeled_image.ravel())[1:] 
-    
-    
-    
-    component_labels = np.unique(labeled_image)[1:]
-    if min_vol is not None:
-        valid_components = component_sizes >= min_vol
-        component_labels = component_labels[valid_components]
-        component_sizes = component_sizes[valid_components]
-        
-    component_sizes_sorted = -np.sort(-component_sizes,)
-    if segments is None:
-        segments = len(component_sizes_sorted)
-    # props = measure.regionprops(label_image)
-    
-    largest_labels = component_labels[np.argsort(component_sizes[component_labels - 1])[::-1][:segments]]
-    
-    output = np.zeros_like(labeled_image)
-    for label_id, label in enumerate(largest_labels):
-        output[labeled_image == label] = label_id+1
-    
-    return output, component_sizes_sorted[:segments]
-
 
 def erosion_binary_img_on_sub(input, kernal_size = 1, footprint='ball'):
     
@@ -486,34 +395,28 @@ def erosion_binary_img_on_sub(input, kernal_size = 1, footprint='ball'):
             
             input[min_z:max_z+1, min_y:max_y+1, min_x:max_x+1] = subset_3d
     else:
-        if footprint == 'disk':
-            input = binary_erosion(input, disk(kernal_size))
-        elif footprint == 'square':
-            input = binary_erosion(input, square(kernal_size))
-        # input = binary_erosion(input, square(kernal_size))
-    
-    return input
-
-def erosion_binary_img_on_sub_custom(input, footprint):
-    
-    is_3d = (input.ndim == 3)
-    if is_3d:
-        subset_3d , max_min_ids= get_sub_binary_image_by_pos(input, margin = 1)
-        min_z, max_z, min_y ,max_y, min_x, max_x = max_min_ids
-
-        subset_3d = binary_erosion(subset_3d, footprint)
-
+        subset_2d , max_min_ids= get_sub_binary_image_by_pos(input, margin = 1)
+        min_y ,max_y, min_x, max_x = max_min_ids
         
-        input[min_z:max_z+1, min_y:max_y+1, min_x:max_x+1] = subset_3d
-    else:
-        subset_3d = binary_erosion(subset_3d, footprint)
+        if footprint == 'disk' or footprint == 'ball':
+            subset_2d = binary_erosion(subset_2d, disk(kernal_size))
+        elif footprint == 'square' or footprint == 'cube':
+            subset_2d = binary_erosion(subset_2d, square(kernal_size))
+        elif footprint =='X':
+            subset_2d = binary_erosion(subset_2d, fp_X_2d)
+        elif footprint =='Y':
+            subset_2d = binary_erosion(subset_2d, fp_Y_2d)
+            
+        input[min_y:max_y+1, min_x:max_x+1] = subset_2d
         # input = binary_erosion(input, square(kernal_size))
     
     return input
 
 
 def closing_binary_img_on_sub(input, margin, kernal_size, is_round=True):
-    
+    if margin <=kernal_size:
+        margin = kernal_size + 1
+        
     is_3d = (input.ndim == 3)
     if is_3d:
         if len(np.argwhere(input == True)) == 0:
@@ -531,35 +434,158 @@ def closing_binary_img_on_sub(input, margin, kernal_size, is_round=True):
             # subset_3d = binary_closing(subset_3d, cube(kernal_size))
             input[min_z:max_z+1, min_y:max_y+1, min_x:max_x+1] = subset_3d
     else:
+        subset_2d , max_min_ids= get_sub_binary_image_by_pos(input, margin = margin)
+        min_y ,max_y, min_x, max_x = max_min_ids
         if is_round:
-            input = binary_closing(input, disk(kernal_size))
+            subset_2d = binary_closing(subset_2d, disk(kernal_size))
         else:
-            input = binary_closing(input, square(kernal_size))
+            subset_2d = binary_closing(subset_2d, square(kernal_size))
+        input[min_y:max_y+1, min_x:max_x+1] = subset_2d
     
     return input
 
 def closing_binary_img_on_sub_one_step_iter(input, iterations, footprint='ball'):
-    if footprint =='ball' :
+    
+    is_3d = (input.ndim == 3)
+    
+    if footprint =='ball':
         kernal_size=1
         is_round = True
     elif footprint =='cube':
         kernal_size=3
         is_round = False
 
-    for i in range(iterations):
-        input = dilation_binary_img_on_sub(input, margin=2,kernal_size=kernal_size,is_round=is_round)
+    if is_3d:
+        for _ in range(iterations):
+            input = dilation_binary_img_on_sub(input, margin=2,kernal_size=kernal_size,is_round=is_round)
+            
+        for _ in range(iterations):    
+            input = erosion_binary_img_on_sub(input,kernal_size=kernal_size, footprint=footprint)
+    else:
+        kernal_size=1
+        for _ in range(iterations):
+            input = dilation_binary_img_on_sub(input, margin=2,kernal_size=kernal_size,is_round=is_round)
+            
+        for _ in range(iterations):    
+            input = erosion_binary_img_on_sub(input,kernal_size=kernal_size, footprint='disk')        
         
-    for i in range(iterations):    
-        input = erosion_binary_img_on_sub(input,kernal_size=kernal_size, footprint=footprint)
     return input
         
 
+#### CCOMPS stuffs
+
+
+def view_ccomps(input):
+    subset_3d , _= get_sub_binary_image_by_pos(input, margin = 1)
+    labeled_image = measure.label(subset_3d, background=0, return_num=False)
+    # Calculate the size of each connected component
+    component_sizes = np.bincount(labeled_image.ravel())[1:]  # Skip the background count
+
+    # Print the size of each component
+    for i, size in enumerate(component_sizes, start=1):
+        print(f"Component {i}: Size = {size}")
+
+def keep_largest_ccomps(input):
+    
+    subset_3d , max_min_ids= get_sub_binary_image_by_pos(input, margin = 1)
+    min_z, max_z, min_y ,max_y, min_x, max_x = max_min_ids
+    
+    labeled_image = measure.label(subset_3d, background=0, return_num=False)
+    # Calculate the size of each connected component
+    # component_sizes = np.bincount(labeled_image.ravel())[1:]  # Skip the background count
+
+    # Calculate the size of each connected component
+    component_sizes = np.bincount(labeled_image.ravel())[1:]  # Skip the background count
+
+    # Identify the largest component
+    largest_component_label = np.argmax(component_sizes) + 1  # Labels are 1-based
+
+    # Create a new binary image with only the largest component
+    largest_component = (labeled_image == largest_component_label).astype(int)
+
+    output = np.zeros(input.shape)
+
+    output[min_z:max_z+1, min_y:max_y+1, min_x:max_x+1] = largest_component
+
+    return output
+
+def keep_ccomps(input, top_n=None , threshold=0):
+    
+    subset_3d , max_min_ids= get_sub_binary_image_by_pos(input, margin = 1)
+    min_z, max_z, min_y ,max_y, min_x, max_x = max_min_ids
+    
+    labeled_image = measure.label(subset_3d, background=0, return_num=False)
+    # Calculate the size of each connected component
+    # component_sizes = np.bincount(labeled_image.ravel())[1:]  # Skip the background count
+
+    # Calculate the size of each connected component
+    component_sizes = np.bincount(labeled_image.ravel())[1:]  # Skip the background count
+
+    if threshold==0:
+        component_labels = np.unique(labeled_image)[1:]
+    else:  
+        # Get component labels that are above the specified size
+        component_labels = np.where(component_sizes >= threshold)[0] + 1  # Labels are 1-based
+
+    if top_n is not None:
+        largest_labels = component_labels[np.argsort(component_sizes[component_labels - 1])[-top_n:]]
+    else:
+        largest_labels = component_labels
+
+    # Create an output image with only the desired components retained
+    output_sub = np.zeros_like(subset_3d)
+    for label in largest_labels:
+        output_sub[labeled_image == label] = 1
+        
+    output = np.zeros_like(input)
+    output[min_z:max_z+1, min_y:max_y+1, min_x:max_x+1] = output_sub
+    
+    return output
+
+
+def get_ccomps_with_size_order(volume, segments=None, min_vol = None):
+    """Get the largest ccomp
+
+    Args:
+        label (_type_): _description_
+        segments (_type_): _description_
+
+    Returns:
+        _type_: _description_
+    """
+    labeled_image = measure.label(volume, background=0, 
+                                  return_num=False)
+    component_sizes = np.bincount(labeled_image.ravel())[1:] 
+    
+    
+    
+    component_labels = np.unique(labeled_image)[1:]
+    if min_vol is not None:
+        valid_components = component_sizes >= min_vol
+        component_labels = component_labels[valid_components]
+        component_sizes = component_sizes[valid_components]
+        
+    component_sizes_sorted = -np.sort(-component_sizes,)
+    if segments is None:
+        segments = len(component_sizes_sorted)
+    # props = measure.regionprops(label_image)
+    
+    largest_labels = component_labels[np.argsort(component_sizes[component_labels - 1])[::-1][:segments]]
+    
+    output = np.zeros_like(labeled_image)
+    for label_id, label in enumerate(largest_labels):
+        output[labeled_image == label] = label_id+1
+    
+    return output, component_sizes_sorted[:segments]
+
+
+## For junctions finding
 
 def find_gaps_between_two(input_1, input_2, background = None,
                           max_width = 7,
-                          Close_size = 7):
-       
-    
+                          close_size = 7):
+    assert input_1.ndim == input_2.ndim, "input 1 and 2 should have the same dimension"
+    is_3d = (input_1.ndim == 3)
     ### Goal: Close holes
     ## Method: Apply close to Input 1 and 2
     # close_size = 9
@@ -578,17 +604,22 @@ def find_gaps_between_two(input_1, input_2, background = None,
 
 
     ## Method1: Apply dilation to Input 1 and 2, 
-    ## and find the intersection between two inputs
-    dilation_iter = max_width
-    dilation_size = 1
+    
+    if is_3d:
+        ## and find the intersection between two inputs
+        dilation_iter = max_width
+        dilation_size = 1
 
-    for i in range(dilation_iter):
-        # prev_suture_inter_sum = suture_inter_sum
-        input_1 = dilation_binary_img_on_sub(input_1, margin=2, kernal_size=dilation_size)
-        input_2 = dilation_binary_img_on_sub(input_2, margin=2, kernal_size=dilation_size)
-        
-        if i == 0:
-            inter_1_dilation = np.logical_and(input_1, input_2)
+        for i in range(dilation_iter):
+            # prev_suture_inter_sum = suture_inter_sum
+            input_1 = dilation_binary_img_on_sub(input_1, margin=2, kernal_size=dilation_size)
+            input_2 = dilation_binary_img_on_sub(input_2, margin=2, kernal_size=dilation_size)
+            
+            if i == 0:
+                inter_1_dilation = np.logical_and(input_1, input_2)
+    else:
+        input_1 = binary_dilation(input_1, disk(max_width))
+        input_2 = binary_dilation(input_2, disk(max_width))
     
     inter_dilation = np.logical_and(input_1, input_2)
     if np.sum(inter_dilation)==0:
@@ -603,8 +634,11 @@ def find_gaps_between_two(input_1, input_2, background = None,
     # combined_for_closing = closing_binary_img_on_sub(input_for_closing,margin=margin, kernal_size=close_size)
 
     input_for_closing = combined.copy()
-    close_iters = Close_size
-    combined_for_closing = closing_binary_img_on_sub_one_step_iter(input_for_closing,close_iters)
+    if is_3d:
+        close_iters = close_size
+        combined_for_closing = closing_binary_img_on_sub_one_step_iter(input_for_closing,close_iters)
+    else:
+        combined_for_closing = binary_closing(input_for_closing,disk(close_size))
 
     inter_dilation_and_closing = np.logical_and(inter_dilation,
                                                 combined_for_closing)
@@ -650,7 +684,7 @@ def find_gaps_between_two(input_1, input_2, background = None,
 
 def find_gaps_between_two_avizo_version(input_1, input_2, background = None,
                           max_width = 7,
-                          Close_size = 7):
+                          close_size = 7):
        
     
     ### Goal: Close holes
@@ -696,7 +730,7 @@ def find_gaps_between_two_avizo_version(input_1, input_2, background = None,
     # combined_for_closing = closing_binary_img_on_sub(input_for_closing,margin=margin, kernal_size=close_size)
 
     input_for_closing = combined.copy()
-    close_iters = Close_size
+    close_iters = close_size
     combined_for_closing = closing_binary_img_on_sub_one_step_iter(input_for_closing,close_iters)
 
     inter_dilation_and_closing = np.logical_and(inter_dilation,
@@ -777,7 +811,7 @@ def erosion_suture(suture, bone, bg):
     return
 
 
-######### For ero bones
+######### Seeds in sprout #####
 
 def find_seed_by_ero(volume_array, threshold , segments, ero_iter, 
                     output_dir, 
@@ -838,23 +872,24 @@ def find_seed_by_ero(volume_array, threshold , segments, ero_iter,
 
 def find_seed_by_ero_custom(volume_array, threshold , segments, ero_iter, 
                     output_dir, 
-                    ero_shape = 'ball',
-                    SAVE_ALL_ERO= True,
                     footprints = None,
                     upper_threshold = None,
                     boundary = None):
      # Capture the start time
     start_time = datetime.now()
     
+    # Thresholding 
     if upper_threshold is None:
         volume_label = volume_array >= threshold
     else:
         volume_label = (volume_array>=threshold) & (volume_array<=upper_threshold)
-        
+    
+    # Use boundary if provided.
     if boundary is not None:
         boundary = check_and_cast_boundary(boundary)
         volume_label[boundary] = False
     
+    # Logging
     log_dict = {"Method": "find_seed_by_ero_custom",
                   "volume_array shape": list(volume_array.shape),
                   "threshold": threshold,
@@ -866,21 +901,19 @@ def find_seed_by_ero_custom(volume_array, threshold , segments, ero_iter,
                   }
     
 
-    
     for i_iter in range(0,ero_iter+1):
         
         if i_iter!=0:
             volume_label = erosion_binary_img_on_sub(volume_label, 
                                                                    footprint = footprints[i_iter-1])
-                                                                #    footprint='ball_YZ')
-        
-        seed_file = os.path.join(output_dir , 
-                            f"seed_ero_{i_iter}_thre{threshold}_{upper_threshold}_segs_{segments}.tif")
-        
+                                                                #    footprint='ball_YZ')      
 
-        
+        # Connected components
         seed, ccomp_sizes = get_ccomps_with_size_order(volume_label,segments)
         
+        # Save seed from each threshold, ero combination
+        seed_file = os.path.join(output_dir , 
+                    f"seed_ero_{i_iter}_thre{threshold}_{upper_threshold}_segs_{segments}.tif")
 
         tifffile.imwrite(seed_file, seed.astype('uint8'),
                          compression ='zlib')
@@ -972,85 +1005,8 @@ def dilation_one_iter(input_mask, threshold_binary,
     
     return result
 
-def find_seg_by_morpho_trans(input_mask, threshold_binary,  dilate_iter,
-                             touch_rule = 'stop',
-                             segments=None, ero_shape = 'ball'):
-    # if segments is None:
-    #     total_segs = len(np.unique(input_mask))
-    # else:
-    #     total_segs = segments+1
-    label_id_list = np.unique(input_mask)
-    label_id_list = label_id_list[label_id_list!=0]
-    
-    result = input_mask.copy()  
-    
-    ### Option 1 do all dilation iterations for every label
-    
-    # for label_id in range(1, total_segs):
-    # for label_id in label_id_list:
-    #     # First iteration. For the label
-    #     # Get the result for dilaition
-    #     dilated_binary_label_id = (result ==label_id)
-    #     for i in range(dilate_iter):
-    #         dilated_binary_label_id = sprout_core.dilation_binary_img_on_sub(dilated_binary_label_id, 
-    #                                                                             margin = 2, kernal_size = 1)
-    #         print(f"Size of each iter for label:{label_id} is {np.sum(dilated_binary_label_id)}")
-    #     if touch_rule == 'stop':
-    #         # This is the binary for non-label of the updated mask
-    #         binary_non_label = (result !=label_id) & (result != 0)
-    #         # See if original mask overlay with grown label_id mask
-    #         overlay = np.logical_and(binary_non_label, dilated_binary_label_id)
-    #         # Check if there are any True values in the resulting array
-    #         HAS_OVERLAY = np.any(overlay)
-            
-    #         print(f"""
-    #               np.sum((result ==label_id)){np.sum((result ==label_id))},
-    #               np.sum(dilated_binary_label_id){np.sum(dilated_binary_label_id)},
-    #               np.sum(overlay){np.sum(overlay)},
-    #               np.sum(binary_non_label){np.sum(binary_non_label)}
-    #               """)
-            
-    #         if HAS_OVERLAY:
-    #             dilated_binary_label_id[overlay] = False
-    #     result[dilated_binary_label_id & threshold_binary] = label_id
-        # result[dilated_binary_label_id] = label_id
-        
-    ### Option 2 do all the label grow for every dilation iteration 
-    
-    for i in range(dilate_iter):
-        print(f"Growing on {i} iter, with Rule:{touch_rule}")
-        for label_id in label_id_list:
-            dilated_binary_label_id = (result ==label_id)
-            dilated_binary_label_id = dilation_binary_img_on_sub(dilated_binary_label_id, 
-                                                                    margin = 2, kernal_size = 1)
-            
-            
-            if touch_rule == 'stop':
-                # This is the binary for non-label of the updated mask
-                binary_non_label = (result !=label_id) & (result != 0)
-                # See if original mask overlay with grown label_id mask
-                overlay = np.logical_and(binary_non_label, dilated_binary_label_id)
-                # Check if there are any True values in the resulting array
-                HAS_OVERLAY = np.any(overlay)
-                
-                print(f"""
-                    np.sum((result ==label_id)){np.sum((result ==label_id))},
-                    np.sum(dilated_binary_label_id){np.sum(dilated_binary_label_id)},
-                    np.sum(overlay){np.sum(overlay)},
-                    np.sum(binary_non_label){np.sum(binary_non_label)}
-                    """)
-                
-                if HAS_OVERLAY:
-                    dilated_binary_label_id[overlay] = False
-            
-            result[dilated_binary_label_id & threshold_binary] = label_id  
-        
-        ## Save the results if there is needed         
-    
-    return result
 
-
-def reorder_segmentation(segmentation, min_size=None, sort_ids=True):
+def reorder_segmentation(segmentation, min_size=None, sort_ids=True, top_n=None):
     """
     Reorder segmentation labels based on their size and optionally remove small segments.
     
@@ -1058,6 +1014,7 @@ def reorder_segmentation(segmentation, min_size=None, sort_ids=True):
     - segmentation: numpy array with class labels from 0 to n (0 is background).
     - min_size: minimum size for a segment to be kept (optional).
     - sort_ids: boolean indicating whether to sort class IDs by size (default: True).
+    - top_n: If specified, only the top N largest segments will be kept (default: None).
     
     Returns:
     - reordered_segmentation: numpy array with reordered class labels.
@@ -1076,6 +1033,10 @@ def reorder_segmentation(segmentation, min_size=None, sort_ids=True):
     
     # Sort classes by size in descending order
     sorted_classes = sorted(sizes, key=sizes.get, reverse=True)
+
+    # Keep only the top N largest segments if specified
+    if top_n is not None:
+        sorted_classes = sorted_classes[:top_n]
 
     # Filter out small segments if min_size is specified
     if min_size is not None:

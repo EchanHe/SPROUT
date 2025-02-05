@@ -2,23 +2,20 @@
 # Number of threads to generate meshes
 num_threads: 15
 
-# MULTI_FILES read in a folder, and make meshes for all *.tif files
-MULTI_FILES: True
-# Make meshes for a given tif file
-SINGLE: False
-
-# Root folder
-# Workspace can be set as ""
-# Then the input_folder and output_folder need to be absolute paths
-workspace: "./dataset_1/data_1/good_grow"
-
-# The relative path of the folder from the workspace
-# The actual path will be workspace + input_folder 
-# Set it as "" meaning use workspace as the input folder
-input_folder: ""
-
 # Output folder, similar to input_folder
-output_folder: ""
+output_folder: "./dataset_1/data_1/good_grow"
+
+
+####### Input parameters ######
+## Need to either have input_folder or img_path
+
+# The path of the folder for inputs, will create meshes for all .tif or tiff in the folder
+input_folder: "./dataset_1/data_1/good_grow"
+
+# The path to the tif/tiff image for mesh generation
+img_path: "./dataset_1/data_1/good_grow"
+
+######## Optional Parameters ######
 
 # Similify the mesh by dividing downsample_scale. >=1
 # Not compulsory, if missing, algorithm will use 10 as default
@@ -30,11 +27,8 @@ downsample_scale: 1
 step_size: 2
 
 ## An example of single file version
-
-# SINGLE: True
-# MULTI_FILES: False
 # # Absolute path for the input image
-# img_file: "./data/input.tiff"
+# img_path: "./data/input.tiff"
 # # Absolute path of the output folder
 # output_folder: "./output"
 

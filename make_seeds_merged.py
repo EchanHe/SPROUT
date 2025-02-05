@@ -14,6 +14,7 @@ import yaml
 
 # Add the lib directory to the system path
 import sprout_core.sprout_core as sprout_core
+import sprout_core.config_core as config_core
 from sprout_core.sprout_core import reorder_segmentation
 
 
@@ -353,11 +354,11 @@ def make_seeds_merged_mp(img,
                 temp_inter_ids = inter_log["inter_ids"]
                 temp_inter_props = inter_log["inter_props"]
                 
-                print(f'\t{combine_id} has been split to {temp_inter_count} parts. Ids are {temp_inter_ids}')
-                print(f"\tprops are: {temp_inter_props}")
+                # print(f'\t{combine_id} has been split to {temp_inter_count} parts. Ids are {temp_inter_ids}')
+                # print(f"\tprops are: {temp_inter_props}")
                 
                 sum_inter_props = np.sum(temp_inter_props)
-                print(f"\tSplit prop is {sum_inter_props}")
+                # print(f"\tSplit prop is {sum_inter_props}")
                 if sum_inter_props<min_split_sum_prop:
                     has_split = False
                 else:
@@ -398,7 +399,7 @@ def make_seeds_merged_mp(img,
             combine_seed,_ = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort)
             output_path = os.path.join(output_folder,output_name+f'ero_{ero_iter}_sorted.tif')
             
-            print(f"\tSaving final output:{output_path}")
+            print(f"\tSaving merged output:{output_path}")
             imwrite(output_path, combine_seed, 
                 compression ='zlib')    
         
@@ -736,11 +737,11 @@ def make_seeds_merged_by_thres_mp(img,
                 temp_inter_props = inter_log["inter_props"]
                 
                 
-                print(f'\t{combine_id} has been split to {temp_inter_count} parts. Ids are {temp_inter_ids}')
-                print(f"\tprops are: {temp_inter_props}")
+                # print(f'\t{combine_id} has been split to {temp_inter_count} parts. Ids are {temp_inter_ids}')
+                # print(f"\tprops are: {temp_inter_props}")
                 
                 sum_inter_props = np.sum(temp_inter_props)
-                print(f"\tSplit prop is {sum_inter_props}")
+                # print(f"\tSplit prop is {sum_inter_props}")
                 
                 if sum_inter_props<min_split_sum_prop:
                     has_split = False
@@ -796,7 +797,7 @@ def make_seeds_merged_by_thres_mp(img,
         combine_seed,_ = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort)
         output_path = os.path.join(output_folder,output_name+f'ero_{ero_iter}_sorted.tif')
         
-        print(f"\tSaving final output:{output_path}")
+        print(f"\tSaving merged output:{output_path}")
         imwrite(output_path, combine_seed, 
             compression ='zlib')    
         
@@ -821,23 +822,24 @@ if __name__ == "__main__":
     if extension == '.yaml':
         with open(file_path, 'r') as file:
             config = yaml.safe_load(file)
+            optional_params = config_core.validate_input_yaml(config, config_core.input_val_make_seeds_merged)
             
 
         load_config_yaml(config)
-        optional_params = sprout_core.assign_optional_params(config, sprout_core.optional_params_default_seeds)
+        # optional_params_2 = sprout_core.assign_optional_params(config, sprout_core.optional_params_default_seeds)
         
-    
-    if isinstance(thresholds, int):
+    # Checking if it's merged from erosion of threhsolds
+    if isinstance(config['thresholds'], int):
         seed_merging_mode = "ERO"
-    elif isinstance(thresholds, list):
-        if all(isinstance(t, int) for t in thresholds):
-            if len(thresholds) == 1:
+    elif isinstance(config['thresholds'], list):
+        if all(isinstance(t, int) for t in config['thresholds']):
+            if len(config['thresholds']) == 1:
                 seed_merging_mode = "ERO"
-                thresholds = thresholds[0]
+                config['thresholds'] = config['thresholds'][0]
                 if optional_params['upper_thresholds'] is not None:
                     optional_params['upper_thresholds'] = optional_params['upper_thresholds'][0]
                 
-            elif len(thresholds) > 1:
+            elif len(config['thresholds']) > 1:
                 seed_merging_mode = "THRE"
         else:
             raise ValueError("'thresholds' must be an int or a list of int(s).")
@@ -845,11 +847,9 @@ if __name__ == "__main__":
     
     # Track the overall start time
     overall_start_time = time.time()
-    
-    
-    
-    img = imread(img_path)
-    name_prefix = os.path.basename(img_path)
+        
+    img = imread(config['img_path'])
+
     
     if optional_params['boundary_path'] is not None:
         boundary = imread(optional_params['boundary_path'])
@@ -858,12 +858,14 @@ if __name__ == "__main__":
     
     if seed_merging_mode == "ERO":
         seed ,ori_combine_ids_map , output_dict=  make_seeds_merged_mp(img,
-                                            thresholds,
-                                            output_folder,
-                                            n_iters, 
-                                            segments,
-                                            boundary = boundary,
-                                            num_threads = num_threads,
+                                            config['thresholds'],
+                                            config['output_folder'],
+                                            config['n_iters'], 
+                                            config['segments'],
+                                            num_threads = config['num_threads'],
+                                            
+                                            boundary = boundary,                                            
+                                            
                                             background = optional_params["background"],
                                             sort = optional_params["sort"],
                                             
@@ -885,11 +887,11 @@ if __name__ == "__main__":
     elif seed_merging_mode=="THRE":
    
         seed ,ori_combine_ids_map , output_dict= make_seeds_merged_by_thres_mp(img,
-                                            thresholds,
-                                            output_folder,
-                                            n_iters, 
-                                            segments,
-                                            num_threads = num_threads,
+                                            config['thresholds'],
+                                            config['output_folder'],
+                                            config['n_iters'], 
+                                            config['segments'],
+                                            num_threads = config['num_threads'],
                                             
                                             boundary = boundary,
                                             
@@ -912,7 +914,7 @@ if __name__ == "__main__":
 
     
     
-    pd.DataFrame(output_dict).to_csv(os.path.join(output_folder, 'output_dict.csv'),index=False)
+    pd.DataFrame(output_dict).to_csv(os.path.join(config['output_folder'], 'output_dict.csv'),index=False)
     # Track the overall end time
     overall_end_time = time.time()
 

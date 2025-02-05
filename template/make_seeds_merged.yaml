@@ -1,11 +1,8 @@
 # Image path
 img_path: './data/img.tif'
 
-# Output Folder
-output_folder: "seed_ai_v2"
-
-# Number of erosions
-n_iters: 5
+# num of threads, it would be best to match the length of target_thresholds
+num_threads: 5
 
 # Thresholds for seed generation
 # If the value is just one number, or a list of one element, seeds will merged on erosions (from no-erosion to set erosion)
@@ -13,11 +10,14 @@ n_iters: 5
 # Seeds will be generated based on each individual threshold
 thresholds: [10,20]
 
+# Number of erosions
+n_iters: 5
+
 # Integer >=1, The algorithm keeps top <segments> largest disconnected components
 segments: 25
 
-# num of threads, it would be best to match the length of target_thresholds
-num_threads: 5
+# Output Folder
+output_folder: "seed_ai_v2"
 
 #### Optional inputs ####
 

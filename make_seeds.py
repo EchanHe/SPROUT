@@ -8,39 +8,20 @@ import itertools
 
 lock = threading.Lock()
 
-import configparser
+
 
 # lib_path = os.path.abspath(os.path.join(os.path.dirname(__file__), 'sprout_core'))
 # sys.path.insert(0, lib_path)
 
 import sprout_core.sprout_core as sprout_core
-# import sprout_core.load_config as load_config
+import sprout_core.config_core as config_core
 # import sprout_core
 # import load_config
 
 
 import json, yaml
 
-
-# Function to recursively create global variables from the config dictionary
-def load_config_yaml(config, parent_key=''):
-    """
-    Recursively load configuration values from a YAML dictionary into global variables.
-
-    Args:
-        config (dict): Configuration dictionary.
-        parent_key (str): Key prefix for nested configurations (default is '').
-    """
-    
-    for key, value in config.items():
-        if isinstance(value, dict):
-            load_config_yaml(value, parent_key='')
-        else:
-            globals()[parent_key + key] = value
             
-
-
-
 
 def write_json(filename, args_dict):
     """
@@ -175,6 +156,7 @@ def find_seed_by_ero_mp(volume, input_threshold_ero_iter_pairs , segments ,
             footprints = ['ball'] * ero_iter
         
         print(f"Saving every seeds for thresholds {threshold} and upper thresholds {upper_threshold} with {ero_iter} erosion")
+
         
         log_dict = sprout_core.find_seed_by_ero_custom(volume, threshold , segments, ero_iter,
                                           output_dir =output_seed_folder,
@@ -190,7 +172,9 @@ def find_seed_by_ero_mp(volume, input_threshold_ero_iter_pairs , segments ,
         #     seed)
         
         # log_dict['input_file'] = file_path
-        
+        print(f"Seeds are saved to {output_seed_folder}")
+        print(f"Log file has been saved to {output_json_path}")
+                
         with lock:
             # filename = f'output/json/Bount_ori_run_log_{init_threshold}_{target_threshold}.json'
             write_json(output_json_path, log_dict)   
@@ -292,21 +276,22 @@ def main(**kwargs):
     
     if upper_thresholds is not None:
         thresholds = list(zip(thresholds, upper_thresholds))
+        
+    threshold_ero_iter_pairs = list(itertools.product(thresholds, ero_iters))
+
+    volume = tifffile.imread(file_path)
     
     print(f"""{start_time.strftime("%Y-%m-%d %H:%M:%S")}
     Making erosion seeds for 
         Img: {file_path}
+        Is 3D image: {(volume.ndim == 3)}
         Threshold for Img {thresholds}
         Erode {ero_iters} iterations
         Keeping {segments} components
         Erosion footprints {footprints}
         Using {num_threads} threads
-            """)
-    
-    threshold_ero_iter_pairs = list(itertools.product(thresholds, ero_iters))
+    """)
 
-    volume = tifffile.imread(file_path)
-    
    # Split pairs among threads
     sublists = [threshold_ero_iter_pairs[i::num_threads] for i in range(num_threads)]
     # Create a list to hold the threads
@@ -330,7 +315,7 @@ def main(**kwargs):
     running_time = end_time - start_time
     total_seconds = running_time.total_seconds()
     minutes, second = divmod(total_seconds, 60)
-    print(f"Running time:{minutes}mins {second}secs")
+    print(f"Running time:{minutes} mins {round(second, 2)} secs")
     
     return (output_seed_folder,output_log_file)
     
@@ -345,10 +330,9 @@ if __name__ == "__main__":
     if extension == '.yaml':
         with open(file_path, 'r') as file:
             config = yaml.safe_load(file)
-            upper_thresholds = config.get("upper_thresholds" , None)
-        load_config_yaml(config)
-        optional_params = sprout_core.assign_optional_params(config, 
-                                                             sprout_core.optional_params_default_seeds)
+        optional_params = config_core.validate_input_yaml(config, config_core.input_val_make_seeds)
+        # optional_params_2 = sprout_core.assign_optional_params(config, 
+        #                                                      sprout_core.optional_params_default_seeds)
 
     if optional_params['boundary_path'] is not None:
         boundary = tifffile.imread(optional_params['boundary_path'])
@@ -356,17 +340,17 @@ if __name__ == "__main__":
         boundary = None
 
     main(
-        workspace = workspace,
-        file_name = file_name,
-        output_log_file = output_log_file,
-        output_seed_folder = output_folder,
+        workspace = config["workspace"],
+        file_name = config["file_name"],
+        output_log_file = config["output_log_file"],
+        output_folder = config["output_folder"],
         
-        ero_iters = ero_iters,
-        thresholds = thresholds,
-        segments = segments,
-        footprints = footprints,
+        ero_iters = config["ero_iters"],
+        thresholds = config["thresholds"],
+        segments = config["segments"],
+        footprints = config["footprints"],
 
-        num_threads = num_threads,
+        num_threads = config["num_threads"],
         upper_thresholds = optional_params['upper_thresholds'],
         boundary = boundary
                 

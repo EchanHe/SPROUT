@@ -35,6 +35,7 @@ output_log_file: "seed_log.json"
 #'ball' and 'cube' :Erosion all directions. 
 #'ball_XY', 'ball_XZ', 'ball_YZ': Erosion on the Plane. 
 # 'X', 'Y', 'Z': Erosion on the axis.
+# If the input is 2D, it will use 'disk' as the default
 footprints: "ball" 
 
 ## Optional parameters ##
