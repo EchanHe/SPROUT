@@ -26,7 +26,7 @@
 **SPROUT: Semi-automated Parcellation of Region Outputs Using Thresholding and Transformation**  
 SPROUT is a tool for parcellating segments from **3D scans** (e.g., micro-CT, MRI, and other imaging data) using semi-automated seed generation and growth. It can be applied to a diverse range of datasets, from **skulls and entire skeletons** (e.g., isolating individual bones) to **organs and man-made structures** (e.g., concrete blocks). 
 
-New in February 2025: SPROUT now supports 2D bio-images.
+New in February 2025: SPROUT now supports 2D greyscale images.
 
 Example applications and method details are provided in:  
 **Y. He, M. Camaiti, L.E. Roberts, J.M. Mulqueeney, M. Didziokas, A. Goswami. 2024.**  
@@ -105,7 +105,7 @@ SPROUT processes 2D and 3D grayscale images stored in **TIFF (`.tif`, `.tiff`) f
    - 2D images: `(Height, Width)`
    - 3D images: `(Depth, Height, Width)`
 
-**Unsupported inputs:** Color images, compressed TIFFs, and multi-frame (time-series) TIFFs.
+**Unsupported inputs:** Color images.
 
 
 Demo data for the tutorial can be found in the [`./data/`](./data/) directory and [here](https://zenodo.org/records/14358829).
@@ -157,8 +157,6 @@ Similar to `make_seeds.py` in usage and configuration, but does not require spec
 `make_seeds_merged.py` is an algorithm designed for generating seeds through an automated merging process. This algorithm can:
    - Detect separations within a segmented region.
    - Retain regions that might be disappear when increasing threshold value or erosion.
-   <br>
-   <br>
    - **Usage**: An example YAML configuration file can be found at `./template/make_seeds_merged.yaml`.
       - Run with the default configuration:  
          `python make_seeds_merged.py`  
@@ -351,10 +349,10 @@ The script `./BounTI/run_bounti_mp.py` is designed to run **BounTI** and **BounT
 
 ### Miscellaneous: Unzipping Morphosource Zip Files
 
-The following scripts provide utilities for handling Morphosource datasets in the `./help_functions/` folder::
+The following scripts provide utilities for handling [Morphosource datasets](https://www.morphosource.org/) in the `./help_functions/morphosource/` folder:
 
 - **`morphosource_unzip.ipynb`**: Jupyter Notebook version for interactive use.
-- **`morphosource_unzip.py`**: Python script for command-line usage.
+- **`morphosource_unzip.py`**: Python script for command-line usage. Input configurations (the input folder and the output folder) are stored in `morpho.yaml`.
 
 #### Functionality:
 - Unzips all `*.zip` files from a specified input folder to a target output folder.
