@@ -13,6 +13,7 @@
 - [Visualization & Editing](#check-seeds-and-results-visualization--editing)
    - [Visualize by Meshes](#visualize-by-meshes)
    - [Avizo Addons](#avizo-addons)
+   - [ImageJ Macros](#imagej-macros)
 - [Advanced Tools & Features](#advanced-tools--features)
    - [Helper Functions](#helper-functions)
    - [Parallelization Support](#parallelization-support)
@@ -284,7 +285,6 @@ Additionally, it automatically creates all essential objects useful for preproce
 
 **Transformations (e.g., rotations)** are not currently supported and must be performed separately.
 
-
 #### **`LoadVisFiles.py`**  
 
 It is a script designed to batch process and visualize segmentation labels in AVIZO.
@@ -295,7 +295,27 @@ It is a script designed to batch process and visualize segmentation labels in AV
 
 #### **`Edit.py`**  
 
-Performs the same tasks described in the [Helper Functions for Editing](#helper-functions-for-editing) section, combining multiple editing operations into a single script for convenience.
+Performs the same tasks described in the Helper Functions for Editing section, combining multiple editing operations into a single script for convenience.
+
+### **ImageJ Macros**  
+
+SPROUT provides ImageJ macros (`.ijm` files) in the `./plugins` folder to facilitate segmentation visualization and editing within ImageJ. These macros are **recommended for use with 2D images**.  
+
+You can either **run the scripts directly in the Macro Editor** or **install the `.ijm` files** for easier access. Refer to the official ImageJ [documentation](https://imagej.net/ij/developer/macro/macros.html) for detailed instructions on macro installation and usage.  
+
+#### **`load_vis_results.ijm`**  
+This macro loads and colorizes all image files in a selected folder using the `glasbey` color lookup table (`LUT`). It is useful for quickly visualizing multiple segmentation results (e.g., seeds and grown results) in ImageJ.  
+ 
+  - Asks for an input folder containing segmentation results  
+  - Loads all images in the folder into ImageJ  
+  - Applies `Lookup Tables` → `glasbey` for colorized segmentation display  
+
+#### **`set_values.ijm`**  
+This macro allows users to manually edit segmentation masks in ImageJ using the `Multi-point tool` providing an intuitive way to refine **seeds** and **grown results**. Users can select regions of interest with the `Multi-point tool` and apply the following operations:  
+
+1. **Merge segmentation classes**: Combine selected segments into a single class.  
+2. **Convert selected segments to background**: Remove unwanted regions by setting them as background.  
+3. **Keep only selected regions**: Retain only the chosen areas and set all other segments as background.  
 
 
 ## Advanced Tools & Features
