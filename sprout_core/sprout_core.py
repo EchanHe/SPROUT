@@ -1061,20 +1061,6 @@ def reorder_segmentation(segmentation, min_size=None, sort_ids=True, top_n=None)
     return reordered_segmentation, class_mapping
 
 
-def binary_stack_to_mesh(input_volume , threshold, downsample_scale=20,
-                         face_color= [128]*4):
-    
-    input_volume = input_volume > threshold
-    verts, faces, normals, _ = marching_cubes(input_volume, level=0.5)
-    mesh = trimesh.Trimesh(vertices=verts, faces=faces, vertex_normals=normals)
-    
-    target_faces = mesh.faces.shape[0] // downsample_scale
-    simplified_mesh = mesh.simplify_quadric_decimation(target_faces)
-
-    simplified_mesh.visual.face_colors = face_color
-    return simplified_mesh
-
-
 ### Checkings:
 def check_tiff_files(tifffile_list):
     """Do a quick check on whether all tiff files exist 

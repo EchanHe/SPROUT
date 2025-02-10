@@ -11,7 +11,7 @@ test_codes/*
 
 ./slide/*
 
-
+/*.yaml
 
 avizo/*
 !avizo/GenSutures.py
@@ -21,7 +21,6 @@ avizo/*
 !avizo/make_sutures_avizo_recipe.hxisp
 
 data/*
-!data/demo_FrenchBulldog_lowres.tif
 !data/demo_foram_segmentation.tif
 !data/demo_dog.tiff
 
