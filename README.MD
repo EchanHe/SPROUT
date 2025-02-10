@@ -84,11 +84,18 @@ SPROUT builds on the concepts from **BounTI**, a boundary-preserving threshold i
 
 ## Usage
 
+SPROUT follows a **three-step workflow** for multi-class segmentation:  
 
-SPROUT’s workflow consists of three main steps :
-1.	Seed Generation: Create segmentations of individual components within a 3D volume by separating target regions through thresholding and erosion.
-2.	Candidate Seed Selection: Review and select the most suitable seed for the next step.
-3.	Growth: Grow the candidate seed to match the target regions.
+1. **Seed Generation**  
+   Identify and segment individual components within a **2D or 3D image** by mainly tuning **thresholding and erosion**. This step generates candidate seeds for further processing. Alternatively, a function called merged seeds generation can be used to generate better seeds.
+
+2. **Candidate Seed Selection**  
+   Review and choose the candidate seed for growth. This ensures that the segmentation process focuses on the desired regions.  
+
+3. **Growth**  
+   Expand the candidate seed to match the target regions, ensuring accurate segmentation of structures within the image.  
+
+
 
 ![workflow](./material/flowchart.png)
 
@@ -153,10 +160,10 @@ Similar to `make_seeds.py` in usage and configuration, but does not require spec
       - Run with a custom configuration:  
          `python make_seeds_all.py <config>.yaml`
 
-#### Merged Seed Generation
+### Merged Seed Generation
 `make_seeds_merged.py` is an algorithm designed for generating seeds through an automated merging process. This algorithm can:
-   - Detect separations within a segmented region.
-   - Retain regions that might be disappear when increasing threshold value or erosion.
+   1. Detect separations within a segmented region.
+   2. Retain regions that might be disappear when increasing threshold value or erosion.
    - **Usage**: An example YAML configuration file can be found at `./template/make_seeds_merged.yaml`.
       - Run with the default configuration:  
          `python make_seeds_merged.py`  
@@ -210,7 +217,7 @@ The type of process depends on the input parameters:
 
 
    - **Features**:  
-      - Gradual growth from high to low thresholds prevents overgrowth issues.
+      - Allows expanding segmentation regions gradually from high to low thresholds, reducing the risk of overgrowth and ensuring more precise boundaries.
       - Supports early stopping if the size increase is below a minimum threshold (default: 50 voxels) for a set number of iterations (default: 3 consecutive iterations).
 
 
@@ -227,12 +234,12 @@ The type of process depends on the input parameters:
          `python PipelineSeed.py <config>.yaml`
 
    - **Input CSV**:  
-     The batch processing CSV file can be found at `./template/seeds_input.csv`. The `img_path` column is mandatory, specifying the path to the input images. Other parameters, such as `seed_threshold`, `boundary_path` and `ero_iters`, are optional and can be set on a per-file basis in the CSV.
+     The batch processing CSV file can be found at `./template/seeds_input.csv`. The `img_path` column is mandatory, specifying the path to the input images. Other parameters, such as `seed_threshold`, `boundary_path` and `ero_iters`, are optional and can be set on a per-input basis in the CSV or set globally for all inputs in the YAML file.
 
    This pipeline offers flexibility and scalability for large-scale seed generation tasks.
 
 #### **`PipelineGrow.py`**  
-   This script is designed for batch processing of growth operations on seeds.
+   This script is designed for batch processing of growth on seeds.
 
    - **Usage**: An example YAML configuration file can be found at `./template/PipelineGrow.yaml`.
       - Run with the default configuration:  
@@ -242,25 +249,52 @@ The type of process depends on the input parameters:
          `python PipelineGrow.py <config>.yaml`
 
    - **Input CSV**:  
-   The batch processing CSV file is located at `./template/grow_input.csv`. The `img_path` and `seg_path` columns are mandatory, specifying the path to the input images and candidate seeds. Other parameters, such as `thresholds`, `boundary_path` and `dilate_iters`, are optional and can be set on a per-file basis in the CSV.
+   The batch processing CSV file is located at `./template/grow_input.csv`. The `img_path` and `seg_path` columns are mandatory, specifying the path to the input images and candidate seeds. Other parameters, such as `thresholds`, `boundary_path` and `dilate_iters`, are optional and can be set on a per-file basis in the CSV or set globally for all inputs in the YAML file..
 
 ## Check Seeds and Results: Visualization & Editing
 
+
+You can visualize, inspect, and edit seeds or results using 3D image processing tools such as **3D Slicer**, **DragonFly**, and **AVIZO**. Alternatively, you can generate meshes and view or edit them in mesh-based tools like **MeshLab**.
+
 ### Visualize by Meshes
-You can visualize, check, and edit seeds or results using tools like **3D Slicer**, **DragonFly**, and **AVIZO**, or create meshes for use in **MeshLab**.
+SPROUT provide scripts to generate meshes for visualisation.
 
-- **`make_mesh.py`**:  
-  Generates meshes for each class from the input seeds or results. Customize input/output paths via `make_mesh.yaml`. Outputs include:
-  - Individual `ply` meshes with segmentation IDs (e.g., `1.ply`, `2.ply`).
-  - `merged.ply`: Combined mesh of all classes.
-  - `merged_n_to_m`: Merged meshes for classes grouped by tens.
+#### **`make_mesh.py`**
+Generates meshes for segmentations.
+   - **Usage**: An example YAML configuration file can be found at `./template/make_mesh.yaml`.
+      - Run with the default configuration:  
+         ```bash
+         python make_mesh.py  
+         ```
+         *(Reads the `./make_mesh.yaml` file)*  
+      - Run with a custom configuration:  
+         ```bash
+         python make_mesh.py <config>.yaml  
+         ```
 
-- **`plot_mesh.py`**:  
+   - **Key Parameters**:  
+      - `img_path`: Path to the input segmentation. (Specify **either** `img_path` or `input_folder`)  
+      - `input_folder`: A folder containing multiple segmentations.  
+      - `output_folder`: Directory where the generated meshes will be saved. 
+      - `num_threads`: Number of threads for parallel processing.  
+      - `downsample_scale`: Mesh simplification factor (*higher values reduce mesh complexity*).
+      - `step_size`: Controls the **marching cubes** mesh reconstruction (*1 = original size; higher values generate simpler meshes*).  
+  
+  - **Outputs**, For each **input segmentation**, a corresponding folder (matching the segmentation filename) will be created, containing:  
+      - **Individual Meshes** (`.ply` format)  
+         - Example: `1.ply`, `2.ply`, `3.ply` (each representing a separate segmentation class).  
+      - **Merged Meshes**  
+         - `merged.ply`: Combined mesh of all classes.  
+         - `merged_n_to_m.ply`: Merged meshes for **class groups (e.g., classes 1–10, 11–20, etc.)**.  
+---
+#### **`plot_mesh.py`**:  
   Visualizes the generated meshes.  
   *Note: Currently under testing.*
 
 Meshes use a 10-color cyclic colormap, where class IDs 1–10 map to distinct colors and repeat for IDs beyond 10.  
 ![Color Map](./material/colourmap.png)
+
+---
 
 ### Avizo Addons
 Addon scripts are saved in `./avizo` folder. 
@@ -294,6 +328,8 @@ It is a script designed to batch process and visualize segmentation labels in AV
 #### **`Edit.py`**  
 
 Performs the same tasks described in the Helper Functions for Editing section, combining multiple editing operations into a single script for convenience.
+
+---
 
 ### **ImageJ Macros**  
 
@@ -333,6 +369,7 @@ Editing scripts for segmentations (seeds and results) are provided in the `./hel
 
 - **`read_tiff_to_csv.py`**: Reads `.tif` or `.tiff` files from specified folders (e.g., `img`, `seg`, and `boundary`), aligns them based on filenames, and outputs a CSV file. This CSV file can then be used as input for pipeline scripts. Options are provided to handle prefixes and suffixes for alignment.
 
+---
 ### Parallelization Support
 
 All SPROUT scripts (`make_seeds.py`, `make_seeds_all.py`, `make_seeds_merged.py`, `make_grow_result.py`, `make_mesh.py`, `PipelineSeed.py`, `PipelineGrow.py`) support **parallelization** using Python's `threading` library. This allows for faster execution by distributing tasks across multiple threads.
@@ -343,10 +380,12 @@ All SPROUT scripts (`make_seeds.py`, `make_seeds_all.py`, `make_seeds_merged.py`
 - **Recommendation**:  
   For optimal performance, set `num_threads` to match the number of CPU cores on your system.
 
+---
 ### BounTI Multithreaded Implementation
 
 The script `./BounTI/run_bounti_mp.py` is designed to run **BounTI** and **BounTI Flood** using a multithreaded approach. It efficiently processes a list of initial thresholds in parallel, leveraging multiple threads for improved performance.
 
+---
 ### Miscellaneous: Unzipping Morphosource Zip Files
 
 The following scripts provide utilities for handling [Morphosource datasets](https://www.morphosource.org/) in the `./help_functions/morphosource/` folder:
