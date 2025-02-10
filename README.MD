@@ -114,25 +114,33 @@ SPROUT processes 2D and 3D grayscale images stored in **TIFF (`.tif`, `.tiff`) f
 
 **Unsupported inputs:** Color images.
 
-
-Demo data for the tutorial can be found in the [`./data/`](./data/) directory and [here](https://zenodo.org/records/14358829).
-
+Two low-resolution scans are available in `./data`, including a **dog skeleton** `demo_dog.tiff` and a **foraminifera chamber segmentation** `demo_foram_segmentation.tif`.  
+Additional demo data for the tutorial can be found [here](https://zenodo.org/records/14358829).
 
 ### Seed Generation
 Use thresholds, morphological transformations and connected components to separate specimen into target regions
 
 #### **`make_seeds.py`**  
 `make_seeds.py` is the for generating seeds. 
-   - **Usage**: An example YAML configuration file can be found at `./template/make_seeds.yaml`.
+   - **Usage**: 
       - Run with the default configuration:  
-         `python make_seeds.py`  
+         ```bash
+         python make_seeds.py
+         ```
          *(Reads the `./make_seeds.yaml` file)*  
       - Run with a custom configuration:  
-         `python make_seeds.py <config>.yaml`
+         ```bash
+         python make_seeds.py <config>.yaml
+         ```
+      - Run with the template configuration:  
+         ```bash
+         python make_seeds.py ./template/make_seeds.yaml
+         ```
+      An example YAML configuration file can be found at `./template/make_seeds.yaml`, where it generate seeds on the `demo_foram_segmentation.tif`
+
 
    - **Key Parameters**:  
       I/O Parameters:
-      - `workspace`: Base folder for all input and output files.  
       - `file_name`: Path to the input image.  
       - `output_folder`: Folder to save the generated seeds.    
 
@@ -149,16 +157,33 @@ Use thresholds, morphological transformations and connected components to separa
       Optional Settings:
       - `boundary_path`: Path to boundary mask, which helps to define non-target region explicitly. Defaults is None.
       - `upper_thresholds`: A list of upper thresholds used to create binary masks. Default is None, if provided, the mask is defined as `mask = (input >= threshold) & (input <= upper_threshold)`. 
+      - `workspace`: Base folder for all input and output files. Default is ""
+
+   - **Outputs**:  
+   Seeds will be saved in the `output_folder` for each combination of erosion and threshold (or threshold pairs if an upper threshold is provided), following the naming convention:  
+   **`seed_ero_{ero_iter}_thre{threshold}_{upper_threshold}_seg_{segments}.tif`**. Additionally, a running log file named `output_log_file` will be saved.  
 
 #### **`make_seeds_all.py`**  
 Similar to `make_seeds.py` in usage and configuration, but does not require specifying `footprints`. It automatically generates seeds using predefined footprints: `'ball'`, `'ball_XY'`, `'ball_XZ'`, and `'ball_YZ'`. 
 
-   - **Usage**: An example YAML configuration file can be found at `./template/make_seeds_all.yaml`.
+   - **Usage**: 
       - Run with the default configuration:  
-         `python make_seeds_all.py`  
+         ```bash
+         python make_seeds_all.py
+         ```
          *(Reads the `./make_seeds_all.yaml` file)*  
       - Run with a custom configuration:  
-         `python make_seeds_all.py <config>.yaml`
+         ```bash
+         python make_seeds_all.py <config>.yaml
+         ```
+      - Run with the template configuration:  
+         ```bash
+         python make_seeds_all.py ./template/make_seeds_all.yaml
+         ```
+      An example YAML configuration file can be found at `./template/make_seeds_all.yaml`, where it generate seeds on the `demo_dog.tiff` for different footprints
+
+   - **Outputs**:  
+   Generated seeds will be saved in subfolders within the `output_folder`, corresponding to each erosion footprint: `seeds_ball`, `seeds_XY`, `seeds_YZ`, `seeds_XZ`. Within each subfolder, the naming convention follows a structure similar to `make_seeds.py`. Additionally, an overall logging plot named `full_log.png` will be saved.
 
 ### Merged Seed Generation
 `make_seeds_merged.py` is an algorithm designed for generating seeds through an automated merging process. This algorithm can:
@@ -166,10 +191,22 @@ Similar to `make_seeds.py` in usage and configuration, but does not require spec
    2. Retain regions that might be disappear when increasing threshold value or erosion.
    - **Usage**: An example YAML configuration file can be found at `./template/make_seeds_merged.yaml`.
       - Run with the default configuration:  
-         `python make_seeds_merged.py`  
+         ```bash
+         python make_seeds_merged.py
+         ```
          *(Reads the `./make_seeds_merged.yaml` file)*  
       - Run with a custom configuration:  
-         `python make_seeds_merged.py <config>.yaml`
+         ```bash
+         python make_seeds_merged.py <config>.yaml
+         ```
+      - Run with the template configuration:  
+         ```bash
+         python make_seeds_merged.py ./template/make_seeds_merged.yaml
+         ```
+      An example YAML configuration file is available at `./template/make_seeds_merged.yaml`, which demonstrates seed generation on `demo_dog.tiff` using a list of 10 increasing thresholds with zero erosions.
+
+   - **Outputs**  
+   Generated seeds will be saved in the `output_folder`. The final output will be saved as `{name_prefix}_ero_{n_iters}_sorted.tif`, while intermediate results may also be saved depending on the settings of `save_every_iter` and `save_merged_every_iter`. The naming convention for intermediate results follows a structure similar to `make_seeds.py`. Additionally, a log file documenting the separations and components is saved as `output_dict.csv`.
 
 #### Types of Merged Seed Generation:
 The type of process depends on the input parameters:
@@ -188,14 +225,22 @@ The type of process depends on the input parameters:
 
    - **Usage**: An example YAML configuration file can be found at `./template/make_grow_result.yaml`.
       - Run with the default configuration:  
-         `python make_grow_result.py`  
+         ```bash
+         python make_grow_result.py
+         ```
          *(Reads the `./make_grow_result.yaml` file)*  
       - Run with a custom configuration:  
-         `python make_grow_result.py <config>.yaml`
+         ```bash
+         python make_grow_result.py <config>.yaml
+         ```
+      - Run with the template configuration:  
+         ```bash
+         python make_grow_result.py ./template/make_grow_result.yaml
+         ```
+      An example YAML configuration file is available at `./template/make_grow_result.yaml`, which grows on the merged seed of `demo_dog.tiff` from the example input in `make_seeds_merged.py`.
 
    - **Key Parameters**:  
       I/O Parameters:
-      - `workspace`: Base folder for all input and output files.  
       - `img_path`: Path to the input image.  
       - `seg_path`: Path to the seed file.  
       
@@ -208,6 +253,7 @@ The type of process depends on the input parameters:
       - `num_threads`: Number of threads
 
       Optional Settings:
+      - `workspace`: Base folder for all input and output files. Default is ""
       - `boundary_path`: Path to boundary mask, which helps to define non-target region explicitly. Defaults is None.
       - `upper_thresholds`: A list of upper thresholds used to create binary masks for the growth process. Default is None, if provided, the mask is defined as `mask = (input >= threshold) & (input <= upper_threshold)`. 
       - `to_grow_ids`: Specify segmentation classes to grow, default is growing on all ids
@@ -215,6 +261,8 @@ The type of process depends on the input parameters:
       - `tolerate_iters` Early stopping: limit for consecutive no-growth iterations. Defaults is 3.
       - `min_diff`: The minimum difference to consider a growth in a dilation iteration. Default is 50
 
+   - **Outputs**  
+   Grown results will be saved in the `output_folder`. The final output will be saved as `final_grow_{input_image_name}.tif`, while intermediate results may also be saved depending on the settings of `save_interval`.
 
    - **Features**:  
       - Allows expanding segmentation regions gradually from high to low thresholds, reducing the risk of overgrowth and ensuring more precise boundaries.
@@ -228,10 +276,19 @@ The type of process depends on the input parameters:
 
    - **Usage**: An example YAML configuration file can be found at `./template/PipelineSeed.yaml`.
       - Run with the default configuration:  
-         `python PipelineSeed.py`  
+         ```bash
+         python PipelineSeed.py
+         ```
          *(Reads the `./PipelineSeed.yaml` file)*  
       - Run with a custom configuration:  
-         `python PipelineSeed.py <config>.yaml`
+         ```bash
+         python PipelineSeed.py <config>.yaml
+         ```
+      - Run with a custom configuration:  
+         ```bash
+         python PipelineSeed.py ./template/PipelineSeed.yaml
+         ```
+      An example YAML configuration file is available at `./template/PipelineSeed.yaml`, which uses an example csv file `./template/seeds_input.csv`. The example generates merged seeds for both `demo_dog.tiff` and `demo_foram_segmentation` with different thresholds and erosions.
 
    - **Input CSV**:  
      The batch processing CSV file can be found at `./template/seeds_input.csv`. The `img_path` column is mandatory, specifying the path to the input images. Other parameters, such as `seed_threshold`, `boundary_path` and `ero_iters`, are optional and can be set on a per-input basis in the CSV or set globally for all inputs in the YAML file.
@@ -243,10 +300,19 @@ The type of process depends on the input parameters:
 
    - **Usage**: An example YAML configuration file can be found at `./template/PipelineGrow.yaml`.
       - Run with the default configuration:  
-         `python PipelineGrow.py`  
+         ```bash
+         python PipelineGrow.py
+         ```
          *(Reads the `./PipelineGrow.yaml` file)*  
       - Run with a custom configuration:  
-         `python PipelineGrow.py <config>.yaml`
+         ```bash
+         python PipelineGrow.py <config>.yaml
+         ```
+      - Run with a custom configuration:  
+         ```bash
+         python PipelineGrow.py ./template/PipelineGrow.yaml
+         ```
+      An example YAML configuration file is available at `./template/PipelineGrow.yaml`, which uses an example csv file `./template/grow_input.csv`. The example grows on the merged seeds generated from the `PipelineSeed.py` example.
 
    - **Input CSV**:  
    The batch processing CSV file is located at `./template/grow_input.csv`. The `img_path` and `seg_path` columns are mandatory, specifying the path to the input images and candidate seeds. Other parameters, such as `thresholds`, `boundary_path` and `dilate_iters`, are optional and can be set on a per-file basis in the CSV or set globally for all inputs in the YAML file..
@@ -261,7 +327,7 @@ SPROUT provide scripts to generate meshes for visualisation.
 
 #### **`make_mesh.py`**
 Generates meshes for segmentations.
-   - **Usage**: An example YAML configuration file can be found at `./template/make_mesh.yaml`.
+   - **Usage**:
       - Run with the default configuration:  
          ```bash
          python make_mesh.py  
@@ -271,6 +337,11 @@ Generates meshes for segmentations.
          ```bash
          python make_mesh.py <config>.yaml  
          ```
+      - Run with a custom configuration:  
+         ```bash
+         python make_mesh.py ./template/make_mesh.yaml
+         ```
+      An example YAML configuration file is available at `./template/make_mesh.yaml`, which generates meshes for the grown results from the example in the `PipelineGrow.py`
 
    - **Key Parameters**:  
       - `img_path`: Path to the input segmentation. (Specify **either** `img_path` or `input_folder`)  

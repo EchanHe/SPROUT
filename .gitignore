@@ -23,6 +23,7 @@ avizo/*
 data/*
 !data/demo_FrenchBulldog_lowres.tif
 !data/demo_foram_segmentation.tif
+!data/demo_dog.tiff
 
 src/*
 test_*.bat

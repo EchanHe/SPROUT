@@ -3,16 +3,16 @@
 # The path to the CSV file
 # Must have column: `img_path`, `seg_path`
 # If `boundary_path` is included, seed generation will read in boundary as well
-csv_path: "./data/test_batch_boundary/input.csv"
+csv_path: "./template/grow_input.csv"
 
 touch_rule: "stop"
-num_threads: 10
+num_threads: 4
 
 ### Flexible  Inputs: either in the csv or here (.yaml) ###
-dilate_iters: 2
-thresholds: [3400,2400]
-output_folder: "./data/test_batch_boundary/seed_all"
-save_interval: 1
+# dilate_iters: 2
+# grow_thresholds: [3400,2400]
+output_folder: "./result/demo_batch/grow"
+save_interval: 5
 
 #### Optional inputs ####
 ## Can be commented out if you want to use the default values

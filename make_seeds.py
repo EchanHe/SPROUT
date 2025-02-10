@@ -340,7 +340,7 @@ if __name__ == "__main__":
         boundary = None
 
     main(
-        workspace = config["workspace"],
+        workspace = optional_params["workspace"],
         file_name = config["file_name"],
         output_log_file = config["output_log_file"],
         output_folder = config["output_folder"],

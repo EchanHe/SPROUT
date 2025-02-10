@@ -13,13 +13,6 @@ import sys
 
 import sprout_core.config_core as config_core
 
-# Function to recursively create global variables from the config dictionary
-def load_config_yaml(config, parent_key=''):
-    for key, value in config.items():
-        if isinstance(value, dict):
-            load_config_yaml(value, parent_key='')
-        else:
-            globals()[parent_key + key] = value
             
 
 
@@ -391,7 +384,6 @@ if __name__ == "__main__":
                                                               config_core.input_val_make_mesh)
             # downsample_scale = config.get('downsample_scale', 10)
             # step_size = config.get('step_size', 1)
-        # load_config_yaml(config)
     
     
     start_time = datetime.now()

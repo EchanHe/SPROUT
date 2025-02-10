@@ -3,9 +3,9 @@
 # The path to the CSV file
 # Must have column: `img_path`
 # If `boundary_path` is included, seed generation will read in boundary as well
-csv_path: "./data/test_batch_boundary/input.csv"
+csv_path: "/template/seeds_input.csv"
 
-num_threads: 10
+num_threads: 4
 # Can be 'original', 'all', and 'merge'
 # original: make seed using given footprints
 # all: make seeds using four footprints
@@ -13,12 +13,12 @@ num_threads: 10
 seed_mode: 'merge'
 
 ### Flexible  Inputs: either in the csv or here (.yaml) ###
-seed_threshold: [1,2,3]
-ero_iters: 3
+# seed_threshold: [1,2,3]
+# ero_iters: 3
 segments: 25
-output_folder: "./data/test_batch_boundary/seed_all"
+output_folder: "./result/demo_batch/seed"
 
-name_prefix: ""
+name_prefix: "seed"
 
 
 #### Optional inputs ####
@@ -26,7 +26,7 @@ name_prefix: ""
 # Default footprints are: 'ball', 'ball_XY', 'ball_XZ', 'ball_YZ'
 # If choosing 'original' and 'merge'
 # Default footprints are: 'ball'
-footprints: "ball_XY"
+footprints: "ball"
 
 ## Optional inputs for the "merged seeds" function ##
 
@@ -49,7 +49,7 @@ min_split_prop: 0.01
 min_split_sum_prop: 0
 
 # Save results at every iteration. Defaults is False.
-save_every_iter: False
+save_every_iter: True
 # Save merged results at every iteration. Defaults is False.
 save_merged_every_iter: False
 

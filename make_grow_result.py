@@ -342,9 +342,9 @@ def grow_mp(**kwargs):
     
     ## Save the final grow output as the final_<img_name>
     if final_grow_output_folder is not None:
-        final_output_path = os.path.join(final_grow_output_folder,f"{name_prefix}_{base_name}.tiff")
+        final_output_path = os.path.join(final_grow_output_folder,f"{name_prefix}_{base_name}.tif")
     else:
-        final_output_path = os.path.join(output_folder,f"{name_prefix}_{base_name}.tiff")
+        final_output_path = os.path.join(output_folder,f"{name_prefix}_{base_name}.tif")
     tifffile.imwrite(final_output_path, 
         result,
         compression ='zlib')
@@ -397,7 +397,7 @@ if __name__ == "__main__":
         # optional_params_2 = sprout_core.assign_optional_params(config, sprout_core.optional_params_default_grow)
 
     grow_dict = grow_mp(
-        workspace = config['workspace'],
+        workspace = optional_params['workspace'],
         img_path = config['img_path'] ,
         seg_path = config['seg_path'],
         output_folder = config['output_folder'],

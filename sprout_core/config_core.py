@@ -40,6 +40,11 @@ def check_file_extension(file_path):
 def validate_input_yaml(config, rules):
     errors = []
     optional_values = {}
+    
+    for key in config:
+        if key not in rules:
+            errors.append(f"Unsupported parameter '{key}' in input config.")
+
     for param, rule in rules.items():
         # Check if required parameters are present
         if rule.get("required", False) and param not in config:
@@ -47,6 +52,12 @@ def validate_input_yaml(config, rules):
             continue  # Skip further checks for missing params
         if not(rule.get("required", False)):
             optional_values[param] = config.get(param, rule.get("default"))    
+        
+        if rule.get("either", False):
+            either_keys = rule['either']
+            either_matches = sum(1 for either_key in either_keys if either_key in config)
+            if either_matches!=1:
+                errors.append(f"Only one value from {either_keys} can be included in the yaml")
         
         # Use default value if not provided
         value = config.get(param, rule.get("default"))
@@ -79,7 +90,7 @@ def validate_input_yaml(config, rules):
             if "choices" in rule and value not in rule["choices"]:
                 errors.append(f"Parameter '{param}' must be one of {rule['choices']}, got '{value}'.")
             if rule.get("check_exist", False):
-                if 'workspace' in rules:
+                if 'workspace' in rules and 'workspace' in config:
                     value = os.path.join(config['workspace'] , value)
                 if not os.path.exists(value):
                     errors.append(f"Parameter '{param}' points to a non-existing path: {value}")
@@ -102,12 +113,7 @@ def validate_input_yaml(config, rules):
 
 
 input_val_make_seeds = {
-    "workspace": {
-        "type": str,
-        "required": True,
-        "description": "Workspace folder, can be an empty string"
 
-    },
     "file_name": {
         "type": str,
         "required": True,
@@ -132,12 +138,12 @@ input_val_make_seeds = {
         "description": "List of thresholds, must contain at least one numeric value."
     },
     "ero_iters": {
-        "type": (int,list),
+        "type": list,
         "subtype": int,
         "min": 0,
         "max": 1000,
         "required": True,
-        "description": "Number of iterations, must be a non-negative integer."
+        "description": "List of number of iterations, if just one value, using bracket e.g., [3]"
     },
     "segments": {
         "type": int,
@@ -162,7 +168,13 @@ input_val_make_seeds = {
         "description": "Footprints for morphological transformation"
     },
     #### Optional parameters
-    
+    "workspace": {
+        "type": str,
+        "required": False,
+        "default":"",
+        "description": "Workspace folder, default is an empty string"
+
+    },    
     "upper_thresholds": {
         "type": list,
         "subtype": (int, float),  # Each element should be int or float
@@ -213,16 +225,17 @@ mesh_dict = {
 
 input_val_make_seeds_all.update(mesh_dict)
 input_val_make_seeds_all['footprints']['required'] = False
-
+input_val_make_seeds_all.pop("footprints")
+input_val_make_seeds_all["ero_iters"] =  {
+        "type": int,
+        "min": 0,
+        "max": 1000,
+        "required": True,
+        "description": "An int for the erosion iteration for seed generation"
+}
 
 
 input_val_make_grow = {
-    "workspace": {
-        "type": str,
-        "required": True,
-        "description": "Workspace folder, can be an empty string"
-
-    },
     "img_path": {
         "type": str,
         "required": True,
@@ -281,6 +294,13 @@ input_val_make_grow = {
         "description": "Save the grow result every n iters"
     }, 
     #### Optional parameters
+    "workspace": {
+        "type": str,
+        "required": False,
+        "default":"",
+        "description": "Workspace folder, default is an empty string"
+
+    },    
     "upper_thresholds": {
         "type": list,
         "subtype": (int, float),  # Each element should be int or float
@@ -462,7 +482,7 @@ input_val_make_seeds_merged = {
     "save_every_iter": {
         "type": bool,
         "required": False,
-        'default': False,
+        'default': True,
         "description": "Save results at every iteration. Defaults is False."
     },       
      "save_merged_every_iter": {
@@ -474,7 +494,7 @@ input_val_make_seeds_merged = {
     "name_prefix": {
         "type": str,
         "required": False,
-        'default': "Merged_seed",
+        'default': "merged_seed",
         "description": "Prefix for output file names. Defaults is Merged_seed."
     }, 
     "init_segments": {
@@ -514,6 +534,7 @@ input_val_make_mesh = {
         "type": str,
         "required": False,
         "default":None,
+        "either" : ("input_folder", "img_path"),
         "description": "Output folder",
         "check_exist": True
     },
@@ -522,6 +543,7 @@ input_val_make_mesh = {
         "required": False,
         "default":None,
         "description": "File name",
+        "either" : ("input_folder", "img_path"),
         "check_exist": True,
         "check_extension": (".tif", ".tiff")
 

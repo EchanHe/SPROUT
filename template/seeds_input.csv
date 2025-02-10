@@ -1,4 +1,3 @@
-img_path,seed_threshold
-./data/img/a.tif,"[1000,2000]"
-./data/img/b.tif,"[3000,4000]"
-./data/img/c.tif,"[5000,6000]"
+img_path,seed_threshold,ero_iters
+./data/demo_data/foram_seg.tif,[1],10
+./data/demo_data/dog_fore_right_resize.tiff,"[100, 110, 120, 130, 140,150,160,170,180,190,200]",0
