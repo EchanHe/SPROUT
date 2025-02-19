@@ -415,12 +415,13 @@ This macro loads and colorizes all image files in a selected folder using the `g
   - Loads all images in the folder into ImageJ  
   - Applies `Lookup Tables` → `glasbey` for colorized segmentation display  
 
-#### **`set_values.ijm`**  
-This macro allows users to manually edit segmentation masks in ImageJ using the `Multi-point tool` providing an intuitive way to refine **seeds** and **grown results**. Users can select regions of interest with the `Multi-point tool` and apply the following operations:  
-
-1. **Merge segmentation classes**: Combine selected segments into a single class.  
-2. **Convert selected segments to background**: Remove unwanted regions by setting them as background.  
-3. **Keep only selected regions**: Retain only the chosen areas and set all other segments as background.  
+#### **`SPROUT_edit.ijm`**  
+This macro allows users to manually edit segmentation masks in ImageJ using the `Multi-point tool` providing an intuitive way to refine **seeds** and **grown results**. 
+1. Users can select regions of interest with the `Multi-point tool` and apply the following operations:  
+   1. **Merge segmentation classes**: Combine selected segments into a single class.  
+   2. **Convert selected segments to background**: Remove unwanted regions by setting them as background.  
+   3. **Keep only selected regions**: Retain only the chosen areas and set all other segments as background.  
+2. Users can use ROI tools like rectangle, polygon and free-hand to select regions and get the selected regions into user-input value. Then a split connected components can be performed, if users separate a region into multiple.   
 
 
 ## Advanced Tools & Features
