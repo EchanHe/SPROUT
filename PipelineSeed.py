@@ -191,7 +191,9 @@ if __name__ == "__main__":
                                         init_segments = optional_params["init_segments"],
                                         footprint= footprints,
                                         
-                                        upper_thresholds = optional_params["upper_thresholds"]     
+                                        upper_thresholds = optional_params["upper_thresholds"],
+                                        split_size_limit = optional_params["split_size_limit"] ,
+                                        split_convex_hull_limit = optional_params["split_convex_hull_limit"] 
                                 
                                 )
                 
@@ -199,8 +201,11 @@ if __name__ == "__main__":
                     if isinstance(seed_threshold,list) and len(seed_threshold)==1:
                         seed_threshold = seed_threshold[0]
                     if optional_params["upper_thresholds"] is not None:
-                        assert len(optional_params["upper_thresholds"])==1, "Upper threshold should have 1 element"
-                        upper_threshold = optional_params["upper_thresholds"][0]
+                        if isinstance(seed_threshold,list) and len(seed_threshold)==1:
+                        # assert len(optional_params["upper_thresholds"])==1, "Upper threshold should have 1 element"
+                            upper_threshold = optional_params["upper_thresholds"][0]
+                        else:
+                            upper_threshold = optional_params["upper_thresholds"]
                     else:
                         upper_threshold = None
                     print("Running make_seeds_merged")
@@ -226,7 +231,9 @@ if __name__ == "__main__":
                                             name_prefix = output_names,
                                             init_segments = optional_params["init_segments"],
                                             footprint= footprints,
-                                            upper_threshold = upper_threshold
+                                            upper_threshold = upper_threshold,
+                                            split_size_limit = optional_params["split_size_limit"] ,
+                                            split_convex_hull_limit = optional_params["split_convex_hull_limit"] 
                                             )
         except Exception as e:
             df.loc[index,'error'] = str(e)

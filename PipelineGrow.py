@@ -27,26 +27,7 @@ if __name__ == "__main__":
     print(f"processing config the file {file_path}")
     if extension == '.yaml':
         with open(file_path, 'r') as file:
-            config = yaml.safe_load(file)
-            # upper_thresholds = config.get('upper_thresholds', None)
-            
-            # workspace = config.get("workspace","")
-            
-            # to_grow_ids = config.get("to_grow_ids" , None)
-            # name_prefix = config.get("name_prefix" , "final_grow")
-            # grow_to_end = config.get("grow_to_end" , False)
-            # simple_naming = config.get("simple_naming",True)
-            
-            # is_sort = config.get('is_sort', True) 
-            # min_diff = config.get('min_diff', 50) 
-            # tolerate_iters = config.get('tolerate_iters', 3) 
-            
-            # # For mesh making
-            # is_make_meshes = config.get('is_make_meshes', False) 
-            # downsample_scale = config.get('downsample_scale', 10) 
-            # step_size  = config.get('step_size', 1)     
-            
-            
+            config = yaml.safe_load(file)         
             
             
         load_config_yaml(config)
@@ -56,7 +37,7 @@ if __name__ == "__main__":
     sprout_core.check_tiff_files(df['img_path'])
     sprout_core.check_tiff_files(df['seg_path'])
 
-    pipeline_seed_required_keys =["csv_path",
+    pipeline_grow_required_keys =["csv_path",
                                   "num_threads",
                                   "touch_rule"
                                   ]
@@ -66,7 +47,7 @@ if __name__ == "__main__":
     
     csv_required_keys = ['img_path', "seg_path"]
     
-    sprout_core.check_required_keys(config,pipeline_seed_required_keys)          
+    sprout_core.check_required_keys(config,pipeline_grow_required_keys)          
     sprout_core.check_csv_required_keys(df,csv_required_keys)  
     
     either_keys_info = sprout_core.check_either_csv_yaml_keys(df,

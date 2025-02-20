@@ -4,6 +4,9 @@ from skimage import measure
 from datetime import datetime
 import os
 import tifffile
+
+from scipy.ndimage import binary_fill_holes
+
 # eval() the Dataframe 
 required_eval_params =[
     'upper_thresholds',
@@ -56,7 +59,9 @@ optional_params_default_seeds = {
     'save_merged_every_iter': False,
     'name_prefix': "Merged_seed",
     'init_segments': None,
-    'footprints': "ball"
+    'footprints': "ball",
+    'split_size_limit': [None,None],
+    'split_convex_hull_limit': [None,None]
 }
 
 
@@ -104,7 +109,10 @@ def assign_config_values_pipeline(yaml_config, row, keys_with_defaults):
         # Check if the key exists in the DataFrame
         elif row is not None and key in row:
             if key in required_eval_params:
-                config_values[key] = eval(row[key])
+                if isinstance(row[key], str):
+                    config_values[key] = eval(row[key])
+                else:
+                    config_values[key] = row[key]  
             else:
                 config_values[key] = row[key]  
             
@@ -568,9 +576,10 @@ def get_ccomps_with_size_order(volume, segments=None, min_vol = None):
     component_sizes_sorted = -np.sort(-component_sizes,)
     if segments is None:
         segments = len(component_sizes_sorted)
+    elif segments> len(component_sizes_sorted):
+        segments = len(component_sizes_sorted)
     # props = measure.regionprops(label_image)
-    
-    largest_labels = component_labels[np.argsort(component_sizes[component_labels - 1])[::-1][:segments]]
+    largest_labels = component_labels[np.argsort(component_sizes)[::-1][:segments]]
     
     output = np.zeros_like(labeled_image)
     for label_id, label in enumerate(largest_labels):
@@ -1059,6 +1068,79 @@ def reorder_segmentation(segmentation, min_size=None, sort_ids=True, top_n=None)
     #     print(f"Old Class {old} -> New Class {new}, Size: {sizes[old]}")
 
     return reordered_segmentation, class_mapping
+
+def fill_holes_seg(seg):
+    # img = img[0,...]
+
+    # Find unique labels in the mask (excluding 0, the background)
+    unique_labels = np.unique(seg)
+    unique_labels = unique_labels[unique_labels != 0]
+
+    # Create a new mask to store the filled regions
+    filled_mask = np.zeros_like(seg)
+
+
+    # Process each label individually
+    for label in unique_labels:
+        print(f"working on {label}")
+        # Create a binary mask for the current label
+        binary_region = (seg == label)
+        print("before filling ", np.sum(binary_region))
+        # Fill holes in the binary mask
+        filled_region = binary_fill_holes(binary_region)
+        print("after filling ", np.sum(filled_region))
+        
+        # Add the filled region back to the filled_mask
+        filled_mask[filled_region] = label
+    
+    return filled_mask
+
+
+
+def merge_overlayed_classes(mask1, mask2, merged=True):
+    """
+    Processes segmentation masks, finding all overlayed classes of mask2 for each class in mask1.
+    If merged=True, multiple overlapping classes in mask2 will be merged into the smallest label.
+
+    Args:
+        mask1 (numpy.ndarray): First segmentation mask (classes from 0 to N, where 0 is background).
+        mask2 (numpy.ndarray): Second segmentation mask (classes from 0 to N, where 0 is background).
+        merged (bool): If True, multiple overlayed classes in mask2 will be merged to the smallest one.
+
+    Returns:
+        numpy.ndarray: Updated mask2 with merged classes (if merged=True).
+        dict: Dictionary showing overlay relationships {class_in_mask1: {overlapping_classes_in_mask2}}.
+    """
+    assert mask1.shape == mask2.shape, "Masks must have the same shape"
+
+    unique_classes_mask1 = np.unique(mask1)
+    unique_classes_mask1 = unique_classes_mask1[unique_classes_mask1 != 0]  # Remove background
+
+    overlay_map = {}  # Stores {class in mask1: set of classes in mask2}
+
+    updated_mask2 = mask2.copy()
+
+    for class_label in unique_classes_mask1:
+        # Find where mask1 is equal to the current class
+        mask1_region = (mask1 == class_label)
+
+        # Get all overlapping classes from mask2
+        overlapping_classes = np.unique(mask2[mask1_region])
+        overlapping_classes = overlapping_classes[overlapping_classes != 0]  # Remove background
+
+        if len(overlapping_classes) == 0:
+            continue  # No overlap
+
+        overlay_map[class_label] = set(overlapping_classes)
+
+        # Merge logic: Assign multiple overlapping labels to the smallest label
+        if merged and len(overlapping_classes) > 1:
+            print(class_label)
+            smallest_label = min(overlapping_classes)
+            for label_to_merge in overlapping_classes:
+                updated_mask2[mask2 == label_to_merge] = smallest_label
+
+    return updated_mask2, overlay_map
 
 
 ### Checkings:

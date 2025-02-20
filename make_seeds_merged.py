@@ -10,7 +10,7 @@ import threading
 lock = threading.Lock()
 import time
 import yaml
-
+from scipy.spatial import ConvexHull
 
 # Add the lib directory to the system path
 import sprout_core.sprout_core as sprout_core
@@ -32,6 +32,40 @@ def load_config_yaml(config, parent_key=''):
             load_config_yaml(value, parent_key='')
         else:
             globals()[parent_key + key] = value
+
+def split_size_check(mask, split_size_limit):
+    split_size_lower = split_size_limit[0]
+    split_size_upper = split_size_limit[1]
+    split_size_condition = True
+    if split_size_lower is not None or split_size_upper is not None:
+        split_size_temp = np.sum(mask)
+        if (split_size_lower is not None) and (split_size_temp < split_size_lower): 
+            split_size_condition = False 
+        if (split_size_upper is not None) and (split_size_temp > split_size_upper):
+            split_size_condition = False 
+    
+    return split_size_condition
+
+def split_convex_hull_check(mask, split_convex_hull_limit):
+    lower = split_convex_hull_limit[0]
+    upper = split_convex_hull_limit[1]
+    split_size_condition = True
+    if lower is not None or upper is not None:
+        # split_size_temp = np.sum(mask)
+        coords = np.column_stack(np.where(mask))
+        if len(coords) >= 4:  # Convex hull needs at least 4 points in 3D
+            hull = ConvexHull(coords)
+            convex_hull_volume = int(hull.volume)
+        else:
+            return False
+        if (lower is not None) and (convex_hull_volume < lower): 
+            split_size_condition = False 
+            print(f"convex hull only:{convex_hull_volume}, but lower is {lower}")
+        if (upper is not None) and (convex_hull_volume > upper):
+            split_size_condition = False 
+            print(f"convex hull only:{convex_hull_volume}, but upper is {upper}")
+        
+    return split_size_condition
 
 def detect_inter(ccomp_combine_seed,ero_seed, seed_ids, inter_log , lock):
     """
@@ -57,7 +91,7 @@ def detect_inter(ccomp_combine_seed,ero_seed, seed_ids, inter_log , lock):
                 
                 inter_log["inter_ids"] = np.append(inter_log["inter_ids"] , seed_id)
                 
-                prop = round(inter / np.sum(ccomp_combine_seed),4)*100
+                prop = round(inter / np.sum(ccomp_combine_seed),6)*100
                 inter_log["inter_props"] = np.append(inter_log["inter_props"], prop)
 
 
@@ -79,7 +113,9 @@ def make_seeds_merged_path_wrapper(img_path,
                               name_prefix="Merged_seed",
                               init_segments=None,
                               footprint="ball",
-                              upper_threshold = None
+                              upper_threshold = None,
+                              split_size_limit = (None,None),
+                              split_convex_hull_limit = (None, None)
                               ):
     """
     Wrapper for make_seeds_merged_mp that performs erosion-based merged seed generation with multi-threading.
@@ -104,7 +140,8 @@ def make_seeds_merged_path_wrapper(img_path,
         name_prefix (str, optional): Prefix for output file names. Defaults to "Merged_seed".
         init_segments (int, optional): Initial segments. Defaults to None.
         footprint (str, optional): Footprint shape for erosion. Defaults to "ball".
-        
+        split_size_limit (optional): create a split if the region size (np.sum(mask)) is within the limit
+        split_convex_hull_limit: create a split if the the convex hull's area/volume is within the limit
 
     Returns:
         tuple: Merged seeds, original combine ID map, and output dictionary.
@@ -150,7 +187,10 @@ def make_seeds_merged_path_wrapper(img_path,
                         init_segments=init_segments,
                         footprint=footprint,
                         min_split_sum_prop=min_split_sum_prop,
-                        upper_threshold = upper_threshold)
+                        upper_threshold = upper_threshold,
+                        split_size_limit = split_size_limit,
+                        split_convex_hull_limit = split_convex_hull_limit
+                        )
 
 
     end_time = datetime.now()
@@ -180,7 +220,9 @@ def make_seeds_merged_mp(img,
                         name_prefix = "Merged_seed",
                         init_segments = None,
                         footprint = "ball",
-                        upper_threshold = None
+                        upper_threshold = None,
+                        split_size_limit = (None,None),
+                        split_convex_hull_limit = (None, None)
                       ):
     """
     Erosion-based merged seed generation with multi-threading.
@@ -206,11 +248,14 @@ def make_seeds_merged_mp(img,
         init_segments (int, optional): Number of segments for the first seed, defaults is None.
             A small number of make the initial sepration faster, as normally the first seed only has a big one component
         footprint (str, optional): Footprint shape for erosion. Defaults to "ball".
+        split_size_limit (optional): create a split if the region size (np.sum(mask)) is within the limit
+        split_convex_hull_limit: create a split if the the convex hull's area/volume is within the limit
 
     Returns:
         tuple: Merged seeds, original combine ID map, and output dictionary.
     """
-
+    min_split_prop = min_split_prop*100
+    min_split_sum_prop = min_split_sum_prop*100
 
     values_to_print = {
         "Threshold": threshold,
@@ -219,16 +264,18 @@ def make_seeds_merged_mp(img,
         "Erosion Iterations": n_iters,
         "Segments": segments,
         "Number of Threads": num_threads,
-        "No Split Limit for iters": no_split_limit,
-        "Component Minimum Size": min_size,
         "Sort": sort,
-        "Minimum Split Proportion": min_split_prop,
         "Background Value": background,
         "Save Every Iteration": save_every_iter,
         "Save Merged Every Iteration": save_merged_every_iter,
         "Name Prefix": name_prefix,
         "Footprint": footprint,
-        "Minimum Split Sum Proportion": min_split_sum_prop
+        "No Split Limit for iters": no_split_limit,
+        "Component Minimum Size": min_size,
+        "Minimum Split Proportion (%)": min_split_prop,
+        "Minimum Split Sum Proportion (%)": min_split_sum_prop,
+        "split_size_limit": split_size_limit,
+        "split_convex_hull_limit": split_convex_hull_limit
     }
 
     for key, value in values_to_print.items():
@@ -358,10 +405,18 @@ def make_seeds_merged_mp(img,
                 # print(f"\tprops are: {temp_inter_props}")
                 
                 sum_inter_props = np.sum(temp_inter_props)
+                
+                
+                
+                if not split_size_check(ccomp_combine_seed, split_size_limit):
+                    print(f"no split, as {combine_id} only has {np.sum(ccomp_combine_seed) }")             
+
+                split_condition =  (sum_inter_props>=min_split_sum_prop) and\
+                    split_size_check(ccomp_combine_seed, split_size_limit) and \
+                        split_convex_hull_check(ccomp_combine_seed, split_convex_hull_limit)
+                
                 # print(f"\tSplit prop is {sum_inter_props}")
-                if sum_inter_props<min_split_sum_prop:
-                    has_split = False
-                else:
+                if split_condition:
                     combine_seed[combine_seed == combine_id] =0
                     filtered_inter_ids = temp_inter_ids[temp_inter_props>min_split_prop]
                     
@@ -445,7 +500,9 @@ def make_seeds_merged_by_thres_path_wrapper(img_path,
                                        init_segments=None,
                                        footprint="ball",
                                        
-                                       upper_thresholds = None
+                                       upper_thresholds = None,
+                                       split_size_limit = (None, None),
+                                       split_convex_hull_limit = (None, None)
                                        ):
     """
     Wrapper for make_seeds_merged_by_thres_mp that performs thresholds-based merged seed generation.
@@ -473,8 +530,8 @@ def make_seeds_merged_by_thres_path_wrapper(img_path,
         init_segments (int, optional): Number of segments for the first seed, defaults is None.
             A small number of make the initial sepration faster, as normally the first seed only has a big one component
         footprint (str, optional): Footprint shape for erosion. Defaults to "ball".
-
-
+        split_size_limit (optional): create a split if the region size (np.sum(mask)) is within the limit
+        split_convex_hull_limit: create a split if the the convex hull's area/volume is within the limit
     Returns:
         tuple: Merged seed, original combine ID map, and output dictionary.
     """
@@ -519,7 +576,9 @@ def make_seeds_merged_by_thres_path_wrapper(img_path,
                                   footprint=footprint,
                                   min_split_sum_prop=min_split_sum_prop,
                                   
-                                  upper_thresholds = upper_thresholds)
+                                  upper_thresholds = upper_thresholds,
+                                  split_size_limit = split_size_limit,
+                                  split_convex_hull_limit = split_convex_hull_limit)
 
     end_time = datetime.now()
     running_time = end_time - start_time
@@ -551,7 +610,9 @@ def make_seeds_merged_by_thres_mp(img,
                         init_segments = None,
                         footprint = "ball",
                         
-                        upper_thresholds = None
+                        upper_thresholds = None,
+                        split_size_limit = (None, None),
+                        split_convex_hull_limit = (None, None)
                     ):
     """
     Thresholds-based merged seed generation.
@@ -579,12 +640,15 @@ def make_seeds_merged_by_thres_mp(img,
         init_segments (int, optional): Number of segments for the first seed, defaults is None.
             A small number of make the initial sepration faster, as normally the first seed only has a big one component
         footprint (str, optional): Footprint shape for erosion. Defaults to "ball".
-
+        split_size_limit (optional): create a split if the region size (np.sum(mask)) is within the limit
+        split_convex_hull_limit: create a split if the the convex hull's area/volume is within the limit
 
     Returns:
         tuple: Merged seed, original combine ID map, and output dictionary.
     """
-
+    
+    min_split_prop = min_split_prop*100
+    min_split_sum_prop = min_split_sum_prop*100
 
     values_to_print = {
         "Thresholds": thresholds,
@@ -593,16 +657,20 @@ def make_seeds_merged_by_thres_mp(img,
         "Erosion Iterations": n_iters,
         "Segments": segments,
         "Number of Threads": num_threads,
-        "No Split Limit for iters": no_split_limit,
-        "Component Minimum Size": min_size,
+
         "Sort": sort,
-        "Minimum Split Proportion": min_split_prop,
+        
         "Background Value": background,
         "Save Every Iteration": save_every_iter,
         "Save Merged Every Iteration": save_merged_every_iter,
         "Name Prefix": name_prefix,
         "Footprint": footprint,
-        "Minimum Split Sum Proportion": min_split_sum_prop
+        "No Split Limit for iters": no_split_limit,
+        "Component Minimum Size": min_size,
+        "Minimum Split Proportion (%)": min_split_prop,
+        "Minimum Split Sum Proportion (%)": min_split_sum_prop,
+        "split_size_limit": split_size_limit,
+        "split_convex_hull_limit": split_convex_hull_limit
     }
 
     for key, value in values_to_print.items():
@@ -743,9 +811,16 @@ def make_seeds_merged_by_thres_mp(img,
                 sum_inter_props = np.sum(temp_inter_props)
                 # print(f"\tSplit prop is {sum_inter_props}")
                 
-                if sum_inter_props<min_split_sum_prop:
-                    has_split = False
-                else:
+
+                if not split_size_check(ccomp_combine_seed, split_size_limit):
+                    print(f"no split, as {combine_id} only has {np.sum(ccomp_combine_seed) }")
+                        
+
+                split_condition =  (sum_inter_props>=min_split_sum_prop) and\
+                    split_size_check(ccomp_combine_seed, split_size_limit) and \
+                        split_convex_hull_check(ccomp_combine_seed, split_convex_hull_limit)
+
+                if split_condition:
                     combine_seed[combine_seed == combine_id] =0
                     filtered_inter_ids = temp_inter_ids[temp_inter_props>min_split_prop]
                     
@@ -879,7 +954,8 @@ if __name__ == "__main__":
                                             name_prefix = optional_params["name_prefix"],
                                             init_segments = optional_params["init_segments"],
                                             footprint = optional_params["footprints"],
-                                            upper_threshold = optional_params["upper_thresholds"]
+                                            upper_threshold = optional_params["upper_thresholds"],
+                                            split_size_limit= optional_params["split_size_limit"]
                                     )
     
     # pd.DataFrame(ori_combine_ids_map).to_csv(os.path.join(output_folder, 'ori_combine_ids_map.csv'),index=False)
@@ -908,7 +984,8 @@ if __name__ == "__main__":
                                             name_prefix = optional_params["name_prefix"],
                                             init_segments = optional_params["init_segments"],
                                             footprint = optional_params["footprints"],
-                                            upper_thresholds = optional_params["upper_thresholds"]                                    
+                                            upper_thresholds = optional_params["upper_thresholds"],
+                                            split_size_limit= optional_params["split_size_limit"]                                  
                                     )
                 
 

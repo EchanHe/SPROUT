@@ -2,6 +2,14 @@ import yaml
 import json
 import os
 import psutil
+import shutil
+
+import pandas as pd
+import numpy as np
+import tifffile as tiff
+
+from skimage.filters import threshold_otsu
+
 # Function to recursively create global variables from the config dictionary
 def load_config_yaml(config, parent_key=''):
     for key, value in config.items():
@@ -510,6 +518,23 @@ input_val_make_seeds_merged = {
         "default": "ball",
         "description": "Footprints for morphological transformation"
     },
+    "split_size_limit": {
+        "type": list,
+        "subtype": (int,type(None)),  # Each element should be int or float
+        "required": False,
+        "default": [None,None],
+        "min_length": 2,
+        "description": "create a split if the region size (np.sum(mask)) is within the limit"
+    },
+    "split_convex_hull_limit": {
+        "type": list,
+        "subtype": (int,type(None)),  # Each element should be int or float
+        "required": False,
+        "default": [None,None],
+        "min_length": 2,
+        "description": "create a split if the the convex hull's area/volume is within the limit"
+    },  
+   
 }
 
 
@@ -566,6 +591,128 @@ input_val_make_mesh = {
         "description": "Step size in Marching Cubes alogrithms, Default is 1"
     },
 }
+
+
+
+def return_thre_value(input_config, img):
+    if isinstance(input_config, (int, float)):
+        return input_config
+    
+    method_all = input_config
+    method = method_all.split("_")[0]
+    try:
+        percentage = int(method_all.split("_")[1])
+    except:
+        percentage = 100
+    if not (0 <= percentage <= 100):
+        raise ValueError(f"Invalid Otsu percentage: {percentage}. Must be between 0 and 100.") 
+
+    if method == "otsu":
+        otsu_val = int(threshold_otsu(img) * percentage/100)
+    else:
+        raise ValueError(f"{input_config} is not supported threshold method")
+    return otsu_val
+
+
+def process_images_with_config(input_csv, output_csv, input_config):
+    """
+    Reads a CSV file with image paths, processes images based on input_config, 
+    and outputs a new CSV with assigned values.
+
+    Args:
+        input_csv (str): Path to the input CSV containing the "img_path" column.
+        output_csv (str): Path to save the processed CSV.
+        input_config (dict): Dictionary of parameters to assign to the DataFrame.
+                            - If a value is a number or list, it applies to all rows.
+                            - If a value is "otsu", it computes Otsu's threshold per image.
+
+    Returns:
+        None
+    """
+    # Load the CSV file
+    df = pd.read_csv(input_csv)
+
+    # Ensure "img_path" column exists
+    if "img_path" not in df.columns:
+        raise ValueError("CSV must contain an 'img_path' column with image file paths.")
+
+    for key, value in input_config.items():
+        if isinstance(value, (int, float)):  
+            # Assign a constant value (or list) to all rows
+            df[key] = value
+        elif isinstance(value, (list)):  
+            df[key] = str(value)
+        elif isinstance(value, dict):
+            
+            type = value["type"]
+
+            thre_values = []
+            for index, row in df.iterrows():
+                img_path = row["img_path"]
+                if not os.path.exists(img_path):
+                    print(f"Skipping {img_path}: File not found.")
+                    thre_values.append(None)
+                    continue
+
+                # Read image
+                img = tiff.imread(img_path)
+
+                # Ensure it's grayscale (2D)
+                if img.ndim != 2:
+                    print(f"Skipping {img_path}: Not a 2D grayscale image.")
+                    thre_values.append(None)
+                    continue
+
+
+
+                if type == "single":
+                    # Compute Otsu's threshold
+                    otsu_val = return_thre_value(value['method'], img)
+                    thre_values.append(otsu_val)
+                elif type == "list":
+                    upper =  return_thre_value(value['upper'], img)
+                    lower = return_thre_value(value['lower'], img)
+                    N = value['N']
+                    ascending = value["ascending"]
+                    if ascending:
+                        otsu_list = list(np.linspace( lower ,upper, N, dtype=int))
+                    else:
+                        otsu_list = list(np.linspace( lower ,upper, N, dtype=int))
+                        otsu_list = sorted(otsu_list,reverse=True)
+                    thre_values.append(otsu_list)
+
+            df[key] = thre_values
+
+        
+    # Save updated CSV
+    df.to_csv(output_csv, index=False)
+    print(f"Processed CSV saved to: {output_csv}")
+
+
+def copy_matching_files(src_folder, dest_folder, prefix, extension):
+    """
+    Searches for files with a specific prefix and extension in all subdirectories of src_folder 
+    and copies them to dest_folder.
+
+    Args:
+        src_folder (str): The root folder to search for matching files.
+        dest_folder (str): The folder where matching files will be copied.
+        prefix (str): The required prefix of the files.
+        extension (str): The required file extension (e.g., ".tif", ".txt").
+    """
+    # Ensure the destination folder exists
+    os.makedirs(dest_folder, exist_ok=True)
+
+    # Walk through all subdirectories
+    for root, _, files in os.walk(src_folder):
+        for file in files:
+            if file.startswith(prefix) and file.endswith(extension):
+                src_path = os.path.join(root, file)  # Full path of the source file
+                dest_path = os.path.join(dest_folder, file)  # Destination path
+
+                # Copy file to the destination folder
+                shutil.copy2(src_path, dest_path)
+                print(f"Copied: {src_path} → {dest_path}")
 
 # try:
 #     check_required_keys(yaml_path, required_keys)
