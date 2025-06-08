@@ -16,7 +16,7 @@ import sprout_core.config_core as config_core
             
 
 
-def stack_to_mesh(bone_id_list , output_dir, downsample_scale=10,step_size = 1):
+def stack_to_mesh(bone_id_list , output_dir, downsample_scale=10,downsample_fn = None,step_size = 1):
   
     for id in bone_id_list:
         temp = (volume_array ==id).astype('uint8')

@@ -21,8 +21,6 @@ segments: 30
 # A folder of workspace + output_folder
 output_folder: "./result/demo_dog/seeds_all"
 
-# name of the log file name, will be save in the output folder
-output_log_file: "seed_log.json"
 
 
 #### Optional parameters ####

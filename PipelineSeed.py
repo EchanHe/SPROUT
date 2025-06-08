@@ -143,7 +143,7 @@ if __name__ == "__main__":
                                         segments = segments,
                                         name_prefix = output_names,
                                         num_threads = num_threads,
-                                        footprints = footprints,
+                                        input_footprints = footprints,
                                         
                                         upper_thresholds = optional_params['upper_thresholds']
                                         )
@@ -162,13 +162,14 @@ if __name__ == "__main__":
                                 )
             
             elif seed_mode == "merge":
+                sub_folder = os.path.basename(input_path)
                 if type(footprints) is list:
                     footprints = footprints [0]
                 
                 if isinstance(seed_threshold,list) and len(seed_threshold)!=1:
             
                     print("Running make_seeds_merged_by_thres_mp")
-                    seed ,ori_combine_ids_map , output_dict=make_seeds_merged.make_seeds_merged_by_thres_path_wrapper(                           
+                    seed ,ori_combine_ids_map , output_dict=make_seeds_merged.make_seeds_merged_by_thres_mp(                           
                                         img_path= input_path,
                                         thresholds= seed_threshold,
                                         output_folder=output_folder,
@@ -193,7 +194,8 @@ if __name__ == "__main__":
                                         
                                         upper_thresholds = optional_params["upper_thresholds"],
                                         split_size_limit = optional_params["split_size_limit"] ,
-                                        split_convex_hull_limit = optional_params["split_convex_hull_limit"] 
+                                        split_convex_hull_limit = optional_params["split_convex_hull_limit"] ,
+                                        sub_folder=sub_folder
                                 
                                 )
                 
@@ -209,7 +211,9 @@ if __name__ == "__main__":
                     else:
                         upper_threshold = None
                     print("Running make_seeds_merged")
-                    seed ,ori_combine_ids_map , output_dict=make_seeds_merged.make_seeds_merged_path_wrapper(                           
+
+                    
+                    seed ,ori_combine_ids_map , output_dict=make_seeds_merged.make_seeds_merged_mp(                           
                                             img_path= input_path,
                                             threshold= seed_threshold,
                                             output_folder=output_folder,
@@ -231,86 +235,22 @@ if __name__ == "__main__":
                                             name_prefix = output_names,
                                             init_segments = optional_params["init_segments"],
                                             footprint= footprints,
+                                            
                                             upper_threshold = upper_threshold,
                                             split_size_limit = optional_params["split_size_limit"] ,
-                                            split_convex_hull_limit = optional_params["split_convex_hull_limit"] 
+                                            split_convex_hull_limit = optional_params["split_convex_hull_limit"],
+                                            
+                                            sub_folder=sub_folder
                                             )
+                    
         except Exception as e:
             df.loc[index,'error'] = str(e)
         df.loc[index,'output_folder'] = output_folder
         df.loc[index,'name_prefix'] = name_prefix
 
-    df.to_csv(csv_path + "_running_results.csv", index = False)    
+    df.to_csv(os.path.join(output_folder,
+                           os.path.basename(csv_path) + "_running_results.csv"), index = False)    
 
 
         
     
-    # for csv_required_key in csv_required_keys:
-    # if "file_path" not in df.columns:
-    #     raise Exception("'file_path' must be present as a column in the CSV file.")
-    # else:
-    #     print("'file_path' is present in the CSV file.")
-    
-    # try:
-    #     yaml_data, df
-    # except Exception as e:
-    #     print(e)
-
-#     
-    
-#     #TODO check if This df fits the requirements
-    
-#     #a check to see if all files exist
-#     sprout_core.check_tiff_files(df['file_name'])
-
-    
-#     output_dict_list = []
-    
-
-#     for idx, row in df.iterrows():
-#         file_name = row["file_name"]
-#         file_name_no_ext = os.path.splitext(os.path.basename(file_name))[0]
-        
-#         target_thresholds = eval(row['target_thresholds'])
-        
-#         if 'output_seed_folder' in df.columns:
-#             output_seed_folder = row['output_seed_folder']
-#         else:
-#             output_seed_folder = os.path.join(output_seed_root_dir, file_name_no_ext)
-        
-#         print(file_name, target_thresholds)
-
-#         output_dict = make_seeds_all.main(workspace=workspace,
-#                                       file_name= file_name,
-#                                       output_log_file = output_log_file,
-#                                       output_seed_folder = output_seed_folder,
-#                                       ero_iters = ero_iters,
-#                                       target_thresholds = target_thresholds,
-#                                       segments = segments
-#                                       )
-        
-#         output_dict_list.append(output_dict)
-# #         # make_seeds_all.plot(output_dict , os.path.join(output_seed_folder,"log.png"))
-        
-#     for idx, output_dict in enumerate(output_dict_list):
-#         merged_img_name = os.path.basename(output_dict["output_seed_sub_folders"])
-#         make_seeds_all.plot(output_dict , os.path.join(output_seed_root_dir,f"{merged_img_name}.png"))
-
-# # output = make_seeds.main(workspace= workspace,
-# #                 file_name= file_name,
-# #                 output_log_file = output_log_file,
-# #                 output_seed_folder = output_seed_folder,
-# #                 num_threads = num_threads,
-# #                 ero_iters = ero_iters,
-# #                 target_thresholds = target_thresholds,
-# #                 segments = segments,
-# #                 footprints = footprints)
-
-# # output_seed_folder = output[0]
-
-# # tif_files = glob.glob(os.path.join(output_seed_folder, '*.tif'))
-
-# # for tif_file in tif_files:
-# #     make_mesh.make_mesh_for_tiff(tif_file,output_seed_folder,
-# #                         num_threads,no_zero = True,
-# #                         colormap = "color10")

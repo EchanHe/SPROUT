@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-import tifffile
+
 # from PIL import Image
 from tifffile import imread, imwrite
 import os,sys
@@ -147,13 +147,13 @@ def make_seeds_merged_path_wrapper(img_path,
         tuple: Merged seeds, original combine ID map, and output dictionary.
     """
     # Read the image
-    img = tifffile.imread(img_path)
+    img = imread(img_path)
     print(f"Loaded image from: {img_path}")
     
     # Read the boundary if provided
     boundary = None
     if boundary_path is not None:
-        boundary = tifffile.imread(boundary_path)
+        boundary = imread(boundary_path)
     
     # Prepare values for printing
     start_time = datetime.now()
@@ -202,12 +202,19 @@ def make_seeds_merged_path_wrapper(img_path,
     return seed ,ori_combine_ids_map , output_dict
 
 
-def make_seeds_merged_mp(img,
+def make_seeds_merged_mp(
+                         
                         threshold,
                         output_folder,
                         n_iters, 
                         segments,
+                        
+                        img = None,
+                        img_path = None,
+                        
                         boundary = None,
+                        boundary_path = None,
+                        
                         num_threads = 1,
                         background = 0,
                         sort = True,
@@ -222,7 +229,8 @@ def make_seeds_merged_mp(img,
                         footprint = "ball",
                         upper_threshold = None,
                         split_size_limit = (None,None),
-                        split_convex_hull_limit = (None, None)
+                        split_convex_hull_limit = (None, None),
+                        sub_folder = None                    
                       ):
     """
     Erosion-based merged seed generation with multi-threading.
@@ -254,15 +262,35 @@ def make_seeds_merged_mp(img,
     Returns:
         tuple: Merged seeds, original combine ID map, and output dictionary.
     """
+    
+    img = sprout_core.check_and_load_data(img, img_path, "img")
+    if not (boundary is None and boundary_path is None):
+        boundary = sprout_core.check_and_load_data(boundary, boundary_path, "boundary")
+        
+    
+    
     min_split_prop = min_split_prop*100
     min_split_sum_prop = min_split_sum_prop*100
 
+
+
+    output_name = f"{name_prefix}_thre_{threshold}_{upper_threshold}_ero_{n_iters}"
+    
+    if sub_folder is None:
+        output_folder = os.path.join(output_folder, output_name)
+    else:
+        output_folder = os.path.join(output_folder, sub_folder)
+    os.makedirs(output_folder,exist_ok=True)
+    
     values_to_print = {
+        "img_path": img_path,
         "Threshold": threshold,
         "upper_threshold": upper_threshold,
         "Output Folder": output_folder,
         "Erosion Iterations": n_iters,
         "Segments": segments,
+        "boundary_path": boundary_path,
+        
         "Number of Threads": num_threads,
         "Sort": sort,
         "Background Value": background,
@@ -281,9 +309,8 @@ def make_seeds_merged_mp(img,
     for key, value in values_to_print.items():
         print(f"  {key}: {value}")
 
-    output_name = f"{name_prefix}_thre_{threshold}_{upper_threshold}_ero_{n_iters}"
-    output_folder = os.path.join(output_folder, output_name)
-    os.makedirs(output_folder,exist_ok=True)
+    
+    
     
     max_splits = segments
     
@@ -304,7 +331,7 @@ def make_seeds_merged_mp(img,
 
     init_seed, _ = sprout_core.get_ccomps_with_size_order(img,init_segments)
     
-    output_img_name = f'thre_{threshold}_{upper_threshold}_ero_0.tif'
+    output_img_name = f'INTER_thre_{threshold}_{upper_threshold}_ero_0.tif'
     if save_every_iter:
         imwrite(os.path.join(output_folder,output_img_name), init_seed, 
             compression ='zlib')
@@ -348,7 +375,7 @@ def make_seeds_merged_mp(img,
         seed, _ = sprout_core.get_ccomps_with_size_order(img,segments)
         seed = seed.astype('uint16')
         
-        output_img_name = f'thre_{threshold}_{upper_threshold}_ero_{ero_iter}.tif'
+        output_img_name = f'INTER_thre_{threshold}_{upper_threshold}_ero_{ero_iter}.tif'
         output_dict["cur_seed_name"][threshold] = output_img_name
         
         if save_every_iter:
@@ -452,7 +479,7 @@ def make_seeds_merged_mp(img,
         
         if save_merged_every_iter:
             combine_seed,_ = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort)
-            output_path = os.path.join(output_folder,output_name+f'ero_{ero_iter}_sorted.tif')
+            output_path = os.path.join(output_folder,"INTER_merged_"+ output_name+f'ero_{ero_iter}_sorted.tif')
             
             print(f"\tSaving merged output:{output_path}")
             imwrite(output_path, combine_seed, 
@@ -470,12 +497,20 @@ def make_seeds_merged_mp(img,
     #     compression ='zlib')
     
     combine_seed,_ = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort)
-    output_path = os.path.join(output_folder,output_name+'_sorted.tif')
+    output_path = os.path.join(output_folder,"FINAL_" + output_name+'_sorted.tif')
     print(f"\tSaving final output:{output_path}")
     imwrite(output_path, combine_seed, 
         compression ='zlib')
     
-             
+
+    config_core.save_config_with_output({
+        "params": values_to_print},output_folder)
+        
+
+    pd.DataFrame(output_dict).to_csv(os.path.join(output_folder,
+                                                  f"output_dict_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"),
+                                     index=False)
+
     return combine_seed,ori_combine_ids_map, output_dict    
 
 
@@ -536,13 +571,13 @@ def make_seeds_merged_by_thres_path_wrapper(img_path,
         tuple: Merged seed, original combine ID map, and output dictionary.
     """
     # Read the image
-    img = tifffile.imread(img_path)
+    img = imread(img_path)
     print(f"Loaded image from: {img_path}")
     
     # Read the boundary if provided
     boundary = None
     if boundary_path is not None:
-        boundary = tifffile.imread(boundary_path)
+        boundary = imread(boundary_path)
     
     # Prepare values for printing
     start_time = datetime.now()
@@ -588,14 +623,20 @@ def make_seeds_merged_by_thres_path_wrapper(img_path,
     
     return combine_seed,ori_combine_ids_map, output_dict
 
-def make_seeds_merged_by_thres_mp(img,
+def make_seeds_merged_by_thres_mp(
                         thresholds,
                         output_folder,
                         n_iters, 
                         segments,
                         
-                        num_threads = 1,
+                        img = None,
+                        img_path = None,
+                        
                         boundary =None,
+                        boundary_path = None,
+                        
+                        num_threads = 1,
+                        
                         background = 0,
                         sort = True,
                         
@@ -612,7 +653,8 @@ def make_seeds_merged_by_thres_mp(img,
                         
                         upper_thresholds = None,
                         split_size_limit = (None, None),
-                        split_convex_hull_limit = (None, None)
+                        split_convex_hull_limit = (None, None),
+                        sub_folder = None  
                     ):
     """
     Thresholds-based merged seed generation.
@@ -646,18 +688,34 @@ def make_seeds_merged_by_thres_mp(img,
     Returns:
         tuple: Merged seed, original combine ID map, and output dictionary.
     """
-    
+
+    img = sprout_core.check_and_load_data(img, img_path, "img")
+    if not (boundary is None and boundary_path is None):
+        boundary = sprout_core.check_and_load_data(boundary, boundary_path, "boundary")
+
     min_split_prop = min_split_prop*100
     min_split_sum_prop = min_split_sum_prop*100
 
+    output_name = f"{name_prefix}_ero_{n_iters}"
+    
+    
+    if sub_folder is None:
+        output_folder = os.path.join(output_folder, output_name)
+    else:
+        output_folder = os.path.join(output_folder, sub_folder)
+
+    os.makedirs(output_folder,exist_ok=True)
+
     values_to_print = {
+        "img_path": img_path,
         "Thresholds": thresholds,
         "upper_thresholds": upper_thresholds,
         "Output Folder": output_folder,
         "Erosion Iterations": n_iters,
         "Segments": segments,
+        "boundary_path": boundary_path,
+        
         "Number of Threads": num_threads,
-
         "Sort": sort,
         
         "Background Value": background,
@@ -677,9 +735,7 @@ def make_seeds_merged_by_thres_mp(img,
         print(f"  {key}: {value}")
 
 
-    output_name = f"{name_prefix}_ero_{n_iters}"
-    output_folder = os.path.join(output_folder, output_name)
-    os.makedirs(output_folder,exist_ok=True)
+
     
     max_splits = segments
     
@@ -702,7 +758,7 @@ def make_seeds_merged_by_thres_mp(img,
         mask = sprout_core.erosion_binary_img_on_sub(mask, kernal_size = 1,footprint=footprint)
     init_seed, _ = sprout_core.get_ccomps_with_size_order(mask,init_segments)
     
-    output_img_name = f'thre_{thresholds[0]}_ero_{n_iters}.tif'
+    output_img_name = f'INTER_thre_{thresholds[0]}_ero_{n_iters}.tif'
     if save_every_iter:
         imwrite(os.path.join(output_folder,output_img_name), init_seed, 
             compression ='zlib')
@@ -753,7 +809,7 @@ def make_seeds_merged_by_thres_mp(img,
         seed, _ = sprout_core.get_ccomps_with_size_order(mask,segments)
         seed = seed.astype('uint16')
         
-        output_img_name = f'thre_{threshold}_ero_{n_iters}.tif'
+        output_img_name = f'INTER_thre_{threshold}_ero_{n_iters}.tif'
         output_dict["cur_seed_name"][threshold] = output_img_name
         if save_every_iter:
             output_path = os.path.join(output_folder,output_img_name)
@@ -870,17 +926,25 @@ def make_seeds_merged_by_thres_mp(img,
     
     if save_merged_every_iter:
         combine_seed,_ = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort)
-        output_path = os.path.join(output_folder,output_name+f'ero_{ero_iter}_sorted.tif')
+        output_path = os.path.join(output_folder, "INTER_merged_" + output_name+f'ero_{ero_iter}_sorted.tif')
         
         print(f"\tSaving merged output:{output_path}")
         imwrite(output_path, combine_seed, 
             compression ='zlib')    
         
     combine_seed,_ = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort)
-    output_path = os.path.join(output_folder,output_name+'_sorted.tif')
+    output_path = os.path.join(output_folder,"FINAL_" + output_name+'_sorted.tif')
     print(f"\tSaving final output:{output_path}")
     imwrite(output_path, combine_seed, 
         compression ='zlib')
+
+    config_core.save_config_with_output({
+        "params": values_to_print},output_folder)
+        
+
+    pd.DataFrame(output_dict).to_csv(os.path.join(output_folder,
+                                                  f"output_dict_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"),
+                                     index=False)
     
              
     return combine_seed,ori_combine_ids_map, output_dict  
@@ -931,15 +995,18 @@ if __name__ == "__main__":
     else:
         boundary = None
     
+    sub_folder = os.path.basename(config['img_path'])
+    
     if seed_merging_mode == "ERO":
-        seed ,ori_combine_ids_map , output_dict=  make_seeds_merged_mp(img,
+        seed ,ori_combine_ids_map , output_dict=  make_seeds_merged_mp(
                                             config['thresholds'],
                                             config['output_folder'],
                                             config['n_iters'], 
                                             config['segments'],
                                             num_threads = config['num_threads'],
                                             
-                                            boundary = boundary,                                            
+                                            img_path = config['img_path'],
+                                            boundary_path = optional_params['boundary_path'],                                            
                                             
                                             background = optional_params["background"],
                                             sort = optional_params["sort"],
@@ -955,21 +1022,23 @@ if __name__ == "__main__":
                                             init_segments = optional_params["init_segments"],
                                             footprint = optional_params["footprints"],
                                             upper_threshold = optional_params["upper_thresholds"],
-                                            split_size_limit= optional_params["split_size_limit"]
+                                            split_size_limit= optional_params["split_size_limit"],
+                                            sub_folder = sub_folder
                                     )
     
     # pd.DataFrame(ori_combine_ids_map).to_csv(os.path.join(output_folder, 'ori_combine_ids_map.csv'),index=False)
     
     elif seed_merging_mode=="THRE":
    
-        seed ,ori_combine_ids_map , output_dict= make_seeds_merged_by_thres_mp(img,
+        seed ,ori_combine_ids_map , output_dict= make_seeds_merged_by_thres_mp(
                                             config['thresholds'],
                                             config['output_folder'],
                                             config['n_iters'], 
                                             config['segments'],
                                             num_threads = config['num_threads'],
                                             
-                                            boundary = boundary,
+                                            img_path = config['img_path'],
+                                            boundary_path = optional_params['boundary_path'],    
                                             
                                             background = optional_params["background"],
                                             sort = optional_params["sort"],
@@ -985,13 +1054,14 @@ if __name__ == "__main__":
                                             init_segments = optional_params["init_segments"],
                                             footprint = optional_params["footprints"],
                                             upper_thresholds = optional_params["upper_thresholds"],
-                                            split_size_limit= optional_params["split_size_limit"]                                  
+                                            split_size_limit= optional_params["split_size_limit"],
+                                            sub_folder = sub_folder                        
                                     )
                 
 
     
+
     
-    pd.DataFrame(output_dict).to_csv(os.path.join(config['output_folder'], 'output_dict.csv'),index=False)
     # Track the overall end time
     overall_end_time = time.time()
 

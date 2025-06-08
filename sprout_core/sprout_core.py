@@ -64,7 +64,14 @@ optional_params_default_seeds = {
     'split_convex_hull_limit': [None,None]
 }
 
-
+def check_and_load_data(array, path, name):
+    if array is not None and path is not None:
+        raise ValueError(f"Both {name} and {name}_path provided; only one is allowed.")
+    if array is None and path is None:
+        raise ValueError(f"Either {name} or {name}_path must be provided.")
+    if path is not None:
+        return tifffile.imread(path)
+    return array
 
 def assign_optional_params(config, keys_with_defaults):
     """

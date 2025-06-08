@@ -34,11 +34,19 @@ pre_set_footprint_list = [
 ]
 
 pre_set_sub_folders = [
-    "seeds_ball",
-    "seeds_XY",
-    "seeds_YZ",
-    "seeds_XZ"
+    "ball",
+    "ball_XY",
+    "ball_YZ",
+    "ball_XZ"
 ]
+
+
+# pre_set_sub_folders = [
+#     "seeds_ball",
+#     "seeds_XY",
+#     "seeds_YZ",
+#     "seeds_XZ"
+# ]
 
 
 pre_set_footprint_list_2d = [
@@ -48,9 +56,14 @@ pre_set_footprint_list_2d = [
 ]
 
 pre_set_sub_folders_2d = [
-    "seeds_disk",
-    "seeds_X",
-    "seeds_Y"]
+    "disk",
+    "X",
+    "Y"]
+
+# pre_set_sub_folders_2d = [
+#     "seeds_disk",
+#     "seeds_X",
+#     "seeds_Y"]
 
 
 support_footprints =['ball','cube',
@@ -59,9 +72,6 @@ support_footprints =['ball','cube',
                      '2XZ_1Y','2XY_1Z','2YZ_1X']
 
 
-
-
-output_log_file =  "seed_log.json"
 
 
 def for_pipeline_wrapper(img_path, boundary_path=None, **kwargs):
@@ -110,7 +120,7 @@ def make_seeds_all(**kwargs):
     workspace = kwargs.get('workspace', None)
     file_name = kwargs.get('file_name', None)  
     
-    output_log_file = kwargs.get('output_log_file', "seed_log.json") 
+
     output_folder = kwargs.get('output_folder', None) 
     name_prefix = kwargs.get('name_prefix', None) 
     
@@ -169,90 +179,110 @@ def make_seeds_all(**kwargs):
         "output_log_files":[]
     }
     
-    for ero_iter in ero_iters:
-        if input_footprints is None:
-            if is_3d:
-                footprint_list = [footprint*ero_iter for footprint in pre_set_footprint_list]
-                output_seed_sub_folders = pre_set_sub_folders
-            else:
-                footprint_list = [footprint*ero_iter for footprint in pre_set_footprint_list_2d]
-                output_seed_sub_folders = pre_set_sub_folders_2d
+    # for ero_iter in ero_iters:
+        
+    ## Dealing with footprints
+    if input_footprints is None:
+        # if input footprints is not provided, use pre-set footprints
+        if is_3d:
+            footprint_list = [footprint*ero_iters for footprint in pre_set_footprint_list]
+            output_seed_sub_folders = pre_set_sub_folders
         else:
+            footprint_list = [footprint*ero_iters for footprint in pre_set_footprint_list_2d]
+            output_seed_sub_folders = pre_set_sub_folders_2d
+    else:
+        if isinstance(input_footprints, str):
+        # asser len(input_footprints)
+        # if it is provided, check if it is valid
+            assert input_footprints in support_footprints, f"footprint {input_footprints} is invalid, use supported footprints"
+            footprint_list = [[input_footprints]*ero_iters]
+            # check_support_footprint = [footprint in support_footprints for footprint in input_footprints]
+            # if not np.all(check_support_footprint):
+            #     raise ValueError(f"footprint {input_footprints} is invalid, use supported footprints")
+            # footprint_list = [[footprint]*ero_iters for footprint in input_footprints]
+            output_seed_sub_folders = [input_footprints]   
+        elif isinstance(input_footprints, list):
+            assert len(input_footprints) ==ero_iters, "If input_footprints is a list, it must have the same length as ero_iters"
+            
             check_support_footprint = [footprint in support_footprints for footprint in input_footprints]
             if not np.all(check_support_footprint):
                 raise ValueError(f"footprint {input_footprints} is invalid, use supported footprints")
-            footprint_list = [[footprint]*ero_iter for footprint in input_footprints]
-            output_seed_sub_folders = input_footprints        
-    
-        # Create threshold pairs
-        if upper_thresholds is not None:
-            thresholds = list(zip(thresholds, upper_thresholds))
-        threshold_ero_iter_pairs = list(itertools.product(thresholds, [ero_iter]))  
-        sublists = [threshold_ero_iter_pairs[i::num_threads] for i in range(num_threads)]   
-    
-        for footprints, output_seed_sub_folder in zip(footprint_list,output_seed_sub_folders):
-
-            # Init the folders and path for output files
-            output_seed_sub_folder = os.path.join(output_folder,name_prefix, output_seed_sub_folder)
-            os.makedirs(output_seed_sub_folder , exist_ok=True)
-            output_json_path = os.path.join(output_seed_sub_folder, output_log_file)
-
-            start_time = datetime.now()
-            print(f"""{start_time.strftime("%Y-%m-%d %H:%M:%S")}
-            Making erosion seeds for 
-                Img: {img_name}
-                Is 3D image: {is_3d}
-                Threshold for Img {thresholds}
-                Erode {ero_iters} iterations
-                Keeping {segments} components
-                Erosion footprints {footprints}
-                Running in {num_threads} threads
-                Output Folder {output_seed_sub_folder}
-                    """)
             
+            footprint_list = input_footprints
+            output_seed_sub_folders = ["custom_footprints"]
+    # Create threshold pairs
+    if upper_thresholds is not None:
+        thresholds = list(zip(thresholds, upper_thresholds))
+    threshold_ero_iter_pairs = list(itertools.product(thresholds, [ero_iters]))  
+    sublists = [threshold_ero_iter_pairs[i::num_threads] for i in range(num_threads)]   
 
+    for footprints, output_seed_sub_folder in zip(footprint_list,output_seed_sub_folders):
 
-
-            # Create a list to hold the threads
-            threads = []
-
-
-            # Start a new thread for each sublist
-            for sublist in sublists:
-            
-                thread = threading.Thread(target=make_seeds.find_seed_by_ero_mp, args=(img,sublist, segments,
-                                                                            output_seed_sub_folder,output_json_path, footprints,
-                                                                            boundary))
-                threads.append(thread)
-                thread.start()
-                
-            # Wait for all threads to complete
-            for thread in threads:
-                thread.join()
-
-            # print(f"All threads have completed. Log is saved at {output_json_path},seeds are saved at {output_seed_folder}")
-
-            
-            end_time = datetime.now()
-            running_time = end_time - start_time
-            total_seconds = running_time.total_seconds()
-            minutes, _ = divmod(total_seconds, 60)
-            print(f"Running time:{minutes}")
+        # Init the folders and path for output files
+        output_seed_sub_folder = os.path.join(output_folder,name_prefix, output_seed_sub_folder)
+        os.makedirs(output_seed_sub_folder , exist_ok=True)
         
-            output_dict["output_seed_sub_folders"].append(output_seed_sub_folder)
-            output_dict["output_log_files"].append(output_json_path)
-            
-            # Make meshes  
-            if is_make_meshes:  
-                tif_files = glob.glob(os.path.join(output_seed_sub_folder, '*.tif'))
 
-                for tif_file in tif_files:
-                    make_mesh.make_mesh_for_tiff(tif_file,output_seed_sub_folder,
-                                        num_threads=num_threads,no_zero = True,
-                                        colormap = "color10",
-                                        downsample_scale=downsample_scale,
-                                        step_size=step_size)
+        output_json_path = os.path.join(output_seed_sub_folder,
+                                        f"seed_log_{datetime.now().strftime('%Y%m%d_%H%M')}.json")
+
+
+        start_time = datetime.now()
+        print(f"""{start_time.strftime("%Y-%m-%d %H:%M:%S")}
+        Making erosion seeds for 
+            Img: {img_name}
+            Is 3D image: {is_3d}
+            Threshold for Img {thresholds}
+            Erode {ero_iters} iterations
+            Keeping {segments} components
+            Erosion footprints {footprints}
+            Running in {num_threads} threads
+            Output Folder {output_seed_sub_folder}
+                """)      
+
+        # Create a list to hold the threads
+        threads = []
+
+
+        # Start a new thread for each sublist
+        for sublist in sublists:
         
+            thread = threading.Thread(target=make_seeds.find_seed_by_ero_mp, args=(img,sublist, segments,
+                                                                        output_seed_sub_folder,output_json_path, footprints,
+                                                                        boundary))
+            threads.append(thread)
+            thread.start()
+            
+        # Wait for all threads to complete
+        for thread in threads:
+            thread.join()
+
+        # print(f"All threads have completed. Log is saved at {output_json_path},seeds are saved at {output_seed_folder}")
+
+        
+        end_time = datetime.now()
+        running_time = end_time - start_time
+        total_seconds = running_time.total_seconds()
+        minutes, _ = divmod(total_seconds, 60)
+        print(f"Running time:{minutes}")
+    
+        output_dict["output_seed_sub_folders"].append(output_seed_sub_folder)
+        output_dict["output_log_files"].append(output_json_path)
+        
+        # Make meshes  
+        if is_make_meshes:  
+            tif_files = glob.glob(os.path.join(output_seed_sub_folder, '*.tif'))
+
+            for tif_file in tif_files:
+                make_mesh.make_mesh_for_tiff(tif_file,output_seed_sub_folder,
+                                    num_threads=num_threads,no_zero = True,
+                                    colormap = "color10",
+                                    downsample_scale=downsample_scale,
+                                    step_size=step_size)
+        
+        config_core.save_config_with_output({
+            "output_dict": output_dict,
+            "params": kwargs},output_seed_sub_folder)
         
     return output_dict
  
@@ -300,7 +330,6 @@ if __name__ == "__main__":
         boundary = boundary,
         workspace= optional_params['workspace'],
             file_name= config['file_name'],
-            output_log_file = output_log_file,
             output_folder = config['output_folder'],
             num_threads = config['num_threads'],
             ero_iters = config['ero_iters'],
@@ -310,102 +339,11 @@ if __name__ == "__main__":
             
             is_make_meshes = optional_params['is_make_meshes'],
             downsample_scale = optional_params['downsample_scale'],
-            step_size  = optional_params['step_size']
+            step_size  = optional_params['step_size'],
+            input_footprints = optional_params['footprints']
             )
     
     
     # Make plot based on the seeds log json
     # Doing this after parallel/multi processing
-    plot(output_dict, os.path.join(os.path.join(optional_params['workspace'], config['output_folder'], "full_log.png")))
-                                                     
-
-    # if make_mesh:
-        
-    #     output_seed_folders = output_dict["output_seed_folders"]
-
-    #     for output_seed_folder in output_seed_folders：
-        
-    #         tif_files = glob.glob(os.path.join(output_seed_folder, '*.tif'))
-
-    #         for tif_file in tif_files:
-    #             make_mesh.make_mesh_for_tiff(tif_file,output_seed_folder,
-    #                                 num_threads,no_zero = True,
-    #                                 colormap = "color10")
-    # ###################
-
-    # output_seed_folder =os.path.join(workspace, output_seed_folder)
-    
-    # file_path = os.path.join(workspace, file_name)
-    
-
-
-    # footprint_list = [
-    #     ["ball"] * ero_iters,
-    #     ["ball_XY"] * ero_iters,
-    #     ["ball_YZ"] * ero_iters,
-    #     ["ball_XZ"] * ero_iters
-
-    # ]
-
-    # output_seed_sub_folders = [
-    #     "seeds_ball",
-    #     "seeds_XY",
-    #     "seeds_YZ",
-    #     "seeds_XZ"
-    # ]
-
-    
-    # for footprints, output_seed_sub_folder in zip(footprint_list,output_seed_sub_folders):
-
-
-    #     output_seed_sub_folder = os.path.join(output_seed_folder, output_seed_sub_folder)
-    #     os.makedirs(output_seed_sub_folder , exist_ok=True)
-    #     output_json_path = os.path.join(output_seed_sub_folder, output_log_file)
-
-    #     start_time = datetime.now()
-    #     print(f"""{start_time.strftime("%Y-%m-%d %H:%M:%S")}
-    #     Making erosion seeds for 
-    #         Img: {file_path}
-    #         Threshold for Img {target_thresholds}
-    #         Erode {ero_iters} iterations
-    #         Keeping {segments} components
-    #         Erosion footprints {footprints}
-    #             """)
-        
-
-
-    #     threshold_ero_iter_pairs = list(itertools.product(target_thresholds, [ero_iters]))
-
-    #     volume = tifffile.imread(file_path)
-    #     volume = volume.astype("uint8")
-        
-        
-
-        
-    
-    #     sublists = [threshold_ero_iter_pairs[i::num_threads] for i in range(num_threads)]
-
-    #     # Create a list to hold the threads
-    #     threads = []
-
-
-    #     # Start a new thread for each sublist
-    #     for sublist in sublists:
-           
-    #         thread = threading.Thread(target=make_seeds.find_seed_by_ero_mp, args=(volume,sublist, segments,
-    #                                                                     output_seed_sub_folder,output_json_path, footprints ))
-    #         threads.append(thread)
-    #         thread.start()
-            
-    #     # Wait for all threads to complete
-    #     for thread in threads:
-    #         thread.join()
-
-    #     # print(f"All threads have completed. Log is saved at {output_json_path},seeds are saved at {output_seed_folder}")
-
-        
-    #     end_time = datetime.now()
-    #     running_time = end_time - start_time
-    #     total_seconds = running_time.total_seconds()
-    #     minutes, _ = divmod(total_seconds, 60)
-    #     print(f"Running time:{minutes}")
+    # plot(output_dict, os.path.join(os.path.join(optional_params['workspace'], config['output_folder'], "full_log.png")))

@@ -7,7 +7,7 @@ import shutil
 import pandas as pd
 import numpy as np
 import tifffile as tiff
-
+from datetime import datetime
 from skimage.filters import threshold_otsu
 
 # Function to recursively create global variables from the config dictionary
@@ -29,6 +29,18 @@ def load_config_json(file_path):
     for key, value in config.items():
         globals()[key] = value
  
+
+def save_config_with_output(output_dict, output_dir):
+    os.makedirs(output_dir, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    config_path = os.path.join(output_dir, f"config_{timestamp}.yaml")
+
+
+
+    with open(config_path, "w") as f:
+        yaml.dump(output_dict, f)
+
+    return config_path
 
 def check_file_extension(file_path):
     # Get the file extension
@@ -146,8 +158,8 @@ input_val_make_seeds = {
         "description": "List of thresholds, must contain at least one numeric value."
     },
     "ero_iters": {
-        "type": list,
-        "subtype": int,
+        "type": int,
+        # "subtype": int,
         "min": 0,
         "max": 1000,
         "required": True,
@@ -164,12 +176,12 @@ input_val_make_seeds = {
         "required": True,
         "description": "Output directory path as a string."
     },
-    "output_log_file": {
-        "type": str,
-        "required": True,
-        "description": "Output log",
-        "check_extension": ".json"
-    },
+    # "output_log_file": {
+    #     "type": str,
+    #     "required": True,
+    #     "description": "Output log",
+    #     "check_extension": ".json"
+    # },
     "footprints": {
         "type": str,
         "required": True,
@@ -232,14 +244,13 @@ mesh_dict = {
 }
 
 input_val_make_seeds_all.update(mesh_dict)
-input_val_make_seeds_all['footprints']['required'] = False
-input_val_make_seeds_all.pop("footprints")
-input_val_make_seeds_all["ero_iters"] =  {
-        "type": int,
-        "min": 0,
-        "max": 1000,
-        "required": True,
-        "description": "An int for the erosion iteration for seed generation"
+# input_val_make_seeds_all['footprints']['required'] = False
+# input_val_make_seeds_all.pop("footprints")
+input_val_make_seeds_all["footprints"] =  {
+        "type": (str,list),
+        "required": False,
+        "default": None,
+        "description": "Footprints for morphological transformation"
 }
 
 
@@ -549,8 +560,7 @@ input_val_make_mesh = {
     "output_folder": {
         "type": str,
         "required": True,
-        "description": "Output folder",
-        "check_exist": True
+        "description": "Output folder"
     },
     
 
@@ -592,7 +602,79 @@ input_val_make_mesh = {
     },
 }
 
+input_val_make_junctions =  {
 
+    "input_folder": {
+        "type": str,
+        "required": False,
+        "default":None,
+        "either" : ("input_folder", "img_path"),
+        "description": "Output folder",
+        "check_exist": True
+    },
+    "img_path": {
+        "type": str,
+        "required": False,
+        "default":None,
+        "description": "File name",
+        "either" : ("input_folder", "img_path"),
+        "check_exist": True,
+        "check_extension": (".tif", ".tiff")
+
+    }, 
+
+    # "img_path": {
+    #     "type": str,
+    #     "required": True,
+    #     "description": "File name",
+    #     "check_exist": True,
+    #     "check_extension": (".tif", ".tiff")
+
+    # },
+    "num_threads": {
+        "type": int,
+        "min": 1,
+        "max": psutil.cpu_count(),
+        "required": True,
+        "description": "num of threads"
+    },
+    "output_folder": {
+        "type": str,
+        "required": True,
+        "description": "Output directory path as a string."
+    },
+    "max_width": {
+        "type": int,
+        "min": 1,
+        "required": True,
+        "description": "Maximum width of detected junctions."
+    },
+    #### Optional parameters
+    "is_save_islands":{
+        "type": bool,
+        "required": False,
+        'default': False,
+        "description": "Save the islands of a junction as well"        
+    },
+
+    "boundary_path": {
+        "type": str,
+        "required": False,
+        "default":None,
+        "check_exist": True,
+        "description": "boundary image",
+        "check_extension": (".tif", ".tiff")
+    },
+    "background": {
+        "type": int,
+        "min": 0,
+        "required": False,
+        "default": 0,
+        "description": "Background value. Defaults is 0."
+    },
+    
+   
+}
 
 def return_thre_value(input_config, img):
     if isinstance(input_config, (int, float)):
