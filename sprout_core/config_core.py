@@ -29,6 +29,27 @@ def load_config_json(file_path):
     for key, value in config.items():
         globals()[key] = value
  
+ 
+def write_json(filename, args_dict):
+    """
+    Write dictionary data to a JSON file, appending it if the file exists.
+    Use to write seed generation log.
+    Args:
+        filename (str): Path to the JSON file.
+        args_dict (dict): Data to be written to the file.
+    """    
+    # Check if the file exists and load existing data
+    if os.path.exists(filename):
+        with open(filename, 'r') as jsonfile:
+            results = json.load(jsonfile)
+    else:
+        results = []
+    
+    results.append(args_dict)
+    
+    # Write the results to the JSON file
+    with open(filename, 'w') as jsonfile:
+        json.dump(results, jsonfile, indent=4)
 
 def save_config_with_output(output_dict, output_dir):
     os.makedirs(output_dir, exist_ok=True)
