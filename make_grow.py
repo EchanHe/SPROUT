@@ -70,7 +70,7 @@ def grow_function(result, threshold_binary, label_id_list,touch_rule,non_bg_mask
 def dilation_one_iter_mp(input_mask, threshold_binary, 
                             num_threads,
                              touch_rule = 'stop',
-                             segments=None, ero_shape = 'ball',
+                             segments=None, 
                              to_grow_ids = None,
                              boundary = None):
     """
@@ -152,9 +152,12 @@ def grow_mp(**kwargs):
     workspace = kwargs.get('workspace', None)
     img_path = kwargs.get('img_path', None)
     seg_path = kwargs.get('seg_path', None) 
+    
     output_folder = kwargs.get('output_folder', None) 
     final_grow_output_folder = kwargs.get('final_grow_output_folder', None) 
-    name_prefix = kwargs.get('name_prefix', "final_grow")  
+    sub_folder = kwargs.get('sub_folder', None) 
+    
+    name_prefix = kwargs.get('name_prefix', "FINAL_GROW")  
     simple_naming = kwargs.get('simple_naming', True)  
     
     to_grow_ids = kwargs.get('to_grow_ids', None) 
@@ -166,6 +169,8 @@ def grow_mp(**kwargs):
     is_make_meshes = kwargs.get('is_make_meshes', False) 
     downsample_scale = kwargs.get('downsample_scale', 10) 
     step_size  = kwargs.get('step_size', 1) 
+    
+    
     
     
     default_grow_to_end_iter = 200
@@ -195,10 +200,17 @@ def grow_mp(**kwargs):
         seg_path = os.path.join(workspace, seg_path)
         output_folder = os.path.join(workspace, output_folder)
     
+
+    
+    
     base_name = os.path.splitext(os.path.basename(img_path))[0]
     input_mask = tifffile.imread(seg_path)
     ori_img = tifffile.imread(img_path)
-
+    if sub_folder is None:
+        output_folder = os.path.join(output_folder, os.path.basename(img_path))
+    else:
+        output_folder = os.path.join(output_folder, sub_folder)
+    
     os.makedirs(output_folder , exist_ok=True)
     
     # Loading a boundary if it's provided
@@ -301,15 +313,15 @@ def grow_mp(**kwargs):
                 if upper_threshold is None:
                     cur_threshold = threshold
                     if simple_naming:
-                        output_path = os.path.join(output_folder, f'{base_name}_{threshold}_{i_dilate}.tif')
+                        output_path = os.path.join(output_folder, f'INTER_{base_name}_{threshold}_{i_dilate}.tif')
                     else:
-                        output_path = os.path.join(output_folder, f'{base_name}_iter_{i_dilate}_dilate_{dilate_name}_thre_{threshold_name}.tif') 
+                        output_path = os.path.join(output_folder, f'INTER_{base_name}_iter_{i_dilate}_dilate_{dilate_name}_thre_{threshold_name}.tif') 
                 else:
                     cur_threshold = f"{threshold}_{upper_threshold}"
                     if simple_naming:
-                        output_path = os.path.join(output_folder, f'{base_name}_{threshold}_{upper_threshold}_{i_dilate}.tif')
+                        output_path = os.path.join(output_folder, f'INTER_{base_name}_{threshold}_{upper_threshold}_{i_dilate}.tif')
                     else:
-                        output_path = os.path.join(output_folder, f'{base_name}_iter_{i_dilate}_dilate_{dilate_name}_thre_{threshold_name}_{upper_threshold}.tif')
+                        output_path = os.path.join(output_folder, f'INTER_{base_name}_iter_{i_dilate}_dilate_{dilate_name}_thre_{threshold_name}_{upper_threshold}.tif')
                 
                 # Write the log
                 df_log.append({'id': (i*dilate_iter)+i_dilate, 
@@ -371,7 +383,10 @@ def grow_mp(**kwargs):
                                 colormap = "color10",
                                 downsample_scale=downsample_scale,
                                 step_size=step_size)
-    
+
+    config_core.save_config_with_output({
+        "params": kwargs},output_folder)
+
     # Return a dict 
     grow_dict = {
         "final_output_path": final_output_path,
@@ -426,7 +441,8 @@ if __name__ == "__main__":
         # For mesh making
         is_make_meshes = optional_params['is_make_meshes'],
         downsample_scale = optional_params['downsample_scale'],
-        step_size  = optional_params['step_size']
+        step_size  = optional_params['step_size'],
+        sub_folder = None
         
         )
     

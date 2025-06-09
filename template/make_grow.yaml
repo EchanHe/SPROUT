@@ -1,13 +1,9 @@
-# The relative path from the workspace of input image
-# Default workspace value is ""
-# The actual path will be workspace + img_path 
+# The input img_path of input image
 
 img_path: "./data/demo_dog.tiff"
 
 
-
-# The relative path from the workspace of the segmentation that to be grown (seeds)
-# The actual path will be workspace + seg_path 
+# The input path of input seed
 seg_path: "./result/demo_dog/seeds_merged/Merged_seed_ero_0/Merged_seed_ero_0_sorted.tif"
 
 
@@ -41,9 +37,14 @@ num_threads: 4
 #### Optional parameters ####
 ## Can be commented out if you want to use the default values
 
-# The root folder for processing data
-# Workspace can be set as ""
-# Then the input_folder and output_folder need to be absolute paths
+
+## An optional root folder for processing data
+# Default it none
+# If it's set 
+# The img_path will be workspace + img_path 
+# The seg_path will be workspace + seg_path 
+# The output_folder will be workspace + output_folder 
+
 # workspace: ""
 
 
@@ -66,8 +67,8 @@ num_threads: 4
 # final_grow_output_folder: ~
 
 
-# The name prefix, default is "final_grow"
-# name_prefix: "final_grow"
+# The name prefix, default is "FINAL_GROW"
+# name_prefix: "FINAL_GROW"
 # Whether use simple naming, the original naming can be long
 # simple_naming: True
 
