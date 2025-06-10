@@ -1,0 +1,70 @@
+# CSV path
+csv_path: "./template/seeds_input.csv"
+
+# num of threads, it would be best to match the length of target_thresholds
+num_threads: 5
+
+# Thresholds for seed generation
+# If the value is just one number, or a list of one element, seeds will merged on erosions (from no-erosion to set erosion)
+# If the value is a list, seeds will be merged on thresholds (from low to high)
+# Seeds will be generated based on each individual threshold
+thresholds: [100, 110, 120, 130, 140,150,160,170,180,190,200]
+
+# Number of erosions
+ero_iters: 0
+
+# Integer >=1, The algorithm keeps top <segments> largest disconnected components
+segments: 30
+
+# Output Folder
+output_folder: "./result/demo_dog/seeds_merged"
+
+#### Optional inputs ####
+
+# The upper thresholds, should be bigger than threshold
+# Can be one number or a list, should be same length as the thresholds
+# If specified, if you want binary to be img>= threshold & img<=upper_threshold
+# upper_thresholds: [50,60]
+
+# Path to boundary image. Defaults is None.
+# boundary_path: './data/boundary.tif'
+
+# Background value. Defaults is 0.
+background: 0
+
+# Whether to sort output segment IDs. Defaults is True.
+sort: True
+
+# Early stop checking: Limit for consecutive no-split iterations. Defaults is 3.
+no_split_limit: 3
+
+# Minimum size for segments. Defaults is 5.
+min_size: 5
+
+# Minimum proportion to consider a split. Defaults is 0.01.
+min_split_prop: 0.01
+
+# Minimum proportion of (sub-segments from next step)/(current segments) to consider a split (0-1).
+# Defaults is 0.
+min_split_sum_prop: 0
+
+# Save results at every iteration. Defaults is False.
+save_every_iter: True
+# Save merged results at every iteration. Defaults is False.
+save_merged_every_iter: False
+# Prefix for output file names. Defaults is "Merged_seed".
+name_prefix: "merged_seed"
+# Number of segments for the first seed, 
+# Defaults is None.
+# A small number of make the initial sepration faster
+# As normally the first seed only has a big one component
+init_segments: ~
+
+# How to erode your images, 
+# Default is "ball", it can be either a string, 
+# or a list of string that matches the number of erosions
+# Current supports 
+#'ball' and 'cube' :Erosion all directions. 
+#'ball_XY', 'ball_XZ', 'ball_YZ': Erosion on the Plane. 
+# 'X', 'Y', 'Z': Erosion on the axis.
+footprints: "ball" 

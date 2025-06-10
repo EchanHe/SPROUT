@@ -1,5 +1,5 @@
-# The input img_path of input image
-img_path: "./data/demo_dog.tiff"
+# CSV path
+csv_path: "./template/seeds_input.csv"
 
 # num of threads, it would be best to match the length of target_thresholds
 num_threads: 2
