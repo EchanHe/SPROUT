@@ -187,6 +187,13 @@ def grow_mp(**kwargs):
     # The number of iters for diff is less than diff_threshold
 
     # Ensure thresholds and dilate_iters have the same length
+    if isinstance(thresholds, int):
+        thresholds = [thresholds]
+    if isinstance(dilate_iters, int):
+        dilate_iters = [dilate_iters]
+    if upper_thresholds is not None and isinstance(upper_thresholds, int):
+        upper_thresholds = [upper_thresholds]
+    
     assert len(thresholds) == len(dilate_iters), f"thresholds and dilate_iters must have the same length, but got {len(thresholds)} and {len(dilate_iters)}."
     if upper_thresholds is not None:
         len(thresholds) == len(upper_thresholds), f"lower_thresholds and upper_thresholds should have the same length, but got {len(thresholds)} and {len(upper_thresholds)}."
@@ -397,11 +404,8 @@ def grow_mp(**kwargs):
     return grow_dict
 
 
-if __name__ == "__main__":
-    
-    # Get the file path from the first command-line argument or use the default
-    file_path = sys.argv[1] if len(sys.argv) > 1 else './make_grow_result.yaml'
-    
+def run_make_grow(file_path):
+          
     _, extension = os.path.splitext(file_path)
     print(f"processing config the file {file_path}")
     if extension == '.yaml':
@@ -415,8 +419,12 @@ if __name__ == "__main__":
         workspace = optional_params['workspace'],
         img_path = config['img_path'] ,
         seg_path = config['seg_path'],
+        
         output_folder = config['output_folder'],
-         
+        
+        sub_folder = None,
+        boundary_path = optional_params['boundary_path'],
+        
         dilate_iters = config['dilate_iters'],
         thresholds = config['thresholds'],
         upper_thresholds = optional_params["upper_thresholds"],
@@ -441,12 +449,21 @@ if __name__ == "__main__":
         # For mesh making
         is_make_meshes = optional_params['is_make_meshes'],
         downsample_scale = optional_params['downsample_scale'],
-        step_size  = optional_params['step_size'],
-        sub_folder = None
+        step_size  = optional_params['step_size']
+        
         
         )
     
     vis_lib.plot_grow(pd.read_csv(grow_dict['log_path']),
               grow_dict['log_path'] +".png"
               )
+
+if __name__ == "__main__":
+    
+    # Get the file path from the first command-line argument or use the default
+    file_path = sys.argv[1] if len(sys.argv) > 1 else './make_grow.yaml'
+    
+    run_make_grow(file_path)
+    
+   
     

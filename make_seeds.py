@@ -64,10 +64,6 @@ pre_set_sub_folders_2d = [
 #     "seeds_Y"]
 
 
-support_footprints =['ball','cube',
-                     'ball_XY','ball_XZ','ball_YZ',
-                     'X','Y','Z',
-                     '2XZ_1Y','2XY_1Z','2YZ_1X']
 
 
 
@@ -105,8 +101,9 @@ def find_seed_by_ero_mp(volume, input_threshold_ero_iter_pairs , segments ,
         if footprints == 'ball' or footprints == 'default':
             footprints = ['ball'] * ero_iter
         
+    
         print(f"Saving every seeds for thresholds {threshold} and upper thresholds {upper_threshold} with {ero_iter} erosion")
-
+        print(f"With the footprint {footprints}")
         
         log_dict = sprout_core.find_seed_by_ero_custom(volume, threshold , segments, ero_iter,
                                           output_dir =output_seed_folder,
@@ -169,34 +166,39 @@ def for_pipeline_wrapper(img_path, boundary_path=None, **kwargs):
 
 
 def make_seeds(**kwargs):
-    img = kwargs.get('img', None) 
-    boundary  = kwargs.get('boundary', None) 
     
     # Input and Output
+    img = kwargs.get('img', None) 
     workspace = kwargs.get('workspace', None)
-    file_name = kwargs.get('file_name', None)  
+    img_path = kwargs.get('img_path', None)  
     
+    # Getting the boundary
+    boundary  = kwargs.get('boundary', None) 
+    boundary_path  = kwargs.get('boundary_path', None) 
 
     output_folder = kwargs.get('output_folder', None) 
     name_prefix = kwargs.get('name_prefix', None) 
+
+    # Add work space if necessary
+    if workspace is not None:
+        img_path = os.path.join(workspace, img_path)
+        output_folder =os.path.join(workspace, output_folder)
     
-    # If input does not contain image,
-    # But has image file path, then read it in
     if img is None:
-        file_path = os.path.join(workspace, file_name)
-        img = tifffile.imread(file_path)
-        img_name = file_path
-        name_prefix = os.path.basename(file_name)
+        img_name = img_path
+        name_prefix = os.path.basename(img_path)
     else:
         img_name = name_prefix
-    
-    if workspace is not None:
-        output_folder =os.path.join(workspace, output_folder)
+
+
+    img = sprout_core.check_and_load_data(img, img_path, "img")
+    if not (boundary is None and boundary_path is None):
+        boundary = sprout_core.check_and_load_data(boundary, boundary_path, "boundary")
+
     
     # Seed generation related 
     ero_iters = kwargs.get('ero_iters', None)
     thresholds = kwargs.get('thresholds', None) 
-    
     upper_thresholds = kwargs.get('upper_thresholds', None) 
 
     if isinstance(thresholds, int):
@@ -250,22 +252,22 @@ def make_seeds(**kwargs):
         if isinstance(input_footprints, str):
         # asser len(input_footprints)
         # if it is provided, check if it is valid
-            assert input_footprints in support_footprints, f"footprint {input_footprints} is invalid, use supported footprints"
+            assert input_footprints in config_core.support_footprints, f"footprint {input_footprints} is invalid, use supported footprints"
             footprint_list = [[input_footprints]*ero_iters]
-            # check_support_footprint = [footprint in support_footprints for footprint in input_footprints]
-            # if not np.all(check_support_footprint):
-            #     raise ValueError(f"footprint {input_footprints} is invalid, use supported footprints")
-            # footprint_list = [[footprint]*ero_iters for footprint in input_footprints]
+
             output_seed_sub_folders = [input_footprints]   
         elif isinstance(input_footprints, list):
             assert len(input_footprints) ==ero_iters, "If input_footprints is a list, it must have the same length as ero_iters"
             
-            check_support_footprint = [footprint in support_footprints for footprint in input_footprints]
+            check_support_footprint = [footprint in config_core.support_footprints for footprint in input_footprints]
             if not np.all(check_support_footprint):
                 raise ValueError(f"footprint {input_footprints} is invalid, use supported footprints")
             
-            footprint_list = input_footprints
+            footprint_list = [input_footprints]
             output_seed_sub_folders = ["custom_footprints"]
+        else:
+            raise ValueError(f"Can't set the footprint list with the input footprint {input_footprints} ")        
+    
     # Create threshold pairs
     if upper_thresholds is not None:
         thresholds = list(zip(thresholds, upper_thresholds))
@@ -291,7 +293,7 @@ def make_seeds(**kwargs):
             Threshold for Img {thresholds}
             Erode {ero_iters} iterations
             Keeping {segments} components
-            Erosion footprints {footprints}
+            Erosion footprints: {footprints}
             Running in {num_threads} threads
             Output Folder {output_seed_sub_folder}
                 """)      
@@ -362,10 +364,7 @@ def plot(output_dict, full_log_plot_path):
     
     vis_lib.merge_plots(plot_list, full_log_plot_path)
 
-if __name__ == "__main__":
-    # Get the file path from the first command-line argument or use the default
-    file_path = sys.argv[1] if len(sys.argv) > 1 else './make_seeds.yaml'
-    
+def run_make_seeds(file_path):
     _, extension = os.path.splitext(file_path)
     print(f"processing config the file {file_path}")
 
@@ -385,7 +384,7 @@ if __name__ == "__main__":
     output_dict = make_seeds(
         boundary = boundary,
         workspace= optional_params['workspace'],
-            file_name= config['file_name'],
+            img_path= config['img_path'],
             output_folder = config['output_folder'],
             num_threads = config['num_threads'],
             ero_iters = config['ero_iters'],
@@ -397,7 +396,13 @@ if __name__ == "__main__":
             downsample_scale = optional_params['downsample_scale'],
             step_size  = optional_params['step_size'],
             input_footprints = optional_params['footprints']
-            )
+            )    
+
+if __name__ == "__main__":
+    # Get the file path from the first command-line argument or use the default
+    file_path = sys.argv[1] if len(sys.argv) > 1 else './make_seeds.yaml'
+    
+    run_make_seeds(file_path)
     
     
     # Make plot based on the seeds log json

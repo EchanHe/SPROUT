@@ -988,22 +988,16 @@ def make_seeds_merged_by_thres_mp(
              
     return combine_seed,ori_combine_ids_map, output_dict  
 
-
-if __name__ == "__main__":        
-   
-    # Get the file path from the first command-line argument or use the default
-    file_path = sys.argv[1] if len(sys.argv) > 1 else './make_adaptive_seed.yaml'
-
-    
+def run_make_adaptive_seed(file_path):
+  
     _, extension = os.path.splitext(file_path)
     print(f"processing config the file {file_path}")
     if extension == '.yaml':
         with open(file_path, 'r') as file:
             config = yaml.safe_load(file)
-            optional_params = config_core.validate_input_yaml(config, config_core.input_val_make_seeds_merged)
+            optional_params = config_core.validate_input_yaml(config, config_core.input_val_make_adaptive_seed)
             
 
-        load_config_yaml(config)
         # optional_params_2 = sprout_core.assign_optional_params(config, sprout_core.optional_params_default_seeds)
         
     # Checking if it's merged from erosion of threhsolds
@@ -1025,46 +1019,49 @@ if __name__ == "__main__":
     
     # Track the overall start time
     overall_start_time = time.time()
-        
-    img = imread(config['img_path'])
-
     
-    if optional_params['boundary_path'] is not None:
-        boundary = imread(optional_params['boundary_path'])
-    else:
-        boundary = None
+    ## Use path then actual img data as the input        
+    # img = imread(config['img_path'])
+    # if optional_params['boundary_path'] is not None:
+    #     boundary = imread(optional_params['boundary_path'])
+    # else:
+    #     boundary = None
     
     sub_folder = os.path.basename(config['img_path'])
     
     if seed_merging_mode == "ERO":
         seed ,ori_combine_ids_map , output_dict=  make_seeds_merged_mp(
-                                            threshold=config['thresholds'],
-                                            output_folder=config['output_folder'],
-                                            n_iters=config['ero_iters'], 
-                                            segments= config['segments'],
-                                            
-                                            num_threads = config['num_threads'],
-                                            
-                                            img_path = config['img_path'],
-                                            boundary_path = optional_params['boundary_path'],                                            
-                                            
-                                            background = optional_params["background"],
-                                            sort = optional_params["sort"],
-                                            
-                                            no_split_limit =optional_params["no_split_limit"],
-                                            min_size=optional_params["min_size"],
-                                            min_split_prop = optional_params["min_split_prop"],
-                                            min_split_sum_prop = optional_params["min_split_sum_prop"],
-                                            
-                                            save_every_iter = optional_params["save_every_iter"],
-                                            save_merged_every_iter = optional_params["save_merged_every_iter"],
-                                            name_prefix = optional_params["name_prefix"],
-                                            init_segments = optional_params["init_segments"],
-                                            footprint = optional_params["footprints"],
-                                            upper_threshold = optional_params["upper_thresholds"],
-                                            split_size_limit= optional_params["split_size_limit"],
-                                            
-                                            sub_folder = sub_folder
+                                    threshold=config['thresholds'],
+                                    output_folder=config['output_folder'],
+                                    n_iters=config['ero_iters'], 
+                                    segments= config['segments'],
+                                    num_threads = config['num_threads'],
+                                    
+                                    img_path = config['img_path'],
+                                    boundary_path = optional_params['boundary_path'],                                            
+                                    
+                                    background = optional_params["background"],
+                                    sort = optional_params["sort"],
+                                    
+                                    name_prefix = optional_params["name_prefix"],
+                                    
+                                    no_split_limit =optional_params["no_split_limit"],
+                                    min_size=optional_params["min_size"],
+                                    min_split_prop = optional_params["min_split_prop"],
+                                    min_split_sum_prop = optional_params["min_split_sum_prop"],
+                                    
+                                    save_every_iter = optional_params["save_every_iter"],
+                                    save_merged_every_iter = optional_params["save_merged_every_iter"],
+                                    
+                                    init_segments = optional_params["init_segments"],
+                                    footprint = optional_params["footprints"],
+                                    
+                                    upper_threshold = optional_params["upper_thresholds"],
+                                    split_size_limit= optional_params["split_size_limit"],
+                                    split_convex_hull_limit = optional_params["split_convex_hull_limit"],
+                                    
+                                    sub_folder = sub_folder
+                                        
                                     )
     
     # pd.DataFrame(ori_combine_ids_map).to_csv(os.path.join(output_folder, 'ori_combine_ids_map.csv'),index=False)
@@ -1073,33 +1070,37 @@ if __name__ == "__main__":
    
         seed ,ori_combine_ids_map , output_dict= make_seeds_merged_by_thres_mp(
 
-                                            threshold=config['thresholds'],
-                                            output_folder=config['output_folder'],
-                                            n_iters=config['ero_iters'], 
-                                            segments= config['segments'],
-                                            
-                                            num_threads = config['num_threads'],
-                                            
-                                            img_path = config['img_path'],
-                                            boundary_path = optional_params['boundary_path'],    
-                                            
-                                            background = optional_params["background"],
-                                            sort = optional_params["sort"],
-                                            
-                                            no_split_limit =optional_params["no_split_limit"],
-                                            min_size=optional_params["min_size"],
-                                            min_split_prop = optional_params["min_split_prop"],
-                                            min_split_sum_prop = optional_params["min_split_sum_prop"],
-                                            
-                                            save_every_iter = optional_params["save_every_iter"],
-                                            save_merged_every_iter = optional_params["save_merged_every_iter"],
-                                            name_prefix = optional_params["name_prefix"],
-                                            init_segments = optional_params["init_segments"],
-                                            footprint = optional_params["footprints"],
-                                            upper_thresholds = optional_params["upper_thresholds"],
-                                            split_size_limit= optional_params["split_size_limit"],
-                                            
-                                            sub_folder = sub_folder                        
+                                   thresholds=config['thresholds'],
+                                    output_folder=config['output_folder'],
+                                    n_iters=config['ero_iters'], 
+                                    segments= config['segments'],
+                                    
+                                    num_threads = config['num_threads'],
+                                    
+                                    img_path = config['img_path'],
+                                    boundary_path = optional_params['boundary_path'],    
+                                    
+                                    background = optional_params["background"],
+                                    sort = optional_params["sort"],
+                                    
+                                    name_prefix = optional_params["name_prefix"],
+                                    
+                                    no_split_limit =optional_params["no_split_limit"],
+                                    min_size=optional_params["min_size"],
+                                    min_split_prop = optional_params["min_split_prop"],
+                                    min_split_sum_prop = optional_params["min_split_sum_prop"],
+                                    
+                                    save_every_iter = optional_params["save_every_iter"],
+                                    save_merged_every_iter = optional_params["save_merged_every_iter"],
+                                                                        
+                                    init_segments = optional_params["init_segments"],
+                                    footprint = optional_params["footprints"],
+                                    
+                                    upper_thresholds = optional_params["upper_thresholds"],
+                                    split_size_limit= optional_params["split_size_limit"],
+                                    split_convex_hull_limit = optional_params["split_convex_hull_limit"],
+                                    
+                                    sub_folder = sub_folder                
                                     )
                 
 
@@ -1113,3 +1114,12 @@ if __name__ == "__main__":
     print(f"Total running time: {overall_end_time - overall_start_time:.2f} seconds")
         
 
+    
+
+if __name__ == "__main__":        
+   
+    # Get the file path from the first command-line argument or use the default
+    file_path = sys.argv[1] if len(sys.argv) > 1 else './make_adaptive_seed.yaml'
+
+    run_make_adaptive_seed(file_path=file_path)
+  
