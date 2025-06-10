@@ -281,6 +281,21 @@ def make_seeds_merged_mp(
     else:
         output_folder = os.path.join(output_folder, sub_folder)
     os.makedirs(output_folder,exist_ok=True)
+
+    if isinstance(footprint, str):
+
+        assert footprint in config_core.support_footprints, f"footprint {footprint} is invalid, use supported footprints"
+        footprint_list = [footprint]*n_iters
+    elif isinstance(footprint, list):
+        assert len(footprint) ==n_iters, "If input_footprints is a list, it must have the same length as ero_iters"
+        
+        check_support_footprint = [footprint in config_core.support_footprints for footprint in footprint]
+        if not np.all(check_support_footprint):
+            raise ValueError(f"footprint {footprint} is invalid, use supported footprints")
+        
+        footprint_list = footprint
+    else:
+        raise ValueError(f"Can't set the footprint list with the input footprint {footprint} ")
     
     values_to_print = {
         "img_path": img_path,
@@ -297,7 +312,7 @@ def make_seeds_merged_mp(
         "Save Every Iteration": save_every_iter,
         "Save Merged Every Iteration": save_merged_every_iter,
         "Name Prefix": name_prefix,
-        "Footprint": footprint,
+        "Footprint": footprint_list,
         "No Split Limit for iters": no_split_limit,
         "Component Minimum Size": min_size,
         "Minimum Split Proportion (%)": min_split_prop,
@@ -371,7 +386,7 @@ def make_seeds_merged_mp(
         output_dict["split_ori_id_filtered"][ero_iter] = {}
         output_dict["split_prop"][ero_iter] = {}
         
-        img = sprout_core.erosion_binary_img_on_sub(img, kernal_size = 1,footprint=footprint)
+        img = sprout_core.erosion_binary_img_on_sub(img, kernal_size = 1,footprint=footprint_list[ero_iter-1])
         seed, _ = sprout_core.get_ccomps_with_size_order(img,segments)
         seed = seed.astype('uint16')
         
@@ -479,7 +494,7 @@ def make_seeds_merged_mp(
         
         if save_merged_every_iter:
             combine_seed,_ = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort)
-            output_path = os.path.join(output_folder,"INTER_merged_"+ output_name+f'ero_{ero_iter}_sorted.tif')
+            output_path = os.path.join(output_folder,"INTER_merged_"+ output_name+f'ero_{ero_iter}.tif')
             
             print(f"\tSaving merged output:{output_path}")
             imwrite(output_path, combine_seed, 
@@ -497,7 +512,10 @@ def make_seeds_merged_mp(
     #     compression ='zlib')
     
     combine_seed,_ = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort)
-    output_path = os.path.join(output_folder,"FINAL_" + output_name+'_sorted.tif')
+    if sort:
+        output_path = os.path.join(output_folder,"FINAL_" + output_name+'_sorted.tif')
+    else:
+        output_path = os.path.join(output_folder,"FINAL_" + output_name+'.tif')
     print(f"\tSaving final output:{output_path}")
     imwrite(output_path, combine_seed, 
         compression ='zlib')
@@ -706,6 +724,21 @@ def make_seeds_merged_by_thres_mp(
 
     os.makedirs(output_folder,exist_ok=True)
 
+    if isinstance(footprint, str):
+
+        assert footprint in config_core.support_footprints, f"footprint {footprint} is invalid, use supported footprints"
+        footprint_list = [footprint]*n_iters
+    elif isinstance(footprint, list):
+        assert len(footprint) ==n_iters, "If input_footprints is a list, it must have the same length as ero_iters"
+        
+        check_support_footprint = [footprint in config_core.support_footprints for footprint in footprint]
+        if not np.all(check_support_footprint):
+            raise ValueError(f"footprint {footprint} is invalid, use supported footprints")
+        
+        footprint_list = footprint
+    else:
+        raise ValueError(f"Can't set the footprint list with the input footprint {footprint} ")
+        
     values_to_print = {
         "img_path": img_path,
         "Thresholds": thresholds,
@@ -722,7 +755,7 @@ def make_seeds_merged_by_thres_mp(
         "Save Every Iteration": save_every_iter,
         "Save Merged Every Iteration": save_merged_every_iter,
         "Name Prefix": name_prefix,
-        "Footprint": footprint,
+        "Footprint": footprint_list,
         "No Split Limit for iters": no_split_limit,
         "Component Minimum Size": min_size,
         "Minimum Split Proportion (%)": min_split_prop,
@@ -755,7 +788,8 @@ def make_seeds_merged_by_thres_mp(
         img[boundary] = False
     
     for ero_iter in range(1, n_iters+1):
-        mask = sprout_core.erosion_binary_img_on_sub(mask, kernal_size = 1,footprint=footprint)
+        mask = sprout_core.erosion_binary_img_on_sub(mask, kernal_size = 1,
+                                                     footprint=footprint_list[ero_iter-1])
     init_seed, _ = sprout_core.get_ccomps_with_size_order(mask,init_segments)
     
     output_img_name = f'INTER_thre_{thresholds[0]}_ero_{n_iters}.tif'
@@ -805,7 +839,8 @@ def make_seeds_merged_by_thres_mp(
         # mask = img>=threshold
         
         for ero_iter in range(1, n_iters+1):
-            mask = sprout_core.erosion_binary_img_on_sub(mask, kernal_size = 1,footprint=footprint)
+            mask = sprout_core.erosion_binary_img_on_sub(mask, kernal_size = 1,
+                                                         footprint=footprint_list[ero_iter-1])
         seed, _ = sprout_core.get_ccomps_with_size_order(mask,segments)
         seed = seed.astype('uint16')
         
@@ -916,7 +951,13 @@ def make_seeds_merged_by_thres_mp(
                 print(f"break loop at {threshold} threshold")
                 break
         
-
+        if save_merged_every_iter:
+            combine_seed,_ = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort)
+            output_path = os.path.join(output_folder, "INTER_merged_" + output_name+f'thre_{threshold}.tif')
+            
+            print(f"\tSaving merged output:{output_path}")
+            imwrite(output_path, combine_seed, 
+                compression ='zlib')    
     
     # output_path = os.path.join(output_folder,output_name+'.tif')
     # print(f"\tSaving final output:{output_path}")
@@ -924,16 +965,14 @@ def make_seeds_merged_by_thres_mp(
     #     compression ='zlib')
     
     
-    if save_merged_every_iter:
-        combine_seed,_ = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort)
-        output_path = os.path.join(output_folder, "INTER_merged_" + output_name+f'ero_{ero_iter}_sorted.tif')
-        
-        print(f"\tSaving merged output:{output_path}")
-        imwrite(output_path, combine_seed, 
-            compression ='zlib')    
+
         
     combine_seed,_ = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort)
-    output_path = os.path.join(output_folder,"FINAL_" + output_name+'_sorted.tif')
+    if sort:
+        output_path = os.path.join(output_folder,"FINAL_" + output_name+'_sorted.tif')
+    else:
+        output_path = os.path.join(output_folder,"FINAL_" + output_name+'.tif')
+        
     print(f"\tSaving final output:{output_path}")
     imwrite(output_path, combine_seed, 
         compression ='zlib')
@@ -953,7 +992,7 @@ def make_seeds_merged_by_thres_mp(
 if __name__ == "__main__":        
    
     # Get the file path from the first command-line argument or use the default
-    file_path = sys.argv[1] if len(sys.argv) > 1 else './make_seeds_merged.yaml'
+    file_path = sys.argv[1] if len(sys.argv) > 1 else './make_adaptive_seed.yaml'
 
     
     _, extension = os.path.splitext(file_path)
@@ -999,10 +1038,11 @@ if __name__ == "__main__":
     
     if seed_merging_mode == "ERO":
         seed ,ori_combine_ids_map , output_dict=  make_seeds_merged_mp(
-                                            config['thresholds'],
-                                            config['output_folder'],
-                                            config['n_iters'], 
-                                            config['segments'],
+                                            threshold=config['thresholds'],
+                                            output_folder=config['output_folder'],
+                                            n_iters=config['ero_iters'], 
+                                            segments= config['segments'],
+                                            
                                             num_threads = config['num_threads'],
                                             
                                             img_path = config['img_path'],
@@ -1023,6 +1063,7 @@ if __name__ == "__main__":
                                             footprint = optional_params["footprints"],
                                             upper_threshold = optional_params["upper_thresholds"],
                                             split_size_limit= optional_params["split_size_limit"],
+                                            
                                             sub_folder = sub_folder
                                     )
     
@@ -1031,10 +1072,12 @@ if __name__ == "__main__":
     elif seed_merging_mode=="THRE":
    
         seed ,ori_combine_ids_map , output_dict= make_seeds_merged_by_thres_mp(
-                                            config['thresholds'],
-                                            config['output_folder'],
-                                            config['n_iters'], 
-                                            config['segments'],
+
+                                            threshold=config['thresholds'],
+                                            output_folder=config['output_folder'],
+                                            n_iters=config['ero_iters'], 
+                                            segments= config['segments'],
+                                            
                                             num_threads = config['num_threads'],
                                             
                                             img_path = config['img_path'],
@@ -1055,6 +1098,7 @@ if __name__ == "__main__":
                                             footprint = optional_params["footprints"],
                                             upper_thresholds = optional_params["upper_thresholds"],
                                             split_size_limit= optional_params["split_size_limit"],
+                                            
                                             sub_folder = sub_folder                        
                                     )
                 

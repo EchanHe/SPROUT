@@ -11,7 +11,7 @@ num_threads: 5
 thresholds: [100, 110, 120, 130, 140,150,160,170,180,190,200]
 
 # Number of erosions
-n_iters: 0
+ero_iters: 0
 
 # Integer >=1, The algorithm keeps top <segments> largest disconnected components
 segments: 30
@@ -60,8 +60,10 @@ name_prefix: "merged_seed"
 # As normally the first seed only has a big one component
 init_segments: ~
 
-# How to erode your images, current supports 
-# Default is "ball"
+# How to erode your images, 
+# Default is "ball", it can be either a string, 
+# or a list of string that matches the number of erosions
+# Current supports 
 #'ball' and 'cube' :Erosion all directions. 
 #'ball_XY', 'ball_XZ', 'ball_YZ': Erosion on the Plane. 
 # 'X', 'Y', 'Z': Erosion on the axis.
