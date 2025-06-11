@@ -9,6 +9,13 @@ import numpy as np
 import tifffile as tiff
 from datetime import datetime
 from skimage.filters import threshold_otsu
+import ast  # safer than eval
+
+support_footprints =['ball','cube',
+                     'ball_XY','ball_XZ','ball_YZ',
+                     'X','Y','Z',
+                     '2XZ_1Y','2XY_1Z','2YZ_1X']
+
 
 # Function to recursively create global variables from the config dictionary
 def load_config_yaml(config, parent_key=''):
@@ -61,6 +68,7 @@ def save_config_with_output(output_dict, output_dir):
     with open(config_path, "w") as f:
         yaml.dump(output_dict, f)
 
+    print(f"Input config for this run has been saved to : {config_path}")
     return config_path
 
 def check_file_extension(file_path):
@@ -76,6 +84,7 @@ def check_file_extension(file_path):
 
 
 
+###############
 
 
 def validate_input_yaml(config, rules):
@@ -102,6 +111,18 @@ def validate_input_yaml(config, rules):
         
         # Use default value if not provided
         value = config.get(param, rule.get("default"))
+        
+        # Try parsing if rule expects a list but input is string
+        if isinstance(value, str) and ((isinstance(rule["type"], str) and rule["type"]== list) or (isinstance(rule["type"], tuple) and  list in rule["type"])):
+            try:
+                parsed = ast.literal_eval(value)
+                if isinstance(parsed, list):
+                    value = parsed
+                    config[param] = value
+
+            except Exception as e:
+                pass
+        
         
         if rule.get("required", False) or (not(rule.get("required", False)) and (value is not None)):
             # Check data type
@@ -142,12 +163,12 @@ def validate_input_yaml(config, rules):
                     errors.append(f"Parameter '{param}' must have extension {valid_extensions}, got '{value}'.")
 
 
-
     if errors:
         raise ValueError("\n".join(errors) + "\n\nPlease check the corresponding template .yaml file in the ./template/ folder")
 
-    print("YAML file is valid!")
+    print("Config file is valid!\n")
     return optional_values
+
 
 
 
@@ -155,7 +176,7 @@ def validate_input_yaml(config, rules):
 
 input_val_make_seeds = {
 
-    "file_name": {
+    "img_path": {
         "type": str,
         "required": True,
         "description": "File name",
@@ -171,7 +192,7 @@ input_val_make_seeds = {
         "description": "num of threads"
     },
     "thresholds": {
-        "type": list,
+        "type": (int,list),
         "subtype": (int, float),  # Each element should be int or float
         "required": True,
         "min_length": 1,
@@ -217,7 +238,7 @@ input_val_make_seeds = {
 
     },    
     "upper_thresholds": {
-        "type": list,
+        "type": (int,list),
         "subtype": (int, float),  # Each element should be int or float
         "required": False,
         "default":None,
@@ -309,7 +330,7 @@ input_val_make_grow = {
         "description": "Number of iterations, must be a non-negative integer."
     },
     "thresholds": {
-        "type": list,
+        "type": (int,list),
         "subtype": (int, float),  # Each element should be int or float
         "required": True,
         "min_length": 1,
@@ -342,7 +363,7 @@ input_val_make_grow = {
 
     },    
     "upper_thresholds": {
-        "type": list,
+        "type": (int,list),
         "subtype": (int, float),  # Each element should be int or float
         "required": False,
         'default': None,
@@ -372,7 +393,7 @@ input_val_make_grow = {
     "name_prefix": {
         "type": str,
         "required": False,
-        'default': "final_grow",
+        'default': "FINAL_GROW",
         "description": "The name prefix"
     },   
     "simple_naming": {
@@ -412,7 +433,7 @@ input_val_make_grow = {
 
 input_val_make_grow.update(mesh_dict)
 
-input_val_make_seeds_merged = {
+input_val_make_adaptive_seed = {
 
     "img_path": {
         "type": str,
@@ -437,7 +458,7 @@ input_val_make_seeds_merged = {
         "min": 0,
         "description": "List of thresholds, must contain at least one numeric value."
     },
-    "n_iters": {
+    "ero_iters": {
         "type": int,
         "min": 0,
         "max": 1000,
@@ -544,8 +565,8 @@ input_val_make_seeds_merged = {
         "default": None,
         "description": "Number of segments for the first seed."
     },
-    "footprints": {
-        "type": str,
+    "footprints": {       
+        "type": (str,list),
         "required": False,
         "default": "ball",
         "description": "Footprints for morphological transformation"
@@ -693,9 +714,9 @@ input_val_make_junctions =  {
         "default": 0,
         "description": "Background value. Defaults is 0."
     },
-    
    
 }
+
 
 def return_thre_value(input_config, img):
     if isinstance(input_config, (int, float)):
@@ -816,6 +837,44 @@ def copy_matching_files(src_folder, dest_folder, prefix, extension):
                 # Copy file to the destination folder
                 shutil.copy2(src_path, dest_path)
                 print(f"Copied: {src_path} → {dest_path}")
+
+def merge_row_and_yaml_no_conflict(row: dict, yaml_config: dict) -> dict:
+    duplicate_keys = set(row) & set(yaml_config)
+    if duplicate_keys:
+        raise ValueError(f"Conflict detected: keys present in both CSV row and YAML config: {list(duplicate_keys)}")
+    
+    # Merge with row taking precedence if needed (not used here due to check)
+    merged = {**yaml_config, **row}
+    return merged
+
+if __name__ == "__main__":
+    df = pd.read_csv("config/seeds_input.csv")
+
+    import yaml
+    # config = yaml.safe_load("../PipelineSeed.yaml")
+
+    with open("PipelineSeed_v2.yaml", 'r') as file:
+        config = yaml.safe_load(file)
+    
+    config.pop("csv_path", None)
+
+    for idx, row in df.iterrows():
+        new_config = merge_row_and_yaml_no_conflict(row, config)
+
+        
+        try:
+            optional = validate_input_yaml(new_config, input_val_make_adaptive_seed)
+            print(optional)
+        except Exception as e:
+            print("Error when valid make_adaptive_seed", e)
+        
+        try:
+            validate_input_yaml(new_config, input_val_make_seeds_all)
+        except Exception as e:
+            print("Error when valid make_seeds", e)  
+
+
+    
 
 # try:
 #     check_required_keys(yaml_path, required_keys)

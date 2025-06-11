@@ -97,6 +97,8 @@ def assign_optional_params(config, keys_with_defaults):
 
 def assign_config_values_pipeline(yaml_config, row, keys_with_defaults):
     """
+    Deprecated
+    
     Assign configuration values from YAML or a row of aDataFrame, falling back to default values if missing.
 
     Args:
@@ -130,56 +132,8 @@ def assign_config_values_pipeline(yaml_config, row, keys_with_defaults):
     return config_values
 
 
-def check_required_keys(data, required_keys):
 
-    
-    # Find missing keys
-    missing_keys = [key for key in required_keys if key not in data]
-    
-    # Raise exception if any keys are missing
-    if missing_keys:
-        raise Exception(f"Missing required keys in YAML file: {missing_keys}")
-    else:
-        print("All required keys are present.")
 
-def check_csv_required_keys(df, required_keys):
-    # Find missing keys
-    missing_keys = [key for key in required_keys if key not in df.columns]
-    
-    # Raise exception if any keys are missing
-    if missing_keys:
-        raise Exception(f"Missing required keys in csv file: {missing_keys}")
-    else:
-        print("All required keys are present.")
-
-def check_either_csv_yaml_keys(df, data, required_keys):
-    # Find missing keys
-    missing_keys_df = [key for key in required_keys if key not in df.columns]
-    
-    missing_keys_data = [key for key in required_keys if key not in data]
-    
-    and_result = list(set(missing_keys_df) & set(missing_keys_data))
-    
-    conflicting_keys = [key for key in required_keys if key in df.columns and key in data]
-    
-    # Raise exception if any keys are missing
-    if and_result:
-        raise Exception(f"Missing required keys in either both CSV or YAML: {and_result}")
-    else:
-        print("All required keys are present in either both CSV or YAML.")
-        
-
-    if conflicting_keys:
-        raise Exception(f"Conflicting keys found in both CSV and YAML: {conflicting_keys}")
-    else:
-        print("No conflicting keys found between CSV and YAML.")
-    
-    keys_in_df = [key for key in required_keys if key in df.columns]
-    
-    # Find which keys are in the YAML config
-    keys_in_data = [key for key in required_keys if key in data]
-
-    return {"keys_in_df": keys_in_df, "keys_in_config": keys_in_data}
 
 def check_and_cast_boundary(boundary):
     # Check if the boundary is a matrix with only True and False
