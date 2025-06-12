@@ -1,0 +1,10 @@
+name: napari-sprout
+display_name: SPROUT
+contributions:
+  commands:
+    - id: napari-sprout.make_widget
+      python_name: napari_sprout._widget:make_sprout_widget
+      title: Create SPROUT Widget
+  widgets:
+    - command: napari-sprout.make_widget
+      display_name: SPROUT
