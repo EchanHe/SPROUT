@@ -65,5 +65,25 @@ def main():
     # Start napari
     napari.run()
 
+
+def test_debug():
+    # launch_napari.py
+    from napari import Viewer, run
+
+    viewer = Viewer()
+    dock_widget, plugin_widget = viewer.window.add_plugin_dock_widget(
+        "napari-sprout", "SPROUT_info"
+    )
+    dock_widget, plugin_widget = viewer.window.add_plugin_dock_widget(
+        "napari-sprout", 'SPROUT_edit'
+    )
+    
+
+    # Optional steps to setup your plugin to a state of failure
+    # E.g. plugin_widget.parameter_name.value = "some value"
+    # E.g. plugin_widget.button.click()
+    run()
+
 if __name__ == "__main__":
-    main()
+    # main()
+    test_debug()
