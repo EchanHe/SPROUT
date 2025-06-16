@@ -2,13 +2,15 @@ import numpy as np
 from skimage.measure import label as cc_label
 from qtpy.QtWidgets import (QWidget, QVBoxLayout, QComboBox, QPushButton, QLabel,
                             QHBoxLayout, QCheckBox, QMessageBox,QSpinBox, QGroupBox,
-                            QFormLayout)
+                            QFormLayout, QScrollArea , QSizePolicy)
 from copy import deepcopy
 from napari.layers import Labels
 
 from qtpy.QtWidgets import QFrame
 
 import numpy as np
+from skimage.morphology import remove_small_holes
+from skimage.morphology import erosion, dilation, opening, closing, disk, ball
 
 def sort_labels_by_size(label_img, ignore_label=0):
     label_img = label_img.copy()
@@ -35,9 +37,9 @@ class QtLabelSelector(QWidget):
         self.original_data_backup = None
         self.last_bound_layer = None
 
-        layout = QVBoxLayout()
         
-        
+        content_widget = QWidget()
+        layout = QVBoxLayout(content_widget)
         
         # Label layer selection
         self.layer_label = QLabel("Active Label Layer: (none)")
@@ -203,7 +205,143 @@ class QtLabelSelector(QWidget):
         label_split_group.setLayout(label_split_layout)
         layout.addWidget(label_split_group)
 
-        self.setLayout(layout)
+        # ---- Keep Top-N Labels Group ----
+        keep_label_group = QGroupBox("Keep Top-N Labels")
+        keep_label_group.setToolTip("Keep the N largest labels based on total area/volume.")
+
+        keep_layout = QFormLayout()
+
+        self.keep_label_topn_spin = QSpinBox()
+        self.keep_label_topn_spin.setMinimum(1)
+        self.keep_label_topn_spin.setMaximum(10_000)
+        self.keep_label_topn_spin.setValue(5)
+        self.keep_label_topn_spin.setToolTip("Number of labels to keep (by total pixel count).")
+        keep_layout.addRow(QLabel("Top-N Labels:"), self.keep_label_topn_spin)
+
+        keep_label_btn = QPushButton("Run Keep Top-N Labels")
+        keep_label_btn.setStyleSheet("QPushButton { font-weight: bold; background-color: #3c8dbc; color: white; }")
+        keep_label_btn.clicked.connect(self.run_keep_top_n_labels)
+        keep_layout.addRow(keep_label_btn)
+
+        keep_label_group.setLayout(keep_layout)
+        layout.addWidget(keep_label_group)
+
+
+        # ---- Filter operations Group ----
+        filter_group = QGroupBox("Filter Regions")
+        filter_group.setToolTip("Remove small connected components or keep only the largest regions.")
+
+        filter_layout = QFormLayout()
+
+        self.filter_min_size_spin = QSpinBox()
+        self.filter_min_size_spin.setMinimum(0)
+        self.filter_min_size_spin.setMaximum(1_000_000_000)
+        self.filter_min_size_spin.setValue(0)
+        self.filter_min_size_spin.setToolTip("Remove all components smaller than this size (0 = skip).")
+        filter_layout.addRow(QLabel("Minimum Size:"), self.filter_min_size_spin)
+
+        self.filter_top_n_spin = QSpinBox()
+        self.filter_top_n_spin.setMinimum(0)
+        self.filter_top_n_spin.setMaximum(10_000)
+        self.filter_top_n_spin.setValue(0)
+        self.filter_top_n_spin.setToolTip("Keep only the top-N largest components (0 = all).")
+        filter_layout.addRow(QLabel("Keep Top-N:"), self.filter_top_n_spin)
+
+        self.filter_target_label_spin = QSpinBox()
+        self.filter_target_label_spin.setMinimum(0)
+        self.filter_target_label_spin.setMaximum(10_000)
+        self.filter_target_label_spin.setToolTip("Only filter the given label (0 = all labels > 0).")
+        filter_layout.addRow(QLabel("Target Label (0 = all):"), self.filter_target_label_spin)
+
+        filter_btn = QPushButton("Run Filtering")
+        filter_btn.setStyleSheet("QPushButton { font-weight: bold; background-color: #d97d00; color: white; }")
+        filter_btn.clicked.connect(self.run_filtering_operation)
+        filter_layout.addRow(filter_btn)
+
+        filter_group.setLayout(filter_layout)
+        layout.addWidget(filter_group)
+
+
+        # ---- Fill holes operation ----
+        fill_group = QGroupBox("Fill Holes")
+        fill_group.setToolTip("Fill small holes inside label regions.")
+
+        fill_layout = QFormLayout()
+
+        self.fill_area_spin = QSpinBox()
+        self.fill_area_spin.setMinimum(1)
+        self.fill_area_spin.setMaximum(1_000_000_000)
+        self.fill_area_spin.setValue(64)
+        self.fill_area_spin.setToolTip("Maximum hole area to fill (in pixels/voxels).")
+        fill_layout.addRow(QLabel("Area Threshold:"), self.fill_area_spin)
+
+        self.fill_in_2d_checkbox = QCheckBox("Apply per-slice (2D)")
+        self.fill_in_2d_checkbox.setChecked(False)
+        self.fill_in_2d_checkbox.setToolTip("Apply hole filling on each 2D slice (if 3D).")
+        fill_layout.addRow(self.fill_in_2d_checkbox)
+
+        self.fill_target_spin = QSpinBox()
+        self.fill_target_spin.setMinimum(0)
+        self.fill_target_spin.setMaximum(10_000)
+        self.fill_target_spin.setToolTip("Target label to process (0 = all labels > 0).")
+        fill_layout.addRow(QLabel("Target Label (0 = all):"), self.fill_target_spin)
+
+        fill_btn = QPushButton("Run Fill Holes")
+        fill_btn.setStyleSheet("QPushButton { font-weight: bold; background-color: #0066aa; color: white; }")
+        fill_btn.clicked.connect(self.run_fill_holes_operation)
+        fill_layout.addRow(fill_btn)
+
+        fill_group.setLayout(fill_layout)
+        layout.addWidget(fill_group)
+
+        # ---- Morphology Group ----
+        
+
+        morph_group = QGroupBox("Morphology Transform")
+        morph_group.setToolTip("Apply morphological operations to label regions.")
+
+        morph_layout = QFormLayout()
+
+        self.morph_op_combo = QComboBox()
+        self.morph_op_combo.addItems(["Erode", "Dilate", "Open", "Close"])
+        self.morph_op_combo.setToolTip("Choose morphological operation to apply.")
+        morph_layout.addRow(QLabel("Operation:"), self.morph_op_combo)
+
+        self.morph_kernel_spin = QSpinBox()
+        self.morph_kernel_spin.setMinimum(1)
+        self.morph_kernel_spin.setMaximum(50)
+        self.morph_kernel_spin.setValue(2)
+        self.morph_kernel_spin.setToolTip("Kernel radius for the operation.")
+        morph_layout.addRow(QLabel("Kernel Radius:"), self.morph_kernel_spin)
+
+        self.morph_target_spin = QSpinBox()
+        self.morph_target_spin.setMinimum(0)
+        self.morph_target_spin.setMaximum(10_000)
+        self.morph_target_spin.setToolTip("Target label to process (0 = all labels > 0).")
+        morph_layout.addRow(QLabel("Target Label (0 = all):"), self.morph_target_spin)
+
+        morph_btn = QPushButton("Run Morphology")
+        morph_btn.setStyleSheet("QPushButton { font-weight: bold; background-color: #8844aa; color: white; }")
+        morph_btn.clicked.connect(self.run_morphology_operation)
+        morph_layout.addRow(morph_btn)
+
+        morph_group.setLayout(morph_layout)
+        layout.addWidget(morph_group)
+
+
+        content_widget.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Preferred)
+        content_widget.setMinimumWidth(content_widget.sizeHint().width())
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(content_widget)
+
+        # 3. 最外层 layout 包裹 scroll
+        outer_layout = QVBoxLayout()
+        outer_layout.addWidget(scroll)
+        self.setLayout(outer_layout)
+
+        # self.setLayout(layout)
 
         # Track layer selection
         self.viewer.layers.selection.events.active.connect(self.update_active_label_layer_binding)
@@ -448,7 +586,252 @@ class QtLabelSelector(QWidget):
         
         
 
-    
-        
+    def run_fill_holes_operation(self):
+        label_layer = self.last_bound_layer
+        if label_layer is None:
+            QMessageBox.warning(self, "Error", "No label layer selected.")
+            return
+
+        area_threshold = self.fill_area_spin.value()
+        apply_in_2d = self.fill_in_2d_checkbox.isChecked()
+        target_label = self.fill_target_spin.value()
+        if target_label == 0:
+            target_label = None  # means process all labels > 0
+
+        data = label_layer.data.copy()
+
+        # Duplicate if needed
+        target_layer = label_layer
+        if self.duplicate_checkbox.isChecked():
+            new_name = f"{label_layer.name}_fill"
+            target_layer = self.viewer.add_labels(data.copy(), name=new_name)
+            print(f"Operating on duplicated layer: {new_name}")
+            if self.on_click not in target_layer.mouse_drag_callbacks:
+                target_layer.mouse_drag_callbacks.append(self.on_click)
+            self.last_bound_layer = target_layer
+            data = target_layer.data.copy()
+
+        self.original_data_backup = data.copy()  # for undo
+
+        # Call the fill logic
+        filled = self.fill_holes_in_labels(data, area_threshold, target_label, apply_in_2d)
+        target_layer.data = filled
+
+        QMessageBox.information(self, "Done", "Hole filling completed.")
 
     
+    def fill_holes_in_labels(self, label_img, area_threshold=64, target_label=None, apply_in_2d=False):
+        result = label_img.copy()
+        ndim = result.ndim
+
+        if target_label is not None:
+            mask = (label_img == target_label)
+            if mask.sum() == 0:
+                return result
+            
+            max_area = np.prod(mask.shape) * 0.25
+            current_area_threshold = min(area_threshold, max_area)
+
+            if apply_in_2d and ndim == 3:
+                for z in range(mask.shape[0]):
+                    filled = remove_small_holes(mask[z], area_threshold=current_area_threshold)
+                    result[z][filled & (~mask[z])] = target_label
+            else:
+                filled = remove_small_holes(mask, area_threshold=current_area_threshold)
+                result[filled & (~mask)] = target_label
+        else:
+            unique_labels = np.unique(label_img)
+            for lbl in unique_labels:
+                if lbl == 0:
+                    continue
+                mask = (label_img == lbl)
+                if mask.sum() == 0:
+                    continue
+                max_area = np.prod(mask.shape) * 0.25
+                current_area_threshold = min(area_threshold, max_area)
+
+                if apply_in_2d and ndim == 3:
+                    for z in range(mask.shape[0]):
+                        filled = remove_small_holes(mask[z], area_threshold=current_area_threshold)
+                        result[z][filled & (~mask[z])] = lbl
+                else:
+                    filled = remove_small_holes(mask, area_threshold=current_area_threshold)
+                    result[filled & (~mask)] = lbl
+        return result
+
+    def run_morphology_operation(self):
+        label_layer = self.last_bound_layer
+        if label_layer is None:
+            QMessageBox.warning(self, "Error", "No label layer selected.")
+            return
+
+        op_name = self.morph_op_combo.currentText()
+        radius = self.morph_kernel_spin.value()
+        target_label = self.morph_target_spin.value()
+        if target_label == 0:
+            target_label = None  # process all labels
+
+        op_map = {
+            "Erode": erosion,
+            "Dilate": dilation,
+            "Open": opening,
+            "Close": closing
+        }
+        morph_func = op_map.get(op_name)
+        if morph_func is None:
+            QMessageBox.warning(self, "Error", f"Unsupported operation: {op_name}")
+            return
+
+        data = label_layer.data.copy()
+        ndim = data.ndim
+
+        # Define structuring element
+        if ndim == 2:
+            selem = disk(radius)
+        elif ndim == 3:
+            selem = ball(radius)
+        else:
+            QMessageBox.warning(self, "Error", "Only 2D or 3D data is supported.")
+            return
+
+        # Duplicate if requested
+        target_layer = label_layer
+        if self.duplicate_checkbox.isChecked():
+            new_name = f"{label_layer.name}_morph"
+            target_layer = self.viewer.add_labels(data.copy(), name=new_name)
+            print(f"Operating on duplicated layer: {new_name}")
+            if self.on_click not in target_layer.mouse_drag_callbacks:
+                target_layer.mouse_drag_callbacks.append(self.on_click)
+            self.last_bound_layer = target_layer
+            data = target_layer.data.copy()
+
+        self.original_data_backup = data.copy()
+
+        result = np.zeros_like(data)
+
+        if target_label is not None:
+            mask = (data == target_label)
+            if not np.any(mask):
+                QMessageBox.information(self, "Info", f"Label {target_label} not found.")
+                return
+            transformed = morph_func(mask, selem)
+            result[transformed] = target_label
+        else:
+            unique_labels = np.unique(data)
+            for lbl in unique_labels:
+                if lbl == 0:
+                    continue
+                mask = (data == lbl)
+                if not np.any(mask):
+                    continue
+                transformed = morph_func(mask, selem)
+                result[transformed] = lbl
+
+        target_layer.data = result
+        QMessageBox.information(self, "Done", f"{op_name} operation completed.")
+
+
+    def run_filtering_operation(self):
+        label_layer = self.last_bound_layer
+        if label_layer is None:
+            QMessageBox.warning(self, "Error", "No label layer selected.")
+            return
+
+        min_size = self.filter_min_size_spin.value()
+        top_n = self.filter_top_n_spin.value()
+        target_label = self.filter_target_label_spin.value()
+        if target_label == 0:
+            target_label = None
+
+        if min_size == 0 and top_n == 0:
+            QMessageBox.information(self, "Info", "No filtering performed (min size and top-N both zero).")
+            return
+
+        data = label_layer.data.copy()
+        ndim = data.ndim
+        target_layer = label_layer
+
+        if self.duplicate_checkbox.isChecked():
+            new_name = f"{label_layer.name}_filtered"
+            target_layer = self.viewer.add_labels(data.copy(), name=new_name)
+            print(f"Operating on duplicated layer: {new_name}")
+            if self.on_click not in target_layer.mouse_drag_callbacks:
+                target_layer.mouse_drag_callbacks.append(self.on_click)
+            self.last_bound_layer = target_layer
+            data = target_layer.data.copy()
+
+        self.original_data_backup = data.copy()
+        result = data.copy()
+
+        if target_label is not None:
+            mask = (data == target_label)
+            result = self._filter_single_label(mask, result, target_label, min_size, top_n, ndim)
+        else:
+            unique_labels = np.unique(data)
+            for lbl in unique_labels:
+                if lbl == 0:
+                    continue
+                mask = (data == lbl)
+                result = self._filter_single_label(mask, result, lbl, min_size, top_n, ndim)
+
+        target_layer.data = result
+        QMessageBox.information(self, "Done", "Filtering completed.")
+    
+    def _filter_single_label(self, mask, result, label_val, min_size, top_n, ndim):
+        labeled = cc_label(mask, connectivity=1)
+        component_ids = np.unique(labeled)[1:]  # skip background 0
+
+        # Compute size of each component
+        sizes = {i: np.sum(labeled == i) for i in component_ids}
+
+        # Remove small components
+        keep_ids = [i for i, size in sizes.items() if size >= min_size] if min_size > 0 else list(component_ids)
+
+        # Keep only top-N if specified
+        if top_n > 0 and len(keep_ids) > top_n:
+            sorted_by_size = sorted(keep_ids, key=lambda x: sizes[x], reverse=True)
+            keep_ids = sorted_by_size[:top_n]
+
+        keep_mask = np.isin(labeled, keep_ids)
+        result[mask] = 0  # remove all current pixels of this label
+        result[keep_mask] = label_val
+        return result
+
+    def run_keep_top_n_labels(self):
+        label_layer = self.last_bound_layer
+        if label_layer is None:
+            QMessageBox.warning(self, "Error", "No label layer selected.")
+            return
+
+        top_n = self.keep_label_topn_spin.value()
+        data = label_layer.data.copy()
+
+        target_layer = label_layer
+        if self.duplicate_checkbox.isChecked():
+            new_name = f"{label_layer.name}_keeplabels"
+            target_layer = self.viewer.add_labels(data.copy(), name=new_name)
+            print(f"Operating on duplicated layer: {new_name}")
+            if self.on_click not in target_layer.mouse_drag_callbacks:
+                target_layer.mouse_drag_callbacks.append(self.on_click)
+            self.last_bound_layer = target_layer
+            data = target_layer.data.copy()
+
+        self.original_data_backup = data.copy()
+
+        # Compute label sizes
+        labels = np.unique(data)
+        labels = labels[labels != 0]
+
+        if top_n >= len(labels):
+            QMessageBox.information(self, "Info", f"Only {len(labels)} labels found. No filtering needed.")
+            return
+        sizes = {lbl: np.sum(data == lbl) for lbl in labels}
+        sorted_labels = sorted(sizes.items(), key=lambda x: x[1], reverse=True)
+
+        keep_labels = [lbl for lbl, _ in sorted_labels[:top_n]]
+
+        # Filter
+        result = np.where(np.isin(data, keep_labels), data, 0)
+        target_layer.data = result
+
+        QMessageBox.information(self, "Done", f"Kept top {top_n} labels.")
