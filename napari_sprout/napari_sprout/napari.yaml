@@ -17,6 +17,9 @@ contributions:
 
       python_name: napari_sprout._widget:make_sprout_widget_info
       title: SPROUT Info
+    - id: napari-sprout.map_sprout
+      python_name: napari_sprout._widget:make_sprout_widget_map
+      title: SPROUT Map
   widgets:
     - command: napari-sprout.make_widget
       display_name: SPROUT_main
@@ -25,5 +28,7 @@ contributions:
       display_name: SPROUT_load
     - command: napari-sprout.edit_widget
       display_name: SPROUT_edit
+    - command: napari-sprout.map_sprout
+      display_name: SPROUT_map
     - command: napari-sprout.info_widget
       display_name: SPROUT_info

@@ -41,6 +41,15 @@ class QtLabelSelector(QWidget):
         
         # Label layer selection
         self.layer_label = QLabel("Active Label Layer: (none)")
+        self.layer_label.setStyleSheet("""
+            QLabel {
+                font-weight: bold;
+                color: white;
+                background-color: #007ACC;  
+                padding: 4px;
+                border-radius: 4px;
+            }
+        """)
         self.layer_label.setToolTip("Displays the name of the currently active Labels layer in Napari.")
         layout.addWidget(self.layer_label)
         
@@ -247,7 +256,7 @@ class QtLabelSelector(QWidget):
         self.label_display.setText(f"Selected labels: {label_str}")
 
     def on_click(self, layer, event):
-        if not isinstance(layer, napari.layers.Labels):
+        if not isinstance(layer, Labels):
             return
         if "Control" not in event.modifiers:
             return

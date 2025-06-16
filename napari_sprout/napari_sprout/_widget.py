@@ -15,6 +15,7 @@ from .utils.sprout_bridge import SPROUTBridge
 
 from .widgets.info_widget import LabelLayerInfoWidget
 from .widgets.edit_widget import QtLabelSelector
+from .widgets.map_widget import LabelMapperWidget
 
 
 class SPROUTWidget(QWidget):
@@ -204,6 +205,31 @@ def make_sprout_widget_info(viewer: "napari.viewer.Viewer" = None):
     widget.show()
     return widget
 
+
+def make_sprout_widget_map(viewer: "napari.viewer.Viewer" = None):
+    """Create the SPROUT widget for mapping.
+
+    Parameters
+    ----------
+    viewer : napari.viewer.Viewer, optional
+        The napari viewer instance. If not provided, will get current viewer.
+
+    Returns
+    -------
+    widget : SPROUTWidget
+        The SPROUT widget instance.
+    """
+    if viewer is None:
+        # Get the current viewer from napari
+        import napari
+        viewer = napari.current_viewer()
+        if viewer is None:
+            raise RuntimeError("No napari viewer found")
+
+    widget = LabelMapperWidget(viewer)
+    # Ensure widget is visible
+    widget.show()
+    return widget
 
 ## Codes for load widget
 import os
