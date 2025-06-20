@@ -197,7 +197,7 @@ def run_batch_adaptive_seed(file_path):
 if __name__ == "__main__":
 
     # Get the file path from the first command-line argument or use the default
-    file_path = sys.argv[1] if len(sys.argv) > 1 else './PipelineSeed_all.yaml'
+    file_path = sys.argv[1] if len(sys.argv) > 1 else './batch_seeds.yaml'
     
     run_batch_seeds(file_path)
     

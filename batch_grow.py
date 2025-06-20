@@ -91,6 +91,6 @@ def run_batch_grow(file_path):
 if __name__ == "__main__":
     
     # Get the file path from the first command-line argument or use the default
-    file_path = sys.argv[1] if len(sys.argv) > 1 else './PipelineGrow.yaml'
+    file_path = sys.argv[1] if len(sys.argv) > 1 else './batch_grow.yaml'
     
     run_batch_grow(file_path)
