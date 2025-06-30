@@ -191,6 +191,8 @@ class LabelMapperWidget(QWidget):
             self.scheme.remove(name)
             self.update_scheme_ui()
             self.class_input.clear()
+        else:
+            QMessageBox.information(self, "Info", f"Class '{name}' not found in the scheme.")
 
     def update_scheme_ui(self, update_dropdown=True):
         self.scheme_list.clear()

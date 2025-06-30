@@ -64,6 +64,12 @@ class SizeReferenceGroupBox(QGroupBox):
 
         self.sync_size_from_radius()
 
+    def closeEvent(self, event):
+        if self.store_click_position in self.viewer.mouse_drag_callbacks:
+            self.viewer.mouse_drag_callbacks.remove(self.store_click_position)
+        print("Callback removed when widget closed.")
+        super().closeEvent(event)
+
     def store_click_position(self, viewer, event):
         if not self.click_radio.isChecked():
             return
