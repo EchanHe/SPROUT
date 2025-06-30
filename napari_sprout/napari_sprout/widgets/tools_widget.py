@@ -14,6 +14,10 @@ from qtpy.QtWidgets import (
     QSpinBox, QPushButton, QMessageBox, QRadioButton, QButtonGroup, QCheckBox,
     QFileDialog, QLineEdit, QTableWidget, QTableWidgetItem, QDialog, QDialogButtonBox
 )
+try:
+    from napari.qt import thread_worker
+except ImportError:
+    from napari.utils import thread_worker
 
 class SizeReferenceGroupBox(QGroupBox):
     def __init__(self, viewer):
@@ -396,15 +400,15 @@ class CSVAlignerGroupBox(QGroupBox):
 
         # === Run + Preview Buttons ===
         # run_layout = QHBoxLayout()
-        run_btn = QPushButton("Generate CSV")
-        run_btn.clicked.connect(self.run_alignment)
-        preview_btn = QPushButton("Preview")
-        preview_btn.clicked.connect(self.preview_alignment)
+        self.run_btn = QPushButton("Generate CSV")
+        self.run_btn.clicked.connect(self.run_alignment)
+        self.preview_btn = QPushButton("Preview")
+        self.preview_btn.clicked.connect(self.preview_alignment)
         # run_layout.addWidget(run_btn)
         # run_layout.addWidget(preview_btn)
         # self.layout().addLayout(run_layout)
-        self.layout().addWidget(preview_btn)
-        self.layout().addWidget(run_btn)
+        self.layout().addWidget(self.preview_btn)
+        self.layout().addWidget(self.run_btn)
         
 
     def _add_path_row(self, label_text, file_dialog=False):
@@ -466,7 +470,9 @@ class CSVAlignerGroupBox(QGroupBox):
         }
     def collect_threshold_params(self):
         return self.threshold_param_box.get_params()
-    def run_alignment(self):
+    
+    def run_alignment_no_background_thread(self):
+        ### old version without background thread
         try:
             # Collect parameters from input fields
             params = self.collect_params()
@@ -487,7 +493,8 @@ class CSVAlignerGroupBox(QGroupBox):
             print(f"[CSV Align Error] {e}")
             QMessageBox.critical(self, "Error", f"CSV creation failed:\n{str(e)}")
 
-    def preview_alignment(self):
+    def preview_alignment_no_background_thread(self):
+        ### old version without background thread
         try:
             # Collect parameters from input fields
             params = self.collect_params()
@@ -518,8 +525,101 @@ class CSVAlignerGroupBox(QGroupBox):
             dialog.exec_()
 
         except Exception as e:
-            print(f"[CSV Preview Error] {e}")
-            QMessageBox.critical(self, "Error", f"Preview failed:\n{str(e)}")
+            print(f"[CSV Align Error] {e}")
+            QMessageBox.critical(self, "Error", f"CSV preview failed:\n{str(e)}")
+            
+
+    def do_alignment_and_threshold(self):
+        params = self.collect_params()
+        df = align_files_to_df(**params)
+
+        if self.auto_threshold_checkbox.isChecked():
+            threshold_params = self.collect_threshold_params()
+            df = add_thresholds_to_df(df, threshold_params)
+
+        return df
+
+    def set_buttons_enabled(self, enabled: bool):
+        self.run_btn.setEnabled(enabled)
+        self.preview_btn.setEnabled(enabled)
+        
+    @thread_worker
+    def run_alignment_worker(self):
+        return self.do_alignment_and_threshold()
+
+    def run_alignment(self):
+        save_path = self.save_csv_line.text().strip()
+        if not save_path:
+            QMessageBox.warning(self, "Missing Output File", "Please specify an output file using the Browse button.")
+            return
+        if not save_path.endswith(".csv"):
+            save_path += ".csv"
+
+        self.set_buttons_enabled(False)  
+        worker = self.run_alignment_worker()
+
+        def handle_success(df):
+            df.to_csv(save_path, index=False)
+            self.show_info(f"CSV saved to:\n{save_path}")
+            self.set_buttons_enabled(True)
+
+        def handle_error(e):
+            self.show_error(f"CSV creation failed:\n{str(e)}")
+            self.set_buttons_enabled(True)
+
+        worker.returned.connect(handle_success)
+        worker.errored.connect(handle_error)
+        worker.start()
+
+    def _on_alignment_done(self, df, save_path):
+        df.to_csv(save_path, index=False)
+        self.show_info(f"CSV saved to:\n{save_path}")
+
+    def show_info(self, message):
+        QMessageBox.information(self, "Info", message)
+
+    def show_error(self, message):
+        QMessageBox.critical(self, "Error", message)
+
+
+    @thread_worker
+    def preview_alignment_worker(self):
+        return self.do_alignment_and_threshold()
+
+    def preview_alignment(self):
+        self.set_buttons_enabled(False)
+        worker = self.preview_alignment_worker()
+
+        def handle_success(df):
+            self._show_preview_dialog(df)
+            self.set_buttons_enabled(True)
+
+        def handle_error(e):
+            self.show_error(f"Preview failed:\n{str(e)}")
+            self.set_buttons_enabled(True)
+
+        worker.returned.connect(handle_success)
+        worker.errored.connect(handle_error)
+        worker.start()
+
+    def _show_preview_dialog(self, df):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Preview Aligned DataFrame")
+        dialog_layout = QVBoxLayout(dialog)
+        table = QTableWidget()
+        table.setColumnCount(len(df.columns))
+        table.setRowCount(len(df))
+        table.setHorizontalHeaderLabels(df.columns.tolist())
+
+        for row in range(len(df)):
+            for col, _ in enumerate(df.columns):
+                table.setItem(row, col, QTableWidgetItem(str(df.iloc[row, col])))
+
+        dialog_layout.addWidget(table)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok)
+        buttons.accepted.connect(dialog.accept)
+        dialog_layout.addWidget(buttons)
+        dialog.exec_()
 
 
     def toggle_threshold_widget(self):
