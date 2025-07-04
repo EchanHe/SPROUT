@@ -282,10 +282,10 @@ def make_seeds(**kwargs):
     is_napari = kwargs.get('is_napari', False)
 
     if num_threads is None:
-        num_threads = 1
+        num_threads = max(1, max_threads // 2)
 
     if num_threads>=max_threads:
-        num_threads = max_threads-1
+        num_threads = max(1,max_threads-1)
 
 
     if upper_thresholds is not None:

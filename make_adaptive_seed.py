@@ -16,7 +16,8 @@ from scipy.spatial import ConvexHull
 import sprout_core.sprout_core as sprout_core
 import sprout_core.config_core as config_core
 from sprout_core.sprout_core import reorder_segmentation
-
+from multiprocessing import cpu_count
+max_threads = cpu_count()
 
 
 def load_config_yaml(config, parent_key=''):
@@ -94,119 +95,30 @@ def detect_inter(ccomp_combine_seed,ero_seed, seed_ids, inter_log , lock):
                 prop = round(inter / np.sum(ccomp_combine_seed),6)*100
                 inter_log["inter_props"] = np.append(inter_log["inter_props"], prop)
 
-
-def make_seeds_merged_path_wrapper(img_path,
-                              threshold,
-                              output_folder,
-                              n_iters,
-                              segments,
-                              boundary_path=None,
-                              num_threads=1,
-                              background=0,
-                              sort=True,
-                              no_split_limit=3,
-                              min_size=5,
-                              min_split_prop=0.01,
-                              min_split_sum_prop=0,
-                              save_every_iter=False,
-                              save_merged_every_iter=False,
-                              name_prefix="Merged_seed",
-                              init_segments=None,
-                              footprint="ball",
-                              upper_threshold = None,
-                              split_size_limit = (None,None),
-                              split_convex_hull_limit = (None, None)
-                              ):
+def save_seed(seed, output_folder, output_name, is_napari=False, seeds_dict=None):
     """
-    Wrapper for make_seeds_merged_mp that performs erosion-based merged seed generation with multi-threading.
+    Save the seed to a specified folder.
 
     Args:
-        img_path (str): Path to the input image.
-        threshold (int): Threshold for segmentation. One value
-        output_folder (str): Directory to save output seeds.
-        n_iters (int): Number of erosion iterations.
-        segments (int): Number of segments to extract.
-        boundary_path (str, optional): Path to boundary image. Defaults to None.
-        num_threads (int, optional): Number of threads to use. Defaults to 1.
-        background (int, optional): Background value. Defaults to 0.
-        sort (bool, optional): Whether to sort output segment IDs. Defaults to True.
-        no_split_limit (int, optional): Early Stop Check: Limit for consecutive no-split iterations. Defaults to 3.
-        min_size (int, optional): Minimum size for segments. Defaults to 5.
-        min_split_prop (float, optional): Minimum proportion to consider a split. Defaults to 0.01.
-        min_split_sum_prop (float, optional): Minimum proportion of (sub-segments from next step)/(current segments)
-            to consider a split. Defaults to 0.
-        save_every_iter (bool, optional): Save results at every iteration. Defaults to False.
-        save_merged_every_iter (bool, optional): Save merged results at every iteration. Defaults to False.
-        name_prefix (str, optional): Prefix for output file names. Defaults to "Merged_seed".
-        init_segments (int, optional): Initial segments. Defaults to None.
-        footprint (str, optional): Footprint shape for erosion. Defaults to "ball".
-        split_size_limit (optional): create a split if the region size (np.sum(mask)) is within the limit
-        split_convex_hull_limit: create a split if the the convex hull's area/volume is within the limit
-
-    Returns:
-        tuple: Merged seeds, original combine ID map, and output dictionary.
+        seed (np.ndarray): Seed data to save.
+        output_folder (str): Folder to save the seed.
+        output_name (str): Name of the output file.
+        is_napari (bool, optional): Whether to save in napari format. Defaults to False.
     """
-    # Read the image
-    img = imread(img_path)
-    print(f"Loaded image from: {img_path}")
+    output_path = os.path.join(output_folder, output_name)
+    print(f"\tSaving {output_path}")
+    imwrite(output_path, seed, compression='zlib')
     
-    # Read the boundary if provided
-    boundary = None
-    if boundary_path is not None:
-        boundary = imread(boundary_path)
-    
-    # Prepare values for printing
-    start_time = datetime.now()
-    values_to_print = {
-        "Boundary Path": boundary_path if boundary_path else "None"
-    }
-
-    # Print detailed values
-    print("Start time: " + start_time.strftime("%Y-%m-%d %H:%M:%S"))
-    print(f"Processing Image: {img_path}")
-    for key, value in values_to_print.items():
-        print(f"  {key}: {value}")
-    
-    
-    # Call the original function
-    seed ,ori_combine_ids_map , output_dict=make_seeds_merged_mp(img=img,
-                        threshold=threshold,
-                        output_folder=output_folder,
-                        n_iters=n_iters,
-                        segments=segments,
-                        boundary=boundary,
-                        num_threads=num_threads,
-                        no_split_limit=no_split_limit,
-                        min_size=min_size,
-                        sort=sort,
-                        min_split_prop=min_split_prop,
-                        background=background,
-                        save_every_iter=save_every_iter,
-                        save_merged_every_iter=save_merged_every_iter,
-                        name_prefix=name_prefix,
-                        init_segments=init_segments,
-                        footprint=footprint,
-                        min_split_sum_prop=min_split_sum_prop,
-                        upper_threshold = upper_threshold,
-                        split_size_limit = split_size_limit,
-                        split_convex_hull_limit = split_convex_hull_limit
-                        )
+    if is_napari:
+        seeds_dict[output_name] = seed
 
 
-    end_time = datetime.now()
-    running_time = end_time - start_time
-    total_seconds = running_time.total_seconds()
-    minutes, _ = divmod(total_seconds, 60)
-    print(f"Running time:{minutes}")
-    
-    return seed ,ori_combine_ids_map , output_dict
 
-
-def make_seeds_merged_mp(
+def make_adaptive_seed_ero(
                          
                         threshold,
                         output_folder,
-                        n_iters, 
+                        ero_iters, 
                         segments,
                         
                         img = None,
@@ -215,7 +127,7 @@ def make_seeds_merged_mp(
                         boundary = None,
                         boundary_path = None,
                         
-                        num_threads = 1,
+                        num_threads = None,
                         background = 0,
                         sort = True,
                         no_split_limit =3,
@@ -230,7 +142,8 @@ def make_seeds_merged_mp(
                         upper_threshold = None,
                         split_size_limit = (None,None),
                         split_convex_hull_limit = (None, None),
-                        sub_folder = None                    
+                        sub_folder = None,
+                        is_napari = False                    
                       ):
     """
     Erosion-based merged seed generation with multi-threading.
@@ -239,7 +152,7 @@ def make_seeds_merged_mp(
         img (np.ndarray): Input image.
         threshold (int): Threshold for segmentation. One value
         output_folder (str): Directory to save output seeds.
-        n_iters (int): Number of erosion iterations.
+        ero_iters (int): Number of erosion iterations.
         segments (int): Number of segments to extract.
         boundary (np.ndarray, optional): Boundary mask. Defaults to None.
         num_threads (int, optional): Number of threads to use. Defaults to 1.
@@ -272,9 +185,14 @@ def make_seeds_merged_mp(
     min_split_prop = min_split_prop*100
     min_split_sum_prop = min_split_sum_prop*100
 
+    if num_threads is None:
+        num_threads = max(1, max_threads // 2)
+
+    if num_threads>=max_threads:
+        num_threads = max(1,max_threads-1)
 
 
-    output_name = f"{name_prefix}_thre_{threshold}_{upper_threshold}_ero_{n_iters}"
+    output_name = f"{name_prefix}_thre_{threshold}_{upper_threshold}_ero_{ero_iters}"
     
     if sub_folder is None:
         output_folder = os.path.join(output_folder, output_name)
@@ -285,9 +203,9 @@ def make_seeds_merged_mp(
     if isinstance(footprint, str):
 
         assert footprint in config_core.support_footprints, f"footprint {footprint} is invalid, use supported footprints"
-        footprint_list = [footprint]*n_iters
+        footprint_list = [footprint]*ero_iters
     elif isinstance(footprint, list):
-        assert len(footprint) ==n_iters, "If input_footprints is a list, it must have the same length as ero_iters"
+        assert len(footprint) ==ero_iters, "If input_footprints is a list, it must have the same length as ero_iters"
         
         check_support_footprint = [footprint in config_core.support_footprints for footprint in footprint]
         if not np.all(check_support_footprint):
@@ -302,7 +220,7 @@ def make_seeds_merged_mp(
         "Threshold": threshold,
         "upper_threshold": upper_threshold,
         "Output Folder": output_folder,
-        "Erosion Iterations": n_iters,
+        "Erosion Iterations": ero_iters,
         "Segments": segments,
         "boundary_path": boundary_path,
         
@@ -346,10 +264,12 @@ def make_seeds_merged_mp(
 
     init_seed, _ = sprout_core.get_ccomps_with_size_order(img,init_segments)
     
+    seeds_dict = {}
+    
     output_img_name = f'INTER_thre_{threshold}_{upper_threshold}_ero_0.tif'
     if save_every_iter:
-        imwrite(os.path.join(output_folder,output_img_name), init_seed, 
-            compression ='zlib')
+        save_seed(init_seed, output_folder, output_img_name, is_napari=is_napari, seeds_dict=seeds_dict)      
+        
     
     init_ids = [int(value) for value in np.unique(init_seed) if value != background]
     max_seed_id = int(np.max(init_ids))
@@ -376,7 +296,7 @@ def make_seeds_merged_mp(
     no_consec_split_count = 0
     
 
-    for ero_iter in range(1, n_iters+1):
+    for ero_iter in range(1, ero_iters+1):
         
         
         print(f"working on erosion {ero_iter}")
@@ -390,15 +310,14 @@ def make_seeds_merged_mp(
         seed, _ = sprout_core.get_ccomps_with_size_order(img,segments)
         seed = seed.astype('uint16')
         
-        output_img_name = f'INTER_thre_{threshold}_{upper_threshold}_ero_{ero_iter}.tif'
-        output_dict["cur_seed_name"][threshold] = output_img_name
+
         
         if save_every_iter:
-            output_path = os.path.join(output_folder, output_img_name)
-            print(f"\tSaving {output_path}")
-            
-            imwrite(output_path, seed, 
-                compression ='zlib')
+            output_img_name = f'INTER_thre_{threshold}_{upper_threshold}_ero_{ero_iter}.tif'
+            output_dict["cur_seed_name"][threshold] = output_img_name
+            save_seed(seed, output_folder, output_img_name, is_napari=is_napari, seeds_dict=seeds_dict)
+
+
 
         seed_ids = [int(value) for value in np.unique(seed) if value != background]
         combine_ids = [int(value) for value in np.unique(combine_seed) if value != background]
@@ -493,12 +412,12 @@ def make_seeds_merged_mp(
             
         
         if save_merged_every_iter:
-            combine_seed,_ = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort)
-            output_path = os.path.join(output_folder,"INTER_merged_"+ output_name+f'ero_{ero_iter}.tif')
+            output_img_name = "INTER_merged_"+ output_name+f'ero_{ero_iter}.tif'
             
-            print(f"\tSaving merged output:{output_path}")
-            imwrite(output_path, combine_seed, 
-                compression ='zlib')    
+            combine_seed,_ = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort)
+            
+            save_seed(combine_seed, output_folder, output_img_name, is_napari=is_napari, seeds_dict=seeds_dict)
+            
         
         if no_consec_split_count>=no_split_limit:
             print(f"detect non split for {no_consec_split_count}rounds")
@@ -506,19 +425,22 @@ def make_seeds_merged_mp(
             break
         
 
-    # output_path = os.path.join(output_folder,output_name+'.tif')
-    # print(f"\tSaving final output:{output_path}")
-    # imwrite(output_path, combine_seed, 
-    #     compression ='zlib')
+
     
     combine_seed,_ = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort)
     if sort:
         output_path = os.path.join(output_folder,"FINAL_" + output_name+'_sorted.tif')
     else:
         output_path = os.path.join(output_folder,"FINAL_" + output_name+'.tif')
-    print(f"\tSaving final output:{output_path}")
-    imwrite(output_path, combine_seed, 
-        compression ='zlib')
+    
+    output_img_name = "FINAL_" + output_name+'_sorted.tif'
+    
+    save_seed(combine_seed, output_folder, output_img_name, is_napari=is_napari, seeds_dict=seeds_dict)
+    
+    # imwrite(output_path, combine_seed, 
+    #     compression ='zlib')
+    
+    # save_seed(combine_seed, output_folder, output_img_name, is_napari=is_napari, seeds_dict=seeds_dict)
     
 
     config_core.save_config_with_output({
@@ -529,122 +451,13 @@ def make_seeds_merged_mp(
                                                   f"output_dict_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"),
                                      index=False)
 
-    return combine_seed,ori_combine_ids_map, output_dict    
+    return seeds_dict,ori_combine_ids_map, output_dict    
 
 
-def make_seeds_merged_by_thres_path_wrapper(img_path,
-                                       thresholds,
-                                       output_folder,
-                                       n_iters,
-                                       segments,
-                                       num_threads=1,
-                                       boundary_path=None,
-                                       background=0,
-                                       sort=True,
-                                       
-                                       no_split_limit=3,
-                                       min_size=5,
-                                       min_split_prop=0.01,
-                                       min_split_sum_prop=0,
-                                       
-                                       save_every_iter=False,
-                                       save_merged_every_iter=False,
-                                       name_prefix="Merged_seed",
-                                       init_segments=None,
-                                       footprint="ball",
-                                       
-                                       upper_thresholds = None,
-                                       split_size_limit = (None, None),
-                                       split_convex_hull_limit = (None, None)
-                                       ):
-    """
-    Wrapper for make_seeds_merged_by_thres_mp that performs thresholds-based merged seed generation.
-
-    Args:
-        img_path (str): Path to the input image.
-        thresholds (list): List of thresholds for segmentation.
-        output_folder (str): Directory to save the output.
-        n_iters (int): Number of erosion iterations.
-        segments (int): Number of segments to extract.
-        num_threads (int, optional): Number of threads for parallel processing. Defaults to 1.
-        boundary_path (str, optional): Path to boundary image. Defaults to None.
-        background (int, optional): Value of background pixels. Defaults to 0.
-        sort (bool, optional): Whether to sort segment IDs. Defaults to True.
-        
-        no_split_limit (int, optional): Early Stop Check: Limit for consecutive no-split iterations. Defaults to 3.
-        min_size (int, optional): Minimum size for segments. Defaults to 5.
-        min_split_prop (float, optional): Minimum proportion to consider a split. Defaults to 0.01.
-        min_split_sum_prop (float, optional): Minimum proportion of (sub-segments from next step)/(current segments)
-            to consider a split. Defaults to 0.
-            
-        save_every_iter (bool, optional): Save results at every iteration. Defaults to False.
-        save_merged_every_iter (bool, optional): Save merged results at every iteration. Defaults to False.
-        name_prefix (str, optional): Prefix for output file names. Defaults to "Merged_seed".
-        init_segments (int, optional): Number of segments for the first seed, defaults is None.
-            A small number of make the initial sepration faster, as normally the first seed only has a big one component
-        footprint (str, optional): Footprint shape for erosion. Defaults to "ball".
-        split_size_limit (optional): create a split if the region size (np.sum(mask)) is within the limit
-        split_convex_hull_limit: create a split if the the convex hull's area/volume is within the limit
-    Returns:
-        tuple: Merged seed, original combine ID map, and output dictionary.
-    """
-    # Read the image
-    img = imread(img_path)
-    print(f"Loaded image from: {img_path}")
-    
-    # Read the boundary if provided
-    boundary = None
-    if boundary_path is not None:
-        boundary = imread(boundary_path)
-    
-    # Prepare values for printing
-    start_time = datetime.now()
-    values_to_print = {
-        "Boundary Path": boundary_path if boundary_path else "None"
-    }
-
-    # Print detailed values
-    print("Start time: " + start_time.strftime("%Y-%m-%d %H:%M:%S"))
-    print(f"Processing Image: {img_path}")
-    for key, value in values_to_print.items():
-        print(f"  {key}: {value}")
-    
-    # Call the original function
-    combine_seed,ori_combine_ids_map, output_dict  = make_seeds_merged_by_thres_mp(img=img,
-                                  thresholds=thresholds,
-                                  output_folder=output_folder,
-                                  n_iters=n_iters,
-                                  segments=segments,
-                                  boundary=boundary,
-                                  num_threads=num_threads,
-                                  no_split_limit=no_split_limit,
-                                  min_size=min_size,
-                                  sort=sort,
-                                  min_split_prop=min_split_prop,
-                                  background=background,
-                                  save_every_iter=save_every_iter,
-                                  save_merged_every_iter=save_merged_every_iter,
-                                  name_prefix=name_prefix,
-                                  init_segments=init_segments,
-                                  footprint=footprint,
-                                  min_split_sum_prop=min_split_sum_prop,
-                                  
-                                  upper_thresholds = upper_thresholds,
-                                  split_size_limit = split_size_limit,
-                                  split_convex_hull_limit = split_convex_hull_limit)
-
-    end_time = datetime.now()
-    running_time = end_time - start_time
-    total_seconds = running_time.total_seconds()
-    minutes, _ = divmod(total_seconds, 60)
-    print(f"Running time:{minutes}")
-    
-    return combine_seed,ori_combine_ids_map, output_dict
-
-def make_seeds_merged_by_thres_mp(
+def make_adaptive_seed_thre(
                         thresholds,
                         output_folder,
-                        n_iters, 
+                        ero_iters, 
                         segments,
                         
                         img = None,
@@ -653,7 +466,7 @@ def make_seeds_merged_by_thres_mp(
                         boundary =None,
                         boundary_path = None,
                         
-                        num_threads = 1,
+                        num_threads = None,
                         
                         background = 0,
                         sort = True,
@@ -672,49 +485,100 @@ def make_seeds_merged_by_thres_mp(
                         upper_thresholds = None,
                         split_size_limit = (None, None),
                         split_convex_hull_limit = (None, None),
-                        sub_folder = None  
+                        sub_folder = None,
+                        is_napari = False  
                     ):
-    """
-    Thresholds-based merged seed generation.
-
-    Args:
-        img (np.ndarray): Input image.
-        thresholds (list): List of thresholds for segmentation.
-        output_folder (str): Directory to save the output.
-        n_iters (int): Number of erosion iterations.
-        segments (int): Number of segments to extract.
-        num_threads (int, optional): Number of threads for parallel processing. Defaults to 1.
-        boundary (np.ndarray, optional): Boundary mask. Defaults to None.
-        background (int, optional): Value of background pixels. Defaults to 0.
-        sort (bool, optional): Whether to sort segment IDs. Defaults to True.
+    
+    """Perform adaptive seed generation and iterative splitting for image segmentation using thresholding and morphological erosion.
+    This function processes an input image (or loads it from a path), applies a threshold and a given erosion number to generate initial seed regions, 
+    Then it iterates through a sequence of thresholds to try to create smaller regions and more separations.
+    
+    
+    for splitting, minimum region size, and stopping criteria. Optionally, boundaries can be masked, and results can be saved at each iteration.
+    
+    Parameters
+    ----------
+    thresholds : list or array-like
+        Sequence of threshold values to apply for seed generation and splitting.
+    output_folder : str
+        Path to the folder where output files will be saved.
+    ero_iters : int
+        Number of erosion iterations to apply at each thresholding step.
+    segments : int
+        Number of connected components (segments) to extract at each step.
+    img : np.ndarray, optional
+        Input image array. If not provided, `img_path` must be specified.
+    img_path : str, optional
+        Path to the input image file. Used if `img` is not provided.
+    boundary : np.ndarray, optional
+        Binary mask to explicitly specify boundaries to exclude from processing.
+    boundary_path : str, optional
+        Path to the boundary mask file. Used if `boundary` is not provided.
+    num_threads : int, default=1
+        Number of threads to use for parallel processing during intersection checks.
+    background : int, default=0
+        Value representing the background in the segmentation.
+    sort : bool, default=True
+        Whether to sort segment IDs by size in the final output.
+    no_split_limit : int, default=3
+        Number of consecutive iterations without splits before stopping the process.
+    min_size : int, default=5
+        Minimum size (in pixels) for a segment to be kept.
+    min_split_prop : float, default=0.01
+        Minimum proportion (relative to the parent region) for a split segment to be considered valid.
+    min_split_sum_prop : float, default=0
+        Minimum total proportion of split segments required to perform a split.
+    save_every_iter : bool, default=False
+        If True, save the seed mask at every iteration.
+    save_merged_every_iter : bool, default=False
+        If True, save the merged seed mask at every iteration.
+    name_prefix : str, default="Merged_seed"
+        Prefix for output file names.
+    init_segments : int, optional
+        Number of initial segments to extract. Defaults to `segments` if not provided.
+    footprint : str or list, default="ball"
+        Morphological footprint shape or list of shapes for erosion. If a list, must match `ero_iters`.
+    upper_thresholds : list or array-like, optional
+        Sequence of upper threshold values for range-based thresholding. Must match `thresholds` in length.
+    split_size_limit : tuple, default=(None, None)
+        Minimum and maximum size limits for split segments.
+    split_convex_hull_limit : tuple, default=(None, None)
+        Minimum and maximum convex hull size limits for split segments.
+    sub_folder : str, optional
+        Subfolder name within `output_folder` for saving results.
         
-        no_split_limit (int, optional): Early Stop Check: Limit for consecutive no-split iterations. Defaults to 3.
-        min_size (int, optional): Minimum size for segments. Defaults to 5.
-        min_split_prop (float, optional): Minimum proportion to consider a split. Defaults to 0.01.
-        min_split_sum_prop (float, optional): Minimum proportion of (sub-segments from next step)/(current segments)
-            to consider a split. Defaults to 0.
-            
-        save_every_iter (bool, optional): Save results at every iteration. Defaults to False.
-        save_merged_every_iter (bool, optional): Save merged results at every iteration. Defaults to False.
-        name_prefix (str, optional): Prefix for output file names. Defaults to "Merged_seed".
-        init_segments (int, optional): Number of segments for the first seed, defaults is None.
-            A small number of make the initial sepration faster, as normally the first seed only has a big one component
-        footprint (str, optional): Footprint shape for erosion. Defaults to "ball".
-        split_size_limit (optional): create a split if the region size (np.sum(mask)) is within the limit
-        split_convex_hull_limit: create a split if the the convex hull's area/volume is within the limit
+    Returns
+    -------
+    combine_seed : np.ndarray
+        Final merged seed mask after all iterations and splits.
+    ori_combine_ids_map : dict
+        Mapping from original segment IDs to their descendant IDs after splitting.
+    output_dict : dict
+        Dictionary containing detailed information about splits, segment IDs, and output files for each threshold.
+    
+    Notes
+    -----
+    - The function saves intermediate and final segmentation results as TIFF files in the specified output folder.
+    - A CSV file summarizing the split operations and parameters is also saved.
 
-    Returns:
-        tuple: Merged seed, original combine ID map, and output dictionary.
     """
+    
+    
 
     img = sprout_core.check_and_load_data(img, img_path, "img")
     if not (boundary is None and boundary_path is None):
         boundary = sprout_core.check_and_load_data(boundary, boundary_path, "boundary")
 
+    if num_threads is None:
+        num_threads = max(1, max_threads // 2)
+
+    if num_threads>=max_threads:
+        num_threads = max(1,max_threads-1)
+
     min_split_prop = min_split_prop*100
     min_split_sum_prop = min_split_sum_prop*100
 
-    output_name = f"{name_prefix}_ero_{n_iters}"
+    output_name = f"{name_prefix}_ero_{ero_iters}"
     
     
     if sub_folder is None:
@@ -727,9 +591,9 @@ def make_seeds_merged_by_thres_mp(
     if isinstance(footprint, str):
 
         assert footprint in config_core.support_footprints, f"footprint {footprint} is invalid, use supported footprints"
-        footprint_list = [footprint]*n_iters
+        footprint_list = [footprint]*ero_iters
     elif isinstance(footprint, list):
-        assert len(footprint) ==n_iters, "If input_footprints is a list, it must have the same length as ero_iters"
+        assert len(footprint) ==ero_iters, "If input_footprints is a list, it must have the same length as ero_iters"
         
         check_support_footprint = [footprint in config_core.support_footprints for footprint in footprint]
         if not np.all(check_support_footprint):
@@ -744,7 +608,7 @@ def make_seeds_merged_by_thres_mp(
         "Thresholds": thresholds,
         "upper_thresholds": upper_thresholds,
         "Output Folder": output_folder,
-        "Erosion Iterations": n_iters,
+        "Erosion Iterations": ero_iters,
         "Segments": segments,
         "boundary_path": boundary_path,
         
@@ -787,15 +651,17 @@ def make_seeds_merged_by_thres_mp(
         boundary = sprout_core.check_and_cast_boundary(boundary)
         img[boundary] = False
     
-    for ero_iter in range(1, n_iters+1):
+    for ero_iter in range(1, ero_iters+1):
         mask = sprout_core.erosion_binary_img_on_sub(mask, kernal_size = 1,
                                                      footprint=footprint_list[ero_iter-1])
     init_seed, _ = sprout_core.get_ccomps_with_size_order(mask,init_segments)
     
-    output_img_name = f'INTER_thre_{thresholds[0]}_ero_{n_iters}.tif'
+    seeds_dict = {}
+    
+    output_img_name = f'INTER_thre_{thresholds[0]}_ero_{ero_iters}.tif'
     if save_every_iter:
-        imwrite(os.path.join(output_folder,output_img_name), init_seed, 
-            compression ='zlib')
+        save_seed(init_seed, output_folder, output_img_name, 
+                  is_napari=is_napari, seeds_dict=seeds_dict)
             
     
     init_ids = [int(value) for value in np.unique(init_seed) if value != background]
@@ -838,18 +704,20 @@ def make_seeds_merged_by_thres_mp(
 
         # mask = img>=threshold
         
-        for ero_iter in range(1, n_iters+1):
+        for ero_iter in range(1, ero_iters+1):
             mask = sprout_core.erosion_binary_img_on_sub(mask, kernal_size = 1,
                                                          footprint=footprint_list[ero_iter-1])
         seed, _ = sprout_core.get_ccomps_with_size_order(mask,segments)
         seed = seed.astype('uint16')
         
-        output_img_name = f'INTER_thre_{threshold}_ero_{n_iters}.tif'
-        output_dict["cur_seed_name"][threshold] = output_img_name
+
         if save_every_iter:
-            output_path = os.path.join(output_folder,output_img_name)
-            print(f"\tSaving {output_path}")
-            imwrite(output_path, seed, compression ='zlib')
+            output_img_name = f'INTER_thre_{threshold}_ero_{ero_iters}.tif'
+            output_dict["cur_seed_name"][threshold] = output_img_name
+            
+            save_seed(seed, output_folder, output_img_name, 
+                      is_napari=is_napari, seeds_dict=seeds_dict)
+
         
         seed_ids = [int(value) for value in np.unique(seed) if value != background]
         combine_ids = [int(value) for value in np.unique(combine_seed) if value != background]
@@ -952,30 +820,18 @@ def make_seeds_merged_by_thres_mp(
                 break
         
         if save_merged_every_iter:
+            output_img_name = "INTER_merged_" + output_name+f'thre_{threshold}.tif'
             combine_seed,_ = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort)
-            output_path = os.path.join(output_folder, "INTER_merged_" + output_name+f'thre_{threshold}.tif')
             
-            print(f"\tSaving merged output:{output_path}")
-            imwrite(output_path, combine_seed, 
-                compression ='zlib')    
-    
-    # output_path = os.path.join(output_folder,output_name+'.tif')
-    # print(f"\tSaving final output:{output_path}")
-    # imwrite(output_path, combine_seed, 
-    #     compression ='zlib')
-    
-    
-
-        
+            save_seed(combine_seed, output_folder, output_img_name, is_napari=is_napari, seeds_dict=seeds_dict)
+         
     combine_seed,_ = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort)
     if sort:
         output_path = os.path.join(output_folder,"FINAL_" + output_name+'_sorted.tif')
     else:
         output_path = os.path.join(output_folder,"FINAL_" + output_name+'.tif')
-        
-    print(f"\tSaving final output:{output_path}")
-    imwrite(output_path, combine_seed, 
-        compression ='zlib')
+    output_img_name = "FINAL_" + output_name+'_sorted.tif'
+    save_seed(combine_seed, output_folder, output_img_name, is_napari=is_napari, seeds_dict=seeds_dict)
 
     config_core.save_config_with_output({
         "params": values_to_print},output_folder)
@@ -986,7 +842,7 @@ def make_seeds_merged_by_thres_mp(
                                      index=False)
     
              
-    return combine_seed,ori_combine_ids_map, output_dict  
+    return seeds_dict,ori_combine_ids_map, output_dict  
 
 def run_make_adaptive_seed(file_path):
   
@@ -1030,10 +886,10 @@ def run_make_adaptive_seed(file_path):
     sub_folder = os.path.basename(config['img_path'])
     
     if seed_merging_mode == "ERO":
-        seed ,ori_combine_ids_map , output_dict=  make_seeds_merged_mp(
+        seeds_dict ,ori_combine_ids_map , output_dict=  make_adaptive_seed_ero(
                                     threshold=config['thresholds'],
                                     output_folder=config['output_folder'],
-                                    n_iters=config['ero_iters'], 
+                                    ero_iters=config['ero_iters'], 
                                     segments= config['segments'],
                                     num_threads = config['num_threads'],
                                     
@@ -1060,7 +916,8 @@ def run_make_adaptive_seed(file_path):
                                     split_size_limit= optional_params["split_size_limit"],
                                     split_convex_hull_limit = optional_params["split_convex_hull_limit"],
                                     
-                                    sub_folder = sub_folder
+                                    sub_folder = sub_folder,
+                                    is_napari = False
                                         
                                     )
     
@@ -1068,11 +925,11 @@ def run_make_adaptive_seed(file_path):
     
     elif seed_merging_mode=="THRE":
    
-        seed ,ori_combine_ids_map , output_dict= make_seeds_merged_by_thres_mp(
+        seeds_dict ,ori_combine_ids_map , output_dict= make_adaptive_seed_thre(
 
-                                   thresholds=config['thresholds'],
+                                    thresholds=config['thresholds'],
                                     output_folder=config['output_folder'],
-                                    n_iters=config['ero_iters'], 
+                                    ero_iters=config['ero_iters'], 
                                     segments= config['segments'],
                                     
                                     num_threads = config['num_threads'],
@@ -1100,7 +957,9 @@ def run_make_adaptive_seed(file_path):
                                     split_size_limit= optional_params["split_size_limit"],
                                     split_convex_hull_limit = optional_params["split_convex_hull_limit"],
                                     
-                                    sub_folder = sub_folder                
+                                    sub_folder = sub_folder,    
+                                    
+                                    is_napari=False            
                                     )
                 
 

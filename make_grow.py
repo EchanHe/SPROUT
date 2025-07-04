@@ -7,7 +7,7 @@ import yaml
 import numpy as np
 import pandas as pd
 import glob
-import multiprocessing
+
 import threading
 
 import sprout_core.sprout_core as sprout_core 
@@ -15,9 +15,9 @@ import sprout_core.config_core as config_core
 import sprout_core.vis_lib as vis_lib
 import make_mesh
 
-
+from multiprocessing import cpu_count
 # Maximum threads for multiprocessing
-max_threads = multiprocessing.cpu_count()
+max_threads = cpu_count()
 lock = threading.Lock()
 
 
@@ -174,13 +174,17 @@ def grow_mp(**kwargs):
     
     
     default_grow_to_end_iter = 200
+    
     if grow_to_end:
         dilate_iters = [default_grow_to_end_iter] * len(dilate_iters)    
     
     boundary_path  = kwargs.get('boundary_path', None)
     
     if num_threads is None:
-        num_threads = max_threads-1
+        num_threads = max(1, max_threads // 2)
+
+    if num_threads>=max_threads:
+        num_threads =  max(1,max_threads-1)
     
     # Test if the grown result and input's diff is more than this. Default is 10.
     # min_diff = 50
@@ -253,7 +257,11 @@ def grow_mp(**kwargs):
     df_log = []
 
     result = input_mask.copy()
-    result = result.astype('uint8')
+    if np.unique(result).size > 255:
+        print("Input mask has more than 65535 ids, converting to uint16")
+        result = result.astype('uint16')
+    else:
+        result = result.astype('uint8')
         
     # Iterate through and make growth results
     for i, (threshold,dilate_iter) in enumerate(zip(thresholds,dilate_iters)):

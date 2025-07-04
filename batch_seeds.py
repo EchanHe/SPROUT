@@ -111,10 +111,10 @@ def run_batch_adaptive_seed(file_path):
             if seed_merging_mode == "THRE":
         
                 print("Running make_adaptive_seed_thre")
-                seed ,ori_combine_ids_map , output_dict=make_adaptive_seed.make_adaptive_seed_thre(                           
+                _ ,ori_combine_ids_map , output_dict=make_adaptive_seed.make_adaptive_seed_thre(                           
                                    thresholds=config['thresholds'],
                                     output_folder=config['output_folder'],
-                                    n_iters=config['ero_iters'], 
+                                    ero_iters=config['ero_iters'], 
                                     segments= config['segments'],
                                     
                                     num_threads = config['num_threads'],
@@ -150,11 +150,11 @@ def run_batch_adaptive_seed(file_path):
                 print("Running make_seeds_merged")
 
                 
-                seed ,ori_combine_ids_map , output_dict=make_adaptive_seed.make_adaptive_seed(                           
+                _ ,ori_combine_ids_map , output_dict=make_adaptive_seed.make_adaptive_seed_ero(                           
                                        
                                     threshold=config['thresholds'],
                                     output_folder=config['output_folder'],
-                                    n_iters=config['ero_iters'], 
+                                    ero_iters=config['ero_iters'], 
                                     segments= config['segments'],
                                     num_threads = config['num_threads'],
                                     
