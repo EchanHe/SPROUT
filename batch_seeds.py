@@ -43,7 +43,7 @@ def run_batch_seeds(file_path):
         optional_params = config_core.validate_input_yaml(config, config_core.input_val_make_seeds_all)
         try:           
                
-            output_dict = make_seeds.make_seeds(
+            _,_ = make_seeds.make_seeds(
                                     img_path= config['img_path'],
                                     
                                     num_threads = config['num_threads'] , 
@@ -110,8 +110,8 @@ def run_batch_adaptive_seed(file_path):
                     
             if seed_merging_mode == "THRE":
         
-                print("Running make_seeds_merged_by_thres_mp")
-                seed ,ori_combine_ids_map , output_dict=make_adaptive_seed.make_seeds_merged_by_thres_mp(                           
+                print("Running make_adaptive_seed_thre")
+                seed ,ori_combine_ids_map , output_dict=make_adaptive_seed.make_adaptive_seed_thre(                           
                                    thresholds=config['thresholds'],
                                     output_folder=config['output_folder'],
                                     n_iters=config['ero_iters'], 
@@ -150,7 +150,7 @@ def run_batch_adaptive_seed(file_path):
                 print("Running make_seeds_merged")
 
                 
-                seed ,ori_combine_ids_map , output_dict=make_adaptive_seed.make_seeds_merged_mp(                           
+                seed ,ori_combine_ids_map , output_dict=make_adaptive_seed.make_adaptive_seed(                           
                                        
                                     threshold=config['thresholds'],
                                     output_folder=config['output_folder'],
