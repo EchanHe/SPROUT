@@ -80,13 +80,7 @@ def gen_seed_mp(volume, thre_fp_pairs, ero_iter , segments ,
                                           boundary = boundary,
                                           is_return_seeds = is_napari)
         
-        # seed = seed.astype('uint8')
-        # seed_file = os.path.join(output_seed_folder , 
-        #                     f"thre_ero_{ero_iter}iter_thre{threshold}.tif")
-        
-        # tifffile.imwrite(seed_file, 
-        #     seed)
-        
+
         # log_dict['input_file'] = file_path
         print(f"Seeds are saved to {output_seed_folder}")
         print(f"Log file has been saved to {output_json_path}")
@@ -181,8 +175,8 @@ def make_seeds(**kwargs):
         Path to the boundary mask file.
     output_folder : str, optional
         Directory where output files will be saved.
-    name_prefix : str, optional
-        Prefix for naming output files and folders.
+    base_name : str, optional
+        base_name for naming output files and folders.
     ero_iters : int
         Number of erosion iterations to perform.
     thresholds : int or list of int
@@ -240,20 +234,16 @@ def make_seeds(**kwargs):
     boundary_path  = kwargs.get('boundary_path', None) 
 
     output_folder = kwargs.get('output_folder', None) 
-    name_prefix = kwargs.get('name_prefix', None) 
+    base_name = kwargs.get('base_name', None) 
 
     # Add work space if necessary
     if workspace is not None:
         img_path = os.path.join(workspace, img_path)
         output_folder =os.path.join(workspace, output_folder)
     
-    if img is None:
-        img_name = img_path
-        name_prefix = os.path.basename(img_path)
-    else:
-        img_name = name_prefix
+    base_name = sprout_core.check_and_assign_base_name(base_name, img_path, "seed")
 
-
+            
     img = sprout_core.check_and_load_data(img, img_path, "img")
     if not (boundary is None and boundary_path is None):
         boundary = sprout_core.check_and_load_data(boundary, boundary_path, "boundary")
@@ -339,23 +329,19 @@ def make_seeds(**kwargs):
     # threshold_ero_iter_pairs = list(itertools.product(thresholds, [ero_iters]))
     
     
-    output_seed_sub_folders = [os.path.join(output_folder, name_prefix,
+    output_seed_sub_folders = [os.path.join(output_folder, base_name,
                                             output_seed_sub_folder) for output_seed_sub_folder in output_seed_sub_folders]
     
     thre_fp_pairs = list(itertools.product(thresholds, zip(footprint_list,output_seed_sub_folders)))
     
     sublists = [thre_fp_pairs[i::num_threads] for i in range(num_threads)]   
 
-    # for footprints, output_seed_sub_folder in zip(footprint_list,output_seed_sub_folders):
-
-    # Init the folders and path for output files
-    # output_seed_sub_folder = os.path.join(output_folder,name_prefix, output_seed_sub_folder)
     
 
     start_time = datetime.now()
     print(f"""{start_time.strftime("%Y-%m-%d %H:%M:%S")}
     Making erosion seeds for 
-        Img: {img_name}
+        Img: {base_name}
         boundary: {boundary_path if boundary_path else "None"}
         Is 3D image: {is_3d}
         Threshold for Img {thresholds}
@@ -449,11 +435,6 @@ def run_make_seeds(file_path):
         # optional_params_2 = sprout_core.assign_optional_params(config, sprout_core.optional_params_default_seeds)
         
     
-    if optional_params['boundary_path'] is not None:
-        boundary = tifffile.imread(optional_params['boundary_path'])
-    else:
-        boundary = None
-    
     _, output_dict = make_seeds(
         workspace= optional_params['workspace'],
             img_path= config['img_path'],
@@ -468,7 +449,8 @@ def run_make_seeds(file_path):
             is_make_meshes = optional_params['is_make_meshes'],
             downsample_scale = optional_params['downsample_scale'],
             step_size  = optional_params['step_size'],
-            input_footprints = optional_params['footprints']
+            input_footprints = optional_params['footprints'],
+            base_name = optional_params['base_name'],
             )    
 
 

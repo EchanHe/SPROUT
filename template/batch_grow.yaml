@@ -59,8 +59,10 @@ num_threads: 4
 # final_grow_output_folder: ~
 
 
-# The name prefix, default is "FINAL_GROW"
-# name_prefix: "FINAL_GROW"
+# The base name of output, default is None, will try to use the image name
+# If img_path is None, it will be "grown_result"
+# base_name: ~
+
 # Whether use simple naming, the original naming can be long
 # simple_naming: True
 

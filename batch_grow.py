@@ -42,7 +42,7 @@ def run_batch_grow(file_path):
         optional_params = config_core.validate_input_yaml(config, config_core.input_val_make_grow)    
 
         try:
-            output = make_grow.grow_mp(
+            _, log_dict = make_grow.grow_mp(
                 img_path = config['img_path'] ,
                 seg_path = config['seg_path'],
                 boundary_path = optional_params['boundary_path'],
@@ -62,7 +62,8 @@ def run_batch_grow(file_path):
                 to_grow_ids = optional_params["to_grow_ids"],
                 
                 final_grow_output_folder = config['output_folder'],
-                name_prefix =  optional_params["name_prefix"],
+                
+                # base_name =  optional_params["base_name"],
                 simple_naming =  optional_params["simple_naming"],    
 
                 is_sort = optional_params['is_sort'],
@@ -77,8 +78,8 @@ def run_batch_grow(file_path):
                 
             )
 
-            df.loc[index,'final_output_path'] = output['final_output_path']
-            df.loc[index,'output_folder'] = output['output_folder']
+            df.loc[index,'final_output_path'] = log_dict['final_output_path']
+            df.loc[index,'output_folder'] = log_dict['output_folder']
         
         except Exception as e:
             print(f"Error occurs when growing on {config['img_path']}")

@@ -52,8 +52,11 @@ min_split_sum_prop: 0
 save_every_iter: True
 # Save merged results at every iteration. Defaults is False.
 save_merged_every_iter: False
-# Prefix for output file names. Defaults is "Merged_seed".
-name_prefix: "merged_seed"
+
+# The base name of output, default is None, will try to use the image name
+# If img_path is None, it will be "adapt_seed"
+# base_name: ~
+
 # Number of segments for the first seed, 
 # Defaults is None.
 # A small number of make the initial sepration faster

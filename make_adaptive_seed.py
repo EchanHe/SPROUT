@@ -136,13 +136,12 @@ def make_adaptive_seed_ero(
                         min_split_sum_prop = 0,
                         save_every_iter = False,
                         save_merged_every_iter = False,
-                        name_prefix = "Merged_seed",
+                        base_name = None,
                         init_segments = None,
                         footprint = "ball",
                         upper_threshold = None,
                         split_size_limit = (None,None),
                         split_convex_hull_limit = (None, None),
-                        sub_folder = None,
                         is_napari = False                    
                       ):
     """
@@ -192,12 +191,17 @@ def make_adaptive_seed_ero(
         num_threads = max(1,max_threads-1)
 
 
-    output_name = f"{name_prefix}_thre_{threshold}_{upper_threshold}_ero_{ero_iters}"
+    # output_name = f"{name_prefix}_thre_{threshold}_{upper_threshold}_ero_{ero_iters}"
     
-    if sub_folder is None:
-        output_folder = os.path.join(output_folder, output_name)
-    else:
-        output_folder = os.path.join(output_folder, sub_folder)
+    base_name = sprout_core.check_and_assign_base_name(base_name, img_path, "adapt_seed")
+    
+
+    output_folder = os.path.join(output_folder , base_name)
+
+    # if sub_folder is None:
+    #     output_folder = os.path.join(output_folder, output_name)
+    # else:
+    #     output_folder = os.path.join(output_folder, sub_folder)
     os.makedirs(output_folder,exist_ok=True)
 
     if isinstance(footprint, str):
@@ -229,7 +233,6 @@ def make_adaptive_seed_ero(
         "Background Value": background,
         "Save Every Iteration": save_every_iter,
         "Save Merged Every Iteration": save_merged_every_iter,
-        "Name Prefix": name_prefix,
         "Footprint": footprint_list,
         "No Split Limit for iters": no_split_limit,
         "Component Minimum Size": min_size,
@@ -412,7 +415,7 @@ def make_adaptive_seed_ero(
             
         
         if save_merged_every_iter:
-            output_img_name = "INTER_merged_"+ output_name+f'ero_{ero_iter}.tif'
+            output_img_name = f'INTER_adaptive_ero_{ero_iter}.tif'
             
             combine_seed,_ = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort)
             
@@ -428,12 +431,13 @@ def make_adaptive_seed_ero(
 
     
     combine_seed,_ = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort)
-    if sort:
-        output_path = os.path.join(output_folder,"FINAL_" + output_name+'_sorted.tif')
-    else:
-        output_path = os.path.join(output_folder,"FINAL_" + output_name+'.tif')
+    # if sort:
+    #     output_path = os.path.join(output_folder,"FINAL_" + output_name+'_sorted.tif')
+    # else:
+    #     output_path = os.path.join(output_folder,"FINAL_" + output_name+'.tif')
     
-    output_img_name = "FINAL_" + output_name+'_sorted.tif'
+    # output_img_name = "FINAL_adaptive_seed.tif" + output_name+'_sorted.tif'
+    output_img_name = "FINAL_adaptive_seed.tif"
     
     save_seed(combine_seed, output_folder, output_img_name, is_napari=is_napari, seeds_dict=seeds_dict)
     
@@ -478,14 +482,15 @@ def make_adaptive_seed_thre(
                         
                         save_every_iter = False,
                         save_merged_every_iter = False,
-                        name_prefix = "Merged_seed",
+                        base_name = None,
+                       
                         init_segments = None,
                         footprint = "ball",
                         
                         upper_thresholds = None,
                         split_size_limit = (None, None),
                         split_convex_hull_limit = (None, None),
-                        sub_folder = None,
+        
                         is_napari = False  
                     ):
     
@@ -578,13 +583,16 @@ def make_adaptive_seed_thre(
     min_split_prop = min_split_prop*100
     min_split_sum_prop = min_split_sum_prop*100
 
-    output_name = f"{name_prefix}_ero_{ero_iters}"
+    # output_name = f"{name_prefix}_ero_{ero_iters}"
     
     
-    if sub_folder is None:
-        output_folder = os.path.join(output_folder, output_name)
-    else:
-        output_folder = os.path.join(output_folder, sub_folder)
+    # if sub_folder is None:
+    #     output_folder = os.path.join(output_folder, output_name)
+    # else:
+    #     output_folder = os.path.join(output_folder, sub_folder)
+
+    base_name = sprout_core.check_and_assign_base_name(base_name, img_path, "adapt_seed")
+    output_folder = os.path.join(output_folder , base_name)
 
     os.makedirs(output_folder,exist_ok=True)
 
@@ -611,14 +619,11 @@ def make_adaptive_seed_thre(
         "Erosion Iterations": ero_iters,
         "Segments": segments,
         "boundary_path": boundary_path,
-        
         "Number of Threads": num_threads,
         "Sort": sort,
-        
         "Background Value": background,
         "Save Every Iteration": save_every_iter,
         "Save Merged Every Iteration": save_merged_every_iter,
-        "Name Prefix": name_prefix,
         "Footprint": footprint_list,
         "No Split Limit for iters": no_split_limit,
         "Component Minimum Size": min_size,
@@ -820,17 +825,17 @@ def make_adaptive_seed_thre(
                 break
         
         if save_merged_every_iter:
-            output_img_name = "INTER_merged_" + output_name+f'thre_{threshold}.tif'
+            output_img_name = f'INTER_adaptive_ero_{ero_iter}.tif'
             combine_seed,_ = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort)
             
             save_seed(combine_seed, output_folder, output_img_name, is_napari=is_napari, seeds_dict=seeds_dict)
          
     combine_seed,_ = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort)
-    if sort:
-        output_path = os.path.join(output_folder,"FINAL_" + output_name+'_sorted.tif')
-    else:
-        output_path = os.path.join(output_folder,"FINAL_" + output_name+'.tif')
-    output_img_name = "FINAL_" + output_name+'_sorted.tif'
+    # if sort:
+    #     output_path = os.path.join(output_folder,"FINAL_" + output_name+'_sorted.tif')
+    # else:
+    #     output_path = os.path.join(output_folder,"FINAL_" + output_name+'.tif')
+    output_img_name = "FINAL_adaptive_seed.tif"
     save_seed(combine_seed, output_folder, output_img_name, is_napari=is_napari, seeds_dict=seeds_dict)
 
     config_core.save_config_with_output({
@@ -899,7 +904,8 @@ def run_make_adaptive_seed(file_path):
                                     background = optional_params["background"],
                                     sort = optional_params["sort"],
                                     
-                                    name_prefix = optional_params["name_prefix"],
+                                    base_name=optional_params["base_name"],
+                                    
                                     
                                     no_split_limit =optional_params["no_split_limit"],
                                     min_size=optional_params["min_size"],
@@ -916,9 +922,10 @@ def run_make_adaptive_seed(file_path):
                                     split_size_limit= optional_params["split_size_limit"],
                                     split_convex_hull_limit = optional_params["split_convex_hull_limit"],
                                     
-                                    sub_folder = sub_folder,
+                                    
                                     is_napari = False
-                                        
+                                    # sub_folder = sub_folder,
+                                    # name_prefix = optional_params["name_prefix"],    
                                     )
     
     # pd.DataFrame(ori_combine_ids_map).to_csv(os.path.join(output_folder, 'ori_combine_ids_map.csv'),index=False)
@@ -940,7 +947,7 @@ def run_make_adaptive_seed(file_path):
                                     background = optional_params["background"],
                                     sort = optional_params["sort"],
                                     
-                                    name_prefix = optional_params["name_prefix"],
+                                    base_name=optional_params["base_name"],
                                     
                                     no_split_limit =optional_params["no_split_limit"],
                                     min_size=optional_params["min_size"],
@@ -956,8 +963,6 @@ def run_make_adaptive_seed(file_path):
                                     upper_thresholds = optional_params["upper_thresholds"],
                                     split_size_limit= optional_params["split_size_limit"],
                                     split_convex_hull_limit = optional_params["split_convex_hull_limit"],
-                                    
-                                    sub_folder = sub_folder,    
                                     
                                     is_napari=False            
                                     )

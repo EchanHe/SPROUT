@@ -64,6 +64,16 @@ optional_params_default_seeds = {
     'split_convex_hull_limit': [None,None]
 }
 
+
+def check_and_assign_base_name(base_name, img_path, default_base_name):
+    if base_name is None:
+        if img_path is None:
+            base_name = default_base_name
+        else:
+            base_name = os.path.splitext(os.path.basename(img_path))[0]
+    return base_name
+
+
 def check_and_load_data(array, path, name):
     if array is not None and path is not None:
         raise ValueError(f"Both {name} and {name}_path provided; only one is allowed.")
@@ -844,9 +854,12 @@ def find_seed_by_ero_custom(volume_array, threshold , segments, ero_iter,
                     output_dir, 
                     footprints = None,
                     upper_threshold = None,
-                    boundary = None):
+                    boundary = None ,
+                    is_return_seeds = False):
      # Capture the start time
     start_time = datetime.now()
+    
+    seeds_dict = {}
     
     # Thresholding 
     if upper_threshold is None:
@@ -882,11 +895,15 @@ def find_seed_by_ero_custom(volume_array, threshold , segments, ero_iter,
         seed, ccomp_sizes = get_ccomps_with_size_order(volume_label,segments)
         
         # Save seed from each threshold, ero combination
-        seed_file = os.path.join(output_dir , 
-                    f"seed_ero_{i_iter}_thre{threshold}_{upper_threshold}_segs_{segments}.tif")
+        seed_name = f"seed_ero_{i_iter}_thre{threshold}_{upper_threshold}_segs_{segments}.tif"
+        seed_file = os.path.join(output_dir, 
+                    seed_name)
 
-        tifffile.imwrite(seed_file, seed.astype('uint8'),
+        tifffile.imwrite(seed_file, seed.astype('uint16'),
                          compression ='zlib')
+        
+        if is_return_seeds:
+            seeds_dict[seed_name] = seed
         
         args_dict = {
             # "start_time": start_time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -917,7 +934,7 @@ def find_seed_by_ero_custom(volume_array, threshold , segments, ero_iter,
     log_dict["duration"] =   str(duration)
      
         
-    return log_dict
+    return seeds_dict , log_dict
 
 
 def ero_one_iter(input_mask, 

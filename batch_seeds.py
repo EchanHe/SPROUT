@@ -125,8 +125,7 @@ def run_batch_adaptive_seed(file_path):
                                     background = optional_params["background"],
                                     sort = optional_params["sort"],
                                     
-                                    name_prefix = optional_params["name_prefix"],
-                                    
+                                                                        
                                     no_split_limit =optional_params["no_split_limit"],
                                     min_size=optional_params["min_size"],
                                     min_split_prop = optional_params["min_split_prop"],
@@ -142,8 +141,7 @@ def run_batch_adaptive_seed(file_path):
                                     split_size_limit= optional_params["split_size_limit"],
                                     split_convex_hull_limit = optional_params["split_convex_hull_limit"],
                                     
-                                    sub_folder = sub_folder   
-                            
+                                                                
                             )
             
             elif seed_merging_mode=="ERO":
@@ -164,8 +162,7 @@ def run_batch_adaptive_seed(file_path):
                                     background = optional_params["background"],
                                     sort = optional_params["sort"],
                                     
-                                    name_prefix = optional_params["name_prefix"],
-                                    
+                                                                        
                                     no_split_limit =optional_params["no_split_limit"],
                                     min_size=optional_params["min_size"],
                                     min_split_prop = optional_params["min_split_prop"],
@@ -181,8 +178,7 @@ def run_batch_adaptive_seed(file_path):
                                     split_size_limit= optional_params["split_size_limit"],
                                     split_convex_hull_limit = optional_params["split_convex_hull_limit"],
                                     
-                                    sub_folder = sub_folder
-                                        
+                                                                            
                                         )            
         except Exception as e:
             print(f"Error occurs when processing {config['img_path']}")

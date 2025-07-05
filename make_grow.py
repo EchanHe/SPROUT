@@ -70,7 +70,6 @@ def grow_function(result, threshold_binary, label_id_list,touch_rule,non_bg_mask
 def dilation_one_iter_mp(input_mask, threshold_binary, 
                             num_threads,
                              touch_rule = 'stop',
-                             segments=None, 
                              to_grow_ids = None,
                              boundary = None):
     """
@@ -88,11 +87,15 @@ def dilation_one_iter_mp(input_mask, threshold_binary,
         np.ndarray: The updated mask after one dilation iteration.
     """
 
-    if to_grow_ids is None:
-        label_id_list = np.unique(input_mask)
-        label_id_list = label_id_list[label_id_list!=0]
+
+    unique_ids = np.unique(input_mask)
+    # remove the background id
+    unique_ids = unique_ids[unique_ids!=0]        
+    if to_grow_ids is not None:
+        label_id_list = np.intersect1d(unique_ids, to_grow_ids)
     else:
-        label_id_list = to_grow_ids
+        label_id_list = unique_ids
+
     
     result = input_mask.copy()  
     # Create sublists and start multi-threading
@@ -122,7 +125,7 @@ def dilation_one_iter_mp(input_mask, threshold_binary,
      
     
     if boundary is not None:
-        result[boundary] = False
+        result[boundary] = 0
     
     result[threshold_binary==False] = 0  
     
@@ -150,14 +153,20 @@ def grow_mp(**kwargs):
     grow_to_end = kwargs.get('grow_to_end', False)  
     
     workspace = kwargs.get('workspace', None)
+    
     img_path = kwargs.get('img_path', None)
     seg_path = kwargs.get('seg_path', None) 
+    boundary_path  = kwargs.get('boundary_path', None)
+    
+    img = kwargs.get('img', None)
+    input_mask = kwargs.get('seg', None)
+    boundary = kwargs.get('boundary', None)
     
     output_folder = kwargs.get('output_folder', None) 
     final_grow_output_folder = kwargs.get('final_grow_output_folder', None) 
     sub_folder = kwargs.get('sub_folder', None) 
     
-    name_prefix = kwargs.get('name_prefix', "FINAL_GROW")  
+    base_name = kwargs.get('base_name', None)  
     simple_naming = kwargs.get('simple_naming', True)  
     
     to_grow_ids = kwargs.get('to_grow_ids', None) 
@@ -170,15 +179,14 @@ def grow_mp(**kwargs):
     downsample_scale = kwargs.get('downsample_scale', 10) 
     step_size  = kwargs.get('step_size', 1) 
     
-    
+    # for napari
+    is_napari = kwargs.get('is_napari', False)
     
     
     default_grow_to_end_iter = 200
     
     if grow_to_end:
         dilate_iters = [default_grow_to_end_iter] * len(dilate_iters)    
-    
-    boundary_path  = kwargs.get('boundary_path', None)
     
     if num_threads is None:
         num_threads = max(1, max_threads // 2)
@@ -204,19 +212,38 @@ def grow_mp(**kwargs):
     
     if isinstance(save_interval, list):
         assert len(thresholds) == len(save_interval), f"Save interval list should have the same length as well"
-
+    if isinstance(save_interval, int):
+        save_interval = [save_interval] * len(thresholds)
+    if save_interval is None:
+        save_interval = dilate_iters
     
     if workspace is not None:
         img_path = os.path.join(workspace, img_path)
         seg_path = os.path.join(workspace, seg_path)
         output_folder = os.path.join(workspace, output_folder)
-    
+   
+    base_name = sprout_core.check_and_assign_base_name(base_name, img_path, "grown_result")
 
     
+    # lodading the image and segmentation mask
+    # If img and seg are provided, use them; otherwise, read from paths
+    if img is None:
+        img = tifffile.imread(img_path)   
+
+    if input_mask is None:
+        input_mask = tifffile.imread(seg_path)
     
-    base_name = os.path.splitext(os.path.basename(img_path))[0]
-    input_mask = tifffile.imread(seg_path)
-    ori_img = tifffile.imread(img_path)
+    
+    # Loading a boundary if it's provided
+    if boundary is None and boundary_path is not None:
+        if workspace is not None:
+            boundary_path = os.path.join(workspace, boundary_path)
+        boundary = tifffile.imread(boundary_path)
+        boundary = sprout_core.check_and_cast_boundary(boundary)
+    elif boundary is not None:
+        boundary = sprout_core.check_and_cast_boundary(boundary)
+        
+    
     if sub_folder is None:
         output_folder = os.path.join(output_folder, os.path.basename(img_path))
     else:
@@ -224,14 +251,7 @@ def grow_mp(**kwargs):
     
     os.makedirs(output_folder , exist_ok=True)
     
-    # Loading a boundary if it's provided
-    if boundary_path is not None:
-        if workspace is not None:
-            boundary_path = os.path.join(workspace, boundary_path)
-        boundary = tifffile.imread(boundary_path)
-        boundary = sprout_core.check_and_cast_boundary(boundary)
-    else:
-        boundary = None
+
     
     # Record the start time
     start_time = datetime.now()
@@ -253,9 +273,15 @@ def grow_mp(**kwargs):
     for key, value in values_to_print.items():
         print(f"  {key}: {value}")
 
-    
+    # initialize the log list
+    # This will be used to save the growing results
     df_log = []
+    
+    # Initialize a dictionary to store the growing results
+    grows_dict ={}
 
+    # create the result array
+    # If the input mask has more than 65535 ids, convert it to uint16
     result = input_mask.copy()
     if np.unique(result).size > 255:
         print("Input mask has more than 65535 ids, converting to uint16")
@@ -268,11 +294,6 @@ def grow_mp(**kwargs):
         # Set the count for check diff for each growing threshold
         count_below_threshold = 0
         
-        # How many iterations for saving intermediate results
-        if isinstance(save_interval, list):
-                real_save_interval = save_interval[i]
-        elif isinstance(save_interval, int):
-            real_save_interval = save_interval
         
         threshold_name = "_".join(str(s) for s in thresholds[:i+1])
         dilate_name = "_".join(str(s) for s in dilate_iters[:i+1])
@@ -280,36 +301,28 @@ def grow_mp(**kwargs):
         if upper_thresholds is not None:
             upper_threshold = upper_thresholds[i]
             assert threshold<upper_threshold, "lower_threshold must be smaller than upper_threshold"
-            threshold_binary = (ori_img>=threshold) & (ori_img<=upper_threshold)
+            threshold_binary = (img>=threshold) & (img<=upper_threshold)
         else:
-            threshold_binary = ori_img >= threshold
+            threshold_binary = img >= threshold
             upper_threshold = None
+            
         full_size = np.sum(threshold_binary)
         print(f"Size of the threshold {threshold} to {upper_threshold} mask: {full_size}")
         for i_dilate in range(1, dilate_iter+1):
+
+            
             # Get the input size for the log
             input_size = np.sum(result!=0)
-            
-            ##
-            
-            ## Making grow for one iteration
-            # result = sprout_core.dilation_one_iter(result, threshold_binary ,
-            #                                 touch_rule = touch_rule,
-            #                                 to_grow_ids=to_grow_ids)
-            
-        
             result = dilation_one_iter_mp(result, threshold_binary ,
                                           num_threads=num_threads,
                                             touch_rule = touch_rule,
                                             to_grow_ids=to_grow_ids,
                                             boundary=boundary)
             
+            ## Check if output size and input 's diff is bigger than min_diff
+
             # Get the output size for the log
             output_size = np.sum(result!=0)
-            
-            
-            
-            ## Check if output size and input 's diff is bigger than min_diff
             if output_size - input_size < min_diff:
                 count_below_threshold += 1
             else:
@@ -320,7 +333,7 @@ def grow_mp(**kwargs):
             # 1. Reach the final iter, 
             # 2. Not been growing for sometime
             # 3. Grow to the size of the current threshold   
-            if (i_dilate%real_save_interval==0 or 
+            if (i_dilate% save_interval[i]==0 or 
                 i_dilate ==dilate_iter or 
                 count_below_threshold >= tolerate_iters or
                 (grow_to_end == True and abs(full_size - output_size) < 0.05) ):
@@ -328,16 +341,21 @@ def grow_mp(**kwargs):
                 if upper_threshold is None:
                     cur_threshold = threshold
                     if simple_naming:
-                        output_path = os.path.join(output_folder, f'INTER_{base_name}_{threshold}_{i_dilate}.tif')
+                        output_grow_name = f'INTER_{base_name}_{threshold}_{i_dilate}'
+                        # output_path = os.path.join(output_folder, f'INTER_{base_name}_{threshold}_{i_dilate}.tif')
                     else:
-                        output_path = os.path.join(output_folder, f'INTER_{base_name}_iter_{i_dilate}_dilate_{dilate_name}_thre_{threshold_name}.tif') 
+                        output_grow_name = f'INTER_{base_name}_iter_{i_dilate}_dilate_{dilate_name}_thre_{threshold_name}'
+                        # output_path = os.path.join(output_folder, f'INTER_{base_name}_iter_{i_dilate}_dilate_{dilate_name}_thre_{threshold_name}.tif') 
                 else:
                     cur_threshold = f"{threshold}_{upper_threshold}"
                     if simple_naming:
-                        output_path = os.path.join(output_folder, f'INTER_{base_name}_{threshold}_{upper_threshold}_{i_dilate}.tif')
+                        output_grow_name = f'INTER_{base_name}_{threshold}_{upper_threshold}_{i_dilate}'
+                        # output_path = os.path.join(output_folder, f'INTER_{base_name}_{threshold}_{upper_threshold}_{i_dilate}.tif')
                     else:
-                        output_path = os.path.join(output_folder, f'INTER_{base_name}_iter_{i_dilate}_dilate_{dilate_name}_thre_{threshold_name}_{upper_threshold}.tif')
+                        output_grow_name = f'INTER_{base_name}_iter_{i_dilate}_dilate_{dilate_name}_thre_{threshold_name}_{upper_threshold}'
+                        # output_path = os.path.join(output_folder, f'INTER_{base_name}_iter_{i_dilate}_dilate_{dilate_name}_thre_{threshold_name}_{upper_threshold}.tif')
                 
+                output_path = os.path.join(output_folder, output_grow_name + ".tif")
                 # Write the log
                 df_log.append({'id': (i*dilate_iter)+i_dilate, 
                     'grow_size': output_size,
@@ -350,17 +368,20 @@ def grow_mp(**kwargs):
                 
                 
                 result,_ = sprout_core.reorder_segmentation(result, sort_ids=is_sort)
-                tifffile.imwrite(output_path, 
-                    result,
-                    compression ='zlib')
+                tifffile.imwrite(output_path,  result, compression ='zlib')
+                if is_napari:
+                    grows_dict[output_grow_name] =result
+                
                 print(f"\tGrown result has been saved {output_path}")
                 print(f"\tIter:{i_dilate}. Last Input size = {input_size} and Output_size = {output_size}")
 
                 
+                # Early stopping conditions
                 if count_below_threshold >= tolerate_iters:
                     print(f"\tNot growing for {tolerate_iters} iters\nBreaking at iteration {i_dilate} with Input size = {input_size} and Output_size = {output_size}")
                     break
-            
+                # If grow to end, check if the size is similar to the threshold size
+                # If the size is similar to the threshold size, break
                 if (grow_to_end == True and abs(full_size - output_size) < 0.05) :
                     print(f"\tGrow size is similar to the threshold size\nBreaking at iteration {i_dilate}: Input size = {input_size}, Output_size = {output_size} and size of threshold binary = {full_size}")
                     break
@@ -368,13 +389,14 @@ def grow_mp(**kwargs):
         print(f"\tFinish growing. Last Input size = {input_size} and Output_size = {output_size}\n")
     
     ## Save the final grow output as the final_<img_name>
+    final_grow_name = f"FINAL_GROW_{base_name}"
     if final_grow_output_folder is not None:
-        final_output_path = os.path.join(final_grow_output_folder,f"{name_prefix}_{base_name}.tif")
+        final_output_path = os.path.join(final_grow_output_folder,f"{final_grow_name}.tif")
     else:
-        final_output_path = os.path.join(output_folder,f"{name_prefix}_{base_name}.tif")
-    tifffile.imwrite(final_output_path, 
-        result,
-        compression ='zlib')
+        final_output_path = os.path.join(output_folder,f"{final_grow_name}.tif")
+    tifffile.imwrite(final_output_path, result, compression ='zlib')
+    if is_napari:
+        grows_dict[final_grow_name] =result
     
 
     total_seconds = (datetime.now() - start_time).total_seconds()
@@ -386,8 +408,10 @@ def grow_mp(**kwargs):
     log_path =  os.path.join(output_folder, f'grow_log_{base_name}.csv')   
     df_log.to_csv(log_path, index = False)
 
+    # Save the configuration parameters used for growing
+    config_core.save_config_with_output({
+        "params": kwargs},output_folder)
 
-    
     # Make meshes  
     if is_make_meshes:  
         tif_files = glob.glob(os.path.join(output_folder, '*.tif'))
@@ -399,17 +423,14 @@ def grow_mp(**kwargs):
                                 downsample_scale=downsample_scale,
                                 step_size=step_size)
 
-    config_core.save_config_with_output({
-        "params": kwargs},output_folder)
-
     # Return a dict 
-    grow_dict = {
+    log_dict = {
         "final_output_path": final_output_path,
         "log_path":log_path,
         "output_folder": output_folder
     }
     
-    return grow_dict
+    return grows_dict ,log_dict
 
 
 def run_make_grow(file_path):
@@ -423,7 +444,7 @@ def run_make_grow(file_path):
         
         # optional_params_2 = sprout_core.assign_optional_params(config, sprout_core.optional_params_default_grow)
 
-    grow_dict = grow_mp(
+    _,log_dict = grow_mp(
         workspace = optional_params['workspace'],
         img_path = config['img_path'] ,
         seg_path = config['seg_path'],
@@ -446,7 +467,7 @@ def run_make_grow(file_path):
         to_grow_ids = optional_params["to_grow_ids"],
         
         final_grow_output_folder =optional_params["final_grow_output_folder"],
-        name_prefix =  optional_params["name_prefix"],
+        base_name =  optional_params["base_name"],
         simple_naming =  optional_params["simple_naming"],
         
 
@@ -458,12 +479,11 @@ def run_make_grow(file_path):
         is_make_meshes = optional_params['is_make_meshes'],
         downsample_scale = optional_params['downsample_scale'],
         step_size  = optional_params['step_size']
-        
-        
+              
         )
     
-    vis_lib.plot_grow(pd.read_csv(grow_dict['log_path']),
-              grow_dict['log_path'] +".png"
+    vis_lib.plot_grow(pd.read_csv(log_dict['log_path']),
+              log_dict['log_path'] +".png"
               )
 
 if __name__ == "__main__":

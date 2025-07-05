@@ -254,7 +254,14 @@ input_val_make_seeds = {
         "check_exist": True,
         "description": "boundary image",
         "check_extension": (".tif", ".tiff")
-    }
+    },
+    
+    "base_name": {
+        "type": str,
+        "required": False,
+        'default': None,
+        "description": "base_name for naming output files and folders."
+    }, 
 }
 
 
@@ -390,10 +397,10 @@ input_val_make_grow = {
         'default': None,
         "description": "Specify final grow folder if specified"
     },    
-    "name_prefix": {
+    "base_name": {
         "type": str,
         "required": False,
-        'default': "FINAL_GROW",
+        'default': None,
         "description": "The name prefix"
     },   
     "simple_naming": {
@@ -552,12 +559,13 @@ input_val_make_adaptive_seed = {
         'default': False,
         "description": "Save merged results at every iteration. Defaults is False."
     },      
-    "name_prefix": {
+    "base_name": {
         "type": str,
         "required": False,
-        'default': "merged_seed",
-        "description": "Prefix for output file names. Defaults is Merged_seed."
+        'default': None,
+        "description": "base_name for naming output files and folders."
     }, 
+    
     "init_segments": {
         "type": int,
         "min": 1,

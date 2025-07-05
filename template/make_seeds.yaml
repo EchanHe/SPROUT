@@ -52,6 +52,10 @@ output_folder: "./result/demo_dog/seeds_all"
 # footprints: "ball" 
 
 
+# The base name of output, default is None, will try to use the image name
+# If img_path is None, it will be "seed"
+# base_name: ~
+
 # Is saving meshes, default is False
 # is_make_meshes: False
 
