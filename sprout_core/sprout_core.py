@@ -65,13 +65,7 @@ optional_params_default_seeds = {
 }
 
 
-def check_and_assign_base_name(base_name, img_path, default_base_name):
-    if base_name is None:
-        if img_path is None:
-            base_name = default_base_name
-        else:
-            base_name = os.path.splitext(os.path.basename(img_path))[0]
-    return base_name
+
 
 
 def check_and_load_data(array, path, name):
@@ -903,7 +897,7 @@ def find_seed_by_ero_custom(volume_array, threshold , segments, ero_iter,
                          compression ='zlib')
         
         if is_return_seeds:
-            seeds_dict[seed_name] = seed
+            seeds_dict[os.path.basename(output_dir) + "_" +seed_name] = seed
         
         args_dict = {
             # "start_time": start_time.strftime("%Y-%m-%d %H:%M:%S"),

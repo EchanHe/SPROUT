@@ -138,7 +138,7 @@ def make_adaptive_seed_ero(
                         save_merged_every_iter = False,
                         base_name = None,
                         init_segments = None,
-                        footprint = "ball",
+                        footprints = "ball",
                         upper_threshold = None,
                         split_size_limit = (None,None),
                         split_convex_hull_limit = (None, None),
@@ -167,7 +167,7 @@ def make_adaptive_seed_ero(
         name_prefix (str, optional): Prefix for output file names. Defaults to "Merged_seed".
         init_segments (int, optional): Number of segments for the first seed, defaults is None.
             A small number of make the initial sepration faster, as normally the first seed only has a big one component
-        footprint (str, optional): Footprint shape for erosion. Defaults to "ball".
+        footprints (str, optional): Footprints shape for erosion. Defaults to "ball".
         split_size_limit (optional): create a split if the region size (np.sum(mask)) is within the limit
         split_convex_hull_limit: create a split if the the convex hull's area/volume is within the limit
 
@@ -193,7 +193,7 @@ def make_adaptive_seed_ero(
 
     # output_name = f"{name_prefix}_thre_{threshold}_{upper_threshold}_ero_{ero_iters}"
     
-    base_name = sprout_core.check_and_assign_base_name(base_name, img_path, "adapt_seed")
+    base_name = config_core.check_and_assign_base_name(base_name, img_path, "adapt_seed")
     
 
     output_folder = os.path.join(output_folder , base_name)
@@ -204,20 +204,8 @@ def make_adaptive_seed_ero(
     #     output_folder = os.path.join(output_folder, sub_folder)
     os.makedirs(output_folder,exist_ok=True)
 
-    if isinstance(footprint, str):
+    footprint_list = config_core.check_and_assign_footprint(footprints, ero_iters)
 
-        assert footprint in config_core.support_footprints, f"footprint {footprint} is invalid, use supported footprints"
-        footprint_list = [footprint]*ero_iters
-    elif isinstance(footprint, list):
-        assert len(footprint) ==ero_iters, "If input_footprints is a list, it must have the same length as ero_iters"
-        
-        check_support_footprint = [footprint in config_core.support_footprints for footprint in footprint]
-        if not np.all(check_support_footprint):
-            raise ValueError(f"footprint {footprint} is invalid, use supported footprints")
-        
-        footprint_list = footprint
-    else:
-        raise ValueError(f"Can't set the footprint list with the input footprint {footprint} ")
     
     values_to_print = {
         "img_path": img_path,
@@ -233,7 +221,7 @@ def make_adaptive_seed_ero(
         "Background Value": background,
         "Save Every Iteration": save_every_iter,
         "Save Merged Every Iteration": save_merged_every_iter,
-        "Footprint": footprint_list,
+        "Footprints": footprint_list,
         "No Split Limit for iters": no_split_limit,
         "Component Minimum Size": min_size,
         "Minimum Split Proportion (%)": min_split_prop,
@@ -415,7 +403,7 @@ def make_adaptive_seed_ero(
             
         
         if save_merged_every_iter:
-            output_img_name = f'INTER_adaptive_ero_{ero_iter}.tif'
+            output_img_name = f'INTER_adaptive_thre_{threshold}_{upper_threshold}_ero_{ero_iter}.tif'
             
             combine_seed,_ = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort)
             
@@ -485,7 +473,7 @@ def make_adaptive_seed_thre(
                         base_name = None,
                        
                         init_segments = None,
-                        footprint = "ball",
+                        footprints = "ball",
                         
                         upper_thresholds = None,
                         split_size_limit = (None, None),
@@ -541,8 +529,8 @@ def make_adaptive_seed_thre(
         Prefix for output file names.
     init_segments : int, optional
         Number of initial segments to extract. Defaults to `segments` if not provided.
-    footprint : str or list, default="ball"
-        Morphological footprint shape or list of shapes for erosion. If a list, must match `ero_iters`.
+    footprints : str or list, default="ball"
+        Morphological footprints shape or list of shapes for erosion. If a list, must match `ero_iters`.
     upper_thresholds : list or array-like, optional
         Sequence of upper threshold values for range-based thresholding. Must match `thresholds` in length.
     split_size_limit : tuple, default=(None, None)
@@ -591,25 +579,12 @@ def make_adaptive_seed_thre(
     # else:
     #     output_folder = os.path.join(output_folder, sub_folder)
 
-    base_name = sprout_core.check_and_assign_base_name(base_name, img_path, "adapt_seed")
+    base_name = config_core.check_and_assign_base_name(base_name, img_path, "adapt_seed")
     output_folder = os.path.join(output_folder , base_name)
 
     os.makedirs(output_folder,exist_ok=True)
 
-    if isinstance(footprint, str):
-
-        assert footprint in config_core.support_footprints, f"footprint {footprint} is invalid, use supported footprints"
-        footprint_list = [footprint]*ero_iters
-    elif isinstance(footprint, list):
-        assert len(footprint) ==ero_iters, "If input_footprints is a list, it must have the same length as ero_iters"
-        
-        check_support_footprint = [footprint in config_core.support_footprints for footprint in footprint]
-        if not np.all(check_support_footprint):
-            raise ValueError(f"footprint {footprint} is invalid, use supported footprints")
-        
-        footprint_list = footprint
-    else:
-        raise ValueError(f"Can't set the footprint list with the input footprint {footprint} ")
+    footprint_list = config_core.check_and_assign_footprint(footprints, ero_iters)
         
     values_to_print = {
         "img_path": img_path,
@@ -624,7 +599,7 @@ def make_adaptive_seed_thre(
         "Background Value": background,
         "Save Every Iteration": save_every_iter,
         "Save Merged Every Iteration": save_merged_every_iter,
-        "Footprint": footprint_list,
+        "Footprints": footprint_list,
         "No Split Limit for iters": no_split_limit,
         "Component Minimum Size": min_size,
         "Minimum Split Proportion (%)": min_split_prop,
@@ -650,6 +625,7 @@ def make_adaptive_seed_thre(
         mask = (img>=thresholds[0]) & (img<=upper_thresholds[0])
     else:
         mask = img>=thresholds[0]
+        upper_thresholds = [None] * len(thresholds)
     
     
     if boundary is not None:
@@ -692,7 +668,7 @@ def make_adaptive_seed_thre(
     no_consec_split_count = 0
     
 
-    for idx_threshold, threshold in enumerate(thresholds[1:]):
+    for idx_threshold, (threshold, upper_threshold) in enumerate(zip(thresholds[1:], upper_thresholds[1:])):
         print(f"working on thre {threshold}")
         
         output_dict["split_id"][threshold] = {}
@@ -701,9 +677,9 @@ def make_adaptive_seed_thre(
         output_dict["split_prop"][threshold] = {}
         
         
-        if upper_thresholds is not None:
-            assert threshold<upper_thresholds[1 + idx_threshold], "lower_threshold must be smaller than upper_threshold"
-            mask = (img>=threshold) & (img<=upper_thresholds[1 + idx_threshold])
+        if upper_threshold is not None:
+            assert threshold< upper_threshold , "lower_threshold must be smaller than upper_threshold"
+            mask = (img>=threshold) & (img<=upper_threshold)
         else:
             mask = img>=threshold
 
@@ -717,7 +693,7 @@ def make_adaptive_seed_thre(
         
 
         if save_every_iter:
-            output_img_name = f'INTER_thre_{threshold}_ero_{ero_iters}.tif'
+            output_img_name = f'INTER_thre_{threshold}_{upper_threshold}_ero_{ero_iters}.tif'
             output_dict["cur_seed_name"][threshold] = output_img_name
             
             save_seed(seed, output_folder, output_img_name, 
@@ -825,7 +801,7 @@ def make_adaptive_seed_thre(
                 break
         
         if save_merged_every_iter:
-            output_img_name = f'INTER_adaptive_ero_{ero_iter}.tif'
+            output_img_name = f'INTER_adaptive_thre_{threshold}_{upper_threshold}_ero_{ero_iter}.tif'
             combine_seed,_ = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort)
             
             save_seed(combine_seed, output_folder, output_img_name, is_napari=is_napari, seeds_dict=seeds_dict)
@@ -888,7 +864,7 @@ def run_make_adaptive_seed(file_path):
     # else:
     #     boundary = None
     
-    sub_folder = os.path.basename(config['img_path'])
+    # sub_folder = os.path.basename(config['img_path'])
     
     if seed_merging_mode == "ERO":
         seeds_dict ,ori_combine_ids_map , output_dict=  make_adaptive_seed_ero(
@@ -916,7 +892,7 @@ def run_make_adaptive_seed(file_path):
                                     save_merged_every_iter = optional_params["save_merged_every_iter"],
                                     
                                     init_segments = optional_params["init_segments"],
-                                    footprint = optional_params["footprints"],
+                                    footprints = optional_params["footprints"],
                                     
                                     upper_threshold = optional_params["upper_thresholds"],
                                     split_size_limit= optional_params["split_size_limit"],
@@ -958,7 +934,7 @@ def run_make_adaptive_seed(file_path):
                                     save_merged_every_iter = optional_params["save_merged_every_iter"],
                                                                         
                                     init_segments = optional_params["init_segments"],
-                                    footprint = optional_params["footprints"],
+                                    footprints = optional_params["footprints"],
                                     
                                     upper_thresholds = optional_params["upper_thresholds"],
                                     split_size_limit= optional_params["split_size_limit"],

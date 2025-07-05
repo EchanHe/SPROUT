@@ -54,7 +54,7 @@ def run_batch_seeds(file_path):
                                     thresholds = config['thresholds'],
                                     segments = config['segments'],
                                     
-                                    input_footprints = optional_params['footprints'],
+                                    footprints = optional_params['footprints'],
                                     
                                     upper_thresholds = optional_params['upper_thresholds']
                                     )
@@ -135,7 +135,7 @@ def run_batch_adaptive_seed(file_path):
                                     save_merged_every_iter = optional_params["save_merged_every_iter"],
                                                                         
                                     init_segments = optional_params["init_segments"],
-                                    footprint = optional_params["footprints"],
+                                    footprints = optional_params["footprints"],
                                     
                                     upper_thresholds = optional_params["upper_thresholds"],
                                     split_size_limit= optional_params["split_size_limit"],
@@ -172,7 +172,7 @@ def run_batch_adaptive_seed(file_path):
                                     save_merged_every_iter = optional_params["save_merged_every_iter"],
                                     
                                     init_segments = optional_params["init_segments"],
-                                    footprint = optional_params["footprints"],
+                                    footprints = optional_params["footprints"],
                                     
                                     upper_threshold = optional_params["upper_thresholds"],
                                     split_size_limit= optional_params["split_size_limit"],

@@ -164,7 +164,7 @@ def grow_mp(**kwargs):
     
     output_folder = kwargs.get('output_folder', None) 
     final_grow_output_folder = kwargs.get('final_grow_output_folder', None) 
-    sub_folder = kwargs.get('sub_folder', None) 
+
     
     base_name = kwargs.get('base_name', None)  
     simple_naming = kwargs.get('simple_naming', True)  
@@ -203,12 +203,11 @@ def grow_mp(**kwargs):
         thresholds = [thresholds]
     if isinstance(dilate_iters, int):
         dilate_iters = [dilate_iters]
-    if upper_thresholds is not None and isinstance(upper_thresholds, int):
-        upper_thresholds = [upper_thresholds]
+
+    thresholds, upper_thresholds = config_core.check_and_assign_thresholds(thresholds, upper_thresholds, reverse= True)
     
     assert len(thresholds) == len(dilate_iters), f"thresholds and dilate_iters must have the same length, but got {len(thresholds)} and {len(dilate_iters)}."
-    if upper_thresholds is not None:
-        len(thresholds) == len(upper_thresholds), f"lower_thresholds and upper_thresholds should have the same length, but got {len(thresholds)} and {len(upper_thresholds)}."
+    
     
     if isinstance(save_interval, list):
         assert len(thresholds) == len(save_interval), f"Save interval list should have the same length as well"
@@ -222,7 +221,7 @@ def grow_mp(**kwargs):
         seg_path = os.path.join(workspace, seg_path)
         output_folder = os.path.join(workspace, output_folder)
    
-    base_name = sprout_core.check_and_assign_base_name(base_name, img_path, "grown_result")
+    base_name = config_core.check_and_assign_base_name(base_name, img_path, "grown_result")
 
     
     # lodading the image and segmentation mask
@@ -244,10 +243,7 @@ def grow_mp(**kwargs):
         boundary = sprout_core.check_and_cast_boundary(boundary)
         
     
-    if sub_folder is None:
-        output_folder = os.path.join(output_folder, os.path.basename(img_path))
-    else:
-        output_folder = os.path.join(output_folder, sub_folder)
+    output_folder = os.path.join(output_folder, base_name)
     
     os.makedirs(output_folder , exist_ok=True)
     
@@ -290,7 +286,7 @@ def grow_mp(**kwargs):
         result = result.astype('uint8')
         
     # Iterate through and make growth results
-    for i, (threshold,dilate_iter) in enumerate(zip(thresholds,dilate_iters)):
+    for i, (threshold ,upper_threshold,dilate_iter) in enumerate(zip(thresholds , upper_thresholds,dilate_iters)):
         # Set the count for check diff for each growing threshold
         count_below_threshold = 0
         
@@ -298,13 +294,11 @@ def grow_mp(**kwargs):
         threshold_name = "_".join(str(s) for s in thresholds[:i+1])
         dilate_name = "_".join(str(s) for s in dilate_iters[:i+1])
         
-        if upper_thresholds is not None:
-            upper_threshold = upper_thresholds[i]
-            assert threshold<upper_threshold, "lower_threshold must be smaller than upper_threshold"
+        if upper_threshold is not None:
             threshold_binary = (img>=threshold) & (img<=upper_threshold)
         else:
             threshold_binary = img >= threshold
-            upper_threshold = None
+
             
         full_size = np.sum(threshold_binary)
         print(f"Size of the threshold {threshold} to {upper_threshold} mask: {full_size}")
@@ -338,23 +332,15 @@ def grow_mp(**kwargs):
                 count_below_threshold >= tolerate_iters or
                 (grow_to_end == True and abs(full_size - output_size) < 0.05) ):
                 
-                if upper_threshold is None:
-                    cur_threshold = threshold
-                    if simple_naming:
-                        output_grow_name = f'INTER_{base_name}_{threshold}_{i_dilate}'
-                        # output_path = os.path.join(output_folder, f'INTER_{base_name}_{threshold}_{i_dilate}.tif')
-                    else:
-                        output_grow_name = f'INTER_{base_name}_iter_{i_dilate}_dilate_{dilate_name}_thre_{threshold_name}'
-                        # output_path = os.path.join(output_folder, f'INTER_{base_name}_iter_{i_dilate}_dilate_{dilate_name}_thre_{threshold_name}.tif') 
+
+                cur_threshold = f"{threshold}_{upper_threshold}"
+                if simple_naming:
+                    output_grow_name = f'INTER_{base_name}_{cur_threshold}_{i_dilate}'
+
                 else:
-                    cur_threshold = f"{threshold}_{upper_threshold}"
-                    if simple_naming:
-                        output_grow_name = f'INTER_{base_name}_{threshold}_{upper_threshold}_{i_dilate}'
-                        # output_path = os.path.join(output_folder, f'INTER_{base_name}_{threshold}_{upper_threshold}_{i_dilate}.tif')
-                    else:
-                        output_grow_name = f'INTER_{base_name}_iter_{i_dilate}_dilate_{dilate_name}_thre_{threshold_name}_{upper_threshold}'
-                        # output_path = os.path.join(output_folder, f'INTER_{base_name}_iter_{i_dilate}_dilate_{dilate_name}_thre_{threshold_name}_{upper_threshold}.tif')
-                
+                    output_grow_name = f'INTER_{base_name}_iter_{i_dilate}_dilate_{dilate_name}_thre_{threshold_name}_{upper_threshold}'
+                   
+            
                 output_path = os.path.join(output_folder, output_grow_name + ".tif")
                 # Write the log
                 df_log.append({'id': (i*dilate_iter)+i_dilate, 
@@ -451,7 +437,6 @@ def run_make_grow(file_path):
         
         output_folder = config['output_folder'],
         
-        sub_folder = None,
         boundary_path = optional_params['boundary_path'],
         
         dilate_iters = config['dilate_iters'],

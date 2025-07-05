@@ -17,6 +17,101 @@ support_footprints =['ball','cube',
                      '2XZ_1Y','2XY_1Z','2YZ_1X']
 
 
+def check_and_assign_base_name(base_name, img_path, default_base_name):
+    if base_name is None:
+        if img_path is None:
+            base_name = default_base_name
+        else:
+            base_name = os.path.splitext(os.path.basename(img_path))[0]
+    return base_name
+
+def check_and_assign_thresholds(thresholds, upper_thresholds, reverse=False):
+    """ Check and assign thresholds and upper thresholds, turn them all to int.
+    Args:
+        thresholds (int, float, list): Thresholds to be checked and assigned.
+        upper_thresholds (int, float, list, optional): Upper thresholds to be checked and assigned. Defaults to None.
+    Returns:
+        tuple: A tuple containing the processed thresholds and upper thresholds as lists.
+    """
+    if isinstance(thresholds, int):
+        thresholds = [thresholds]
+    elif isinstance(thresholds, float):
+        thresholds = [int(thresholds)]
+    elif isinstance(thresholds, list):
+        thresholds = [int(t) for t in thresholds]
+    else:
+        raise ValueError(f"Invalid type for thresholds: {type(thresholds)}. Must be int, float, or list.")
+
+    if upper_thresholds is None:
+        upper_thresholds = [None] * len(thresholds)
+    elif isinstance(upper_thresholds, int):
+        upper_thresholds = [upper_thresholds]
+    elif isinstance(upper_thresholds, float):
+        upper_thresholds = [int(upper_thresholds)]
+    elif isinstance(upper_thresholds, list):
+        upper_thresholds = [int(t) for t in upper_thresholds]
+    else:
+        raise ValueError(f"Invalid type for upper_thresholds: {type(upper_thresholds)}. Must be int, float, or list.")
+
+    if len(upper_thresholds) != len(thresholds):
+        raise ValueError("Length of upper_thresholds must match length of thresholds.")
+    
+    # Ensure each upper_threshold is greater than the corresponding threshold
+    # Only check if upper_thresholds is not all None
+    if not all(up is None for up in upper_thresholds):
+        for i, (th, up) in enumerate(zip(thresholds, upper_thresholds)):
+            if up is not None and up <= th:
+                raise ValueError(f"Each upper_threshold must be greater than its corresponding threshold. Found thresholds[{i}]={th} and upper_thresholds[{i}]={up}.")
+    
+    if reverse:
+        # Ensure thresholds are equal or strictly decreasing
+        if any(thresholds[i+1] > thresholds[i] for i in range(len(thresholds)-1)):
+            raise ValueError("Thresholds must be equal or strictly decreasing.")
+        
+        # Ensure upper_thresholds are equal or strictly decreasing, but only if not all None
+        if not all(up is None for up in upper_thresholds):
+            filtered_upper = [up for up in upper_thresholds if up is not None]
+            if any(filtered_upper[i+1] > filtered_upper[i] for i in range(len(filtered_upper)-1)):
+                raise ValueError("Upper thresholds must be equal or strictly decreasing (ignoring None values).")        
+    else:
+        # Ensure thresholds are equal or strictly increasing
+        if any(thresholds[i] > thresholds[i+1] for i in range(len(thresholds)-1)):
+            raise ValueError("Thresholds must be equal or strictly increasing.")
+        
+        # Ensure upper_thresholds are equal or strictly increasing, but only if not all None
+        if not all(up is None for up in upper_thresholds):
+            filtered_upper = [up for up in upper_thresholds if up is not None]
+            if any(filtered_upper[i] > filtered_upper[i+1] for i in range(len(filtered_upper)-1)):
+                raise ValueError("Upper thresholds must be equal or strictly increasing (ignoring None values).")
+    
+    
+    return thresholds, upper_thresholds
+
+def check_and_assign_footprint(footprints, ero_iters , with_folder_name=False):
+    if isinstance(footprints, str):
+
+        assert footprints in support_footprints, f"footprint {footprints} is invalid, use supported footprints"
+        footprint_list = [footprints]*ero_iters
+        if with_folder_name:
+            folders = footprints
+        
+    elif isinstance(footprints, list):
+        assert len(footprints) ==ero_iters, "If input_footprints is a list, it must have the same length as ero_iters"
+        
+        check_support_footprint = [footprint in support_footprints for footprint in footprints]
+        if not np.all(check_support_footprint):
+            raise ValueError(f"footprint {footprints} is invalid, use supported footprints")
+        if with_folder_name:
+            folders = "custom_footprints"
+        
+        footprint_list = footprints
+    else:
+        raise ValueError(f"Can't set the footprint list with the input footprint {footprints} ")
+    
+    if with_folder_name:
+        return footprint_list , folders
+    else:
+        return footprint_list
 # Function to recursively create global variables from the config dictionary
 def load_config_yaml(config, parent_key=''):
     for key, value in config.items():
