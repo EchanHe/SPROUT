@@ -16,6 +16,16 @@ from napari.qt.threading import thread_worker
 from ..utils.sprout_bridge import SPROUTBridge
 
 
+import sys
+import os
+# get the current file's absolute path
+current_dir = os.path.dirname(os.path.abspath(__file__))
+root_dir = os.path.abspath(os.path.join(current_dir, "../../"))
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
+
+from make_grow import grow_mp
+
 class GrowthWorker(QThread):
     """Worker thread for seed growth."""
     progress = Signal(int)
@@ -278,8 +288,8 @@ class SeedGrowthWidget(QWidget):
             
             # Sort thresholds from high to low
             sorted_indices = sorted(range(len(thresholds)), key=lambda i: thresholds[i], reverse=True)
-            thresholds = [thresholds[i] for i in sorted_indices]
-            upper_thresholds = [upper_thresholds[i] for i in sorted_indices]
+            thresholds = [int(thresholds[i]) for i in sorted_indices]
+            upper_thresholds = [int(upper_thresholds[i]) if upper_thresholds[i] is not None else None for i in sorted_indices]
             dilate_iters = [dilate_iters[i] for i in sorted_indices]
             
             # Update UI
@@ -288,10 +298,67 @@ class SeedGrowthWidget(QWidget):
             self.progress_bar.setVisible(True)
             self.progress_bar.setValue(0)
             self.status_label.setText("Growing seeds...")
+
+            # TODO @ioannouE I have add grow_mp here, 
+            # it return grows_dict for {name: growth_result}, and will be added to labels
             
-            # Create and start worker
-            self.worker = GrowthWorker(
-                self.bridge,
+            # and I think we need to add some fields for parameters
+            # I also commented GrowthWorker out, but use the self.bridge.grow_seeds
+            
+            import time
+            start_time = time.time()
+            # From make_grow
+            grows_dict , log_dict = grow_mp(
+                
+                img = self.current_image,
+                seg = self.current_seeds,
+                boundary = self.current_boundary,
+                
+                base_name = self.viewer.layers[self.image_combo.currentText()].name,
+                                
+                dilate_iters = dilate_iters,
+                thresholds = thresholds,
+                upper_thresholds = upper_thresholds if any(u is not None for u in upper_thresholds) else None,
+                
+                # TODO add qt fields for following parameters
+                # path, field that has a default output folder, also allow user to select output folder
+                output_folder = '~/napari_temp/grow',    
+                # int, has default value, say 1 for now, use can change           
+                num_threads = 1,
+                # Can be None, or a int, or a list that matches the number of thresholds
+                # if None, will not save intermediate results
+                save_interval = None,  
+                # Default is 'stop', actually no other rules for now.
+                touch_rule = 'stop', 
+                # Default False 
+                grow_to_end = False,
+                # default False, if True, will sort the seeds by ids
+                is_sort = False,
+                # A list of ids to grow, default None, will grow all seeds
+                to_grow_ids = None,
+                # a int for detect min diff and a int for tolerate iterations
+                min_diff = 50,
+                tolerate_iters = 3,
+
+                    
+                # Fixed
+                is_napari = True,
+                                   
+                )            
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+            print(f"Growth completed in {elapsed_time:.2f} seconds")
+            
+            for key, value in grows_dict.items():
+                print(f"{key}: {value.shape}")
+                self.viewer.add_labels(
+                    value,  
+                    name=key
+                )
+            
+            start_time = time.time()
+            # Testing bridge bridge
+            result = self.bridge.grow_seeds(
                 self.current_image,
                 self.current_seeds,
                 thresholds,
@@ -299,13 +366,36 @@ class SeedGrowthWidget(QWidget):
                 upper_thresholds if any(u is not None for u in upper_thresholds) else None,
                 self.current_boundary,
                 self.touch_rule_combo.currentText()
+
             )
+
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+            print(f"Growth clean version completed in {elapsed_time:.2f} seconds")
+
+            self.viewer.add_labels(
+                result,
+                name="Growth Result"
+            )
+
+
+            # Create and start worker
+            # self.worker = GrowthWorker(
+            #     self.bridge,
+            #     self.current_image,
+            #     self.current_seeds,
+            #     thresholds,
+            #     dilate_iters,
+            #     upper_thresholds if any(u is not None for u in upper_thresholds) else None,
+            #     self.current_boundary,
+            #     self.touch_rule_combo.currentText()
+            # )
             
-            self.worker.progress.connect(self.progress_bar.setValue)
-            self.worker.finished.connect(self._on_growth_finished)
-            self.worker.error.connect(self._on_growth_error)
+            # self.worker.progress.connect(self.progress_bar.setValue)
+            # self.worker.finished.connect(self._on_growth_finished)
+            # self.worker.error.connect(self._on_growth_error)
             
-            self.worker.start()
+            # self.worker.start()
             
         except Exception as e:
             show_error(f"Error starting growth: {str(e)}")

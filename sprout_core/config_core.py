@@ -25,6 +25,33 @@ def check_and_assign_base_name(base_name, img_path, default_base_name):
             base_name = os.path.splitext(os.path.basename(img_path))[0]
     return base_name
 
+def check_and_assign_threshold(threshold, upper_threshold):
+    if isinstance(threshold, list):
+        assert len(threshold) == 1, "If threshold is a list, it must have only one element."
+        threshold = threshold[0]
+    elif isinstance(threshold, float):
+        threshold = int(threshold)
+    elif isinstance(threshold, int):
+        threshold = int(threshold)
+    else:
+        raise ValueError(f"Invalid type for threshold: {type(threshold)}. Must be int, float, or list.")
+    
+    if upper_threshold is None:
+        upper_threshold = None 
+    elif isinstance(upper_threshold, list):
+        assert len(threshold) == 1, "If threshold is a list, it must have only one element."
+        upper_threshold = upper_threshold[0]
+    elif isinstance(upper_threshold, float):
+        upper_threshold = int(upper_threshold) 
+    elif isinstance(upper_threshold, int):
+        upper_threshold = int(upper_threshold)
+    else:
+        raise ValueError(f"Invalid type for upper_threshold: {type(upper_threshold)}. Must be int, float, or list.")
+
+    if upper_threshold is not None and upper_threshold < threshold:
+        raise ValueError(f"Upper threshold must be greater than the threshold. Found threshold={threshold} and upper_threshold={upper_threshold}.")
+    return threshold, upper_threshold
+
 def check_and_assign_thresholds(thresholds, upper_thresholds, reverse=False):
     """ Check and assign thresholds and upper thresholds, turn them all to int.
     Args:
@@ -60,7 +87,7 @@ def check_and_assign_thresholds(thresholds, upper_thresholds, reverse=False):
     # Only check if upper_thresholds is not all None
     if not all(up is None for up in upper_thresholds):
         for i, (th, up) in enumerate(zip(thresholds, upper_thresholds)):
-            if up is not None and up <= th:
+            if up is not None and up < th:
                 raise ValueError(f"Each upper_threshold must be greater than its corresponding threshold. Found thresholds[{i}]={th} and upper_thresholds[{i}]={up}.")
     
     if reverse:
@@ -88,6 +115,9 @@ def check_and_assign_thresholds(thresholds, upper_thresholds, reverse=False):
     return thresholds, upper_thresholds
 
 def check_and_assign_footprint(footprints, ero_iters , with_folder_name=False):
+    if footprints is None:
+        footprints = "ball"
+    
     if isinstance(footprints, str):
 
         assert footprints in support_footprints, f"footprint {footprints} is invalid, use supported footprints"
@@ -671,7 +701,7 @@ input_val_make_adaptive_seed = {
     "footprints": {       
         "type": (str,list),
         "required": False,
-        "default": "ball",
+        "default": None,
         "description": "Footprints for morphological transformation"
     },
     "split_size_limit": {

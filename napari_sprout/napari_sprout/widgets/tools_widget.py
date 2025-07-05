@@ -75,6 +75,8 @@ class SizeReferenceGroupBox(QGroupBox):
         super().closeEvent(event)
 
     def store_click_position(self, viewer, event):
+        if not hasattr(self, "click_radio") or self.click_radio is None:
+            return
         if not self.click_radio.isChecked():
             return
         if event.type != 'mouse_press':

@@ -159,7 +159,7 @@ def grow_mp(**kwargs):
     boundary_path  = kwargs.get('boundary_path', None)
     
     img = kwargs.get('img', None)
-    input_mask = kwargs.get('seg', None)
+    seg = kwargs.get('seg', None)
     boundary = kwargs.get('boundary', None)
     
     output_folder = kwargs.get('output_folder', None) 
@@ -229,8 +229,8 @@ def grow_mp(**kwargs):
     if img is None:
         img = tifffile.imread(img_path)   
 
-    if input_mask is None:
-        input_mask = tifffile.imread(seg_path)
+    if seg is None:
+        seg = tifffile.imread(seg_path)
     
     
     # Loading a boundary if it's provided
@@ -278,7 +278,7 @@ def grow_mp(**kwargs):
 
     # create the result array
     # If the input mask has more than 65535 ids, convert it to uint16
-    result = input_mask.copy()
+    result = seg.copy()
     if np.unique(result).size > 255:
         print("Input mask has more than 65535 ids, converting to uint16")
         result = result.astype('uint16')

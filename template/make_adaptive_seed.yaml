@@ -64,10 +64,11 @@ save_merged_every_iter: False
 init_segments: ~
 
 # How to erode your images, 
-# Default is "ball", it can be either a string, 
+# Default is None, which is using "ball"
+# it can be either a string, 
 # or a list of string that matches the number of erosions
 # Current supports 
 #'ball' and 'cube' :Erosion all directions. 
 #'ball_XY', 'ball_XZ', 'ball_YZ': Erosion on the Plane. 
 # 'X', 'Y', 'Z': Erosion on the axis.
-footprints: "ball" 
+# footprints: None

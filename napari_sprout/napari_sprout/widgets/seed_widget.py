@@ -14,6 +14,17 @@ from napari.utils.notifications import show_info, show_error
 from ..utils.sprout_bridge import SPROUTBridge
 
 
+import sys
+import os
+# get the current file's absolute path
+current_dir = os.path.dirname(os.path.abspath(__file__))
+root_dir = os.path.abspath(os.path.join(current_dir, "../../"))
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
+    
+from make_seeds import make_seeds
+from make_adaptive_seed import make_adaptive_seed_thre, make_adaptive_seed_ero
+
 class SeedGenerationWidget(QWidget):
     """Widget for interactive seed generation."""
     
@@ -186,7 +197,13 @@ class SeedGenerationWidget(QWidget):
             
         except Exception as e:
             show_error(f"Error in threshold preview: {str(e)}")
-    
+    def add_labels_layer(self, seeds_dict):
+        for seed_name, seed in seeds_dict.items():
+            print(f"Adding seed layer: {seed_name}")
+            self.seeds_layer = self.viewer.add_labels(
+                seed,
+                name=seed_name
+        )
     def generate_seeds(self):
         """Generate seeds with current parameters."""
         if self.current_image is None:
@@ -207,6 +224,131 @@ class SeedGenerationWidget(QWidget):
                 boundary_layer = self.viewer.layers[self.boundary_combo.currentText()]
                 if isinstance(boundary_layer, Labels):
                     boundary = boundary_layer.data
+
+            
+            # TODO: @ioannouE
+            # I have added interfaces for seed making they are
+            # make_seeds that does orignal seed making
+            # make_adaptive_seed_thre that does adaptive seed on a list of thresholds/ upper thresholds
+            # make_adaptive_seed_ero that does adaptive seed making with erosions
+            # So probably make a selection widget that allows user to select which method to use
+            
+            # They return seeds_dict for {name: seed}, and will be added to labels
+            
+            print(f"Generating seeds with parameters")
+            seeds_dict , _ = make_seeds(
+                img = self.current_image,
+                boundary = boundary,
+                
+                thresholds = int(lower),
+                upper_thresholds = int(upper),
+                ero_iters = erosion,
+                segments = segments,
+                
+                # TODO add widget that has a default output folder, also allow user to select output folder
+                output_folder = '~/napari_temp',
+                 # TODO add default, also allow user change
+                num_threads = 4,
+                # TODO add a field for None as default, but also allow user input
+                # it can be either a string or a list of string that matches the number of erosions
+                footprints = None,
+                # TODO get the name of current image too
+                base_name = "to_get_name", 
+
+                # fixed parameters
+                is_napari=True
+                )
+
+            self.add_labels_layer(seeds_dict)
+            # @ioannouE, using make_adaptive_seed_ero or make_adaptive_seed_thre
+            # is based on the threshold, if threshold is a single value, use make_adaptive_seed_ero
+            # if threshold is a list, use make_adaptive_seed_thre, in make_adaptive_seed_thre is thresholds and upper_thresholds
+            # See line 844-857 in make_adaptive_seed.py
+            seeds_dict ,_ , _ = make_adaptive_seed_ero(
+                img = self.current_image,
+                boundary = boundary,  
+                   
+                threshold =int(lower),
+                upper_threshold= int(upper),
+                
+                ero_iters = erosion, 
+                segments= segments,        
+                
+                
+                # TODO add qt fields for following parameters
+                # path, field that has a default output folder, also allow user to select output folder
+                output_folder = '~/napari_temp',             
+                # int, has default value, say 1, use can change
+                num_threads = 4,
+                
+                footprints = None,
+                
+                # TODO fields for adadptive seed, 
+                # maybe put them into a group, and only reveal when adaptive seed is selected
+                sort = True,
+                no_split_limit =3,
+                min_size=5,
+                min_split_prop = 0.01,
+                min_split_sum_prop = 0,
+                save_every_iter = True,
+                save_merged_every_iter = True,
+                # list of int, default is none
+                init_segments = None,
+                # tuple of int/None, default is (None,None)                
+                split_size_limit = (None,None),
+                # tuple of int/None, default is (None,None)   
+                split_convex_hull_limit = (None, None),    
+                
+                # fixed parameters
+                is_napari=True
+                       
+                )
+
+            seeds_dict ,_ , _ = make_adaptive_seed_thre(
+                img = self.current_image,
+                boundary = boundary,  
+                   
+                # TODO 
+                # Currently using default values, as this function require a list than just an int
+                thresholds =[130,140,150],
+                # Similar for upper_thresholds
+                upper_thresholds= None,
+                
+                ero_iters = erosion, 
+                segments= segments, 
+            
+            
+                # TODO add qt fields for following parameters
+                # path, field that has a default output folder, also allow user to select output folder
+                output_folder = '~/napari_temp',             
+                # int, has default value, say 1, use can change
+                num_threads = 4,
+                footprints = None,
+                
+                
+                # TODO fields for adadptive seed, 
+                # maybe put them into a group, and only reveal when adaptive seed is selected
+
+                sort = True,
+                no_split_limit =3,
+                min_size=5,
+                min_split_prop = 0.01,
+                min_split_sum_prop = 0,
+                save_every_iter = True,
+                save_merged_every_iter = True,
+                init_segments = None,
+                split_size_limit = (None,None),
+                split_convex_hull_limit = (None, None),      
+                
+                # fixed parameters
+                is_napari=True,       
+                )
+
+            
+            self.add_labels_layer(seeds_dict)
+
+            
+            # @ioannouE I kept the orignal interface for comparing for now.
             
             # Generate seeds
             seeds, sizes = self.bridge.generate_seeds(
@@ -221,8 +363,8 @@ class SeedGenerationWidget(QWidget):
             
             # Add seeds to viewer
             if self.seeds_layer is not None and self.seeds_layer in self.viewer.layers:
-                self.seeds_layer.data = seeds
-            else:
+            #     self.seeds_layer.data = seeds
+            # else:
                 self.seeds_layer = self.viewer.add_labels(
                     seeds,
                     name="Generated Seeds"

@@ -138,7 +138,7 @@ def make_adaptive_seed_ero(
                         save_merged_every_iter = False,
                         base_name = None,
                         init_segments = None,
-                        footprints = "ball",
+                        footprints = None,
                         upper_threshold = None,
                         split_size_limit = (None,None),
                         split_convex_hull_limit = (None, None),
@@ -167,7 +167,7 @@ def make_adaptive_seed_ero(
         name_prefix (str, optional): Prefix for output file names. Defaults to "Merged_seed".
         init_segments (int, optional): Number of segments for the first seed, defaults is None.
             A small number of make the initial sepration faster, as normally the first seed only has a big one component
-        footprints (str, optional): Footprints shape for erosion. Defaults to "ball".
+        footprints (str, optional): Footprints shape for erosion. Defaults to None.
         split_size_limit (optional): create a split if the region size (np.sum(mask)) is within the limit
         split_convex_hull_limit: create a split if the the convex hull's area/volume is within the limit
 
@@ -204,8 +204,9 @@ def make_adaptive_seed_ero(
     #     output_folder = os.path.join(output_folder, sub_folder)
     os.makedirs(output_folder,exist_ok=True)
 
-    footprint_list = config_core.check_and_assign_footprint(footprints, ero_iters)
 
+    footprint_list = config_core.check_and_assign_footprint(footprints, ero_iters)
+    threshold,upper_threshold = config_core.check_and_assign_threshold(threshold, upper_threshold)
     
     values_to_print = {
         "img_path": img_path,
@@ -239,12 +240,12 @@ def make_adaptive_seed_ero(
     max_splits = segments
     
     
+    
     if upper_threshold is not None:
-        assert threshold<upper_threshold, "lower_threshold must be smaller than upper_threshold"
         img = (img>=threshold) & (img<=upper_threshold)
     else:
         img = img>=threshold
-    # img = img<=threshold
+
 
     if boundary is not None:
         boundary = sprout_core.check_and_cast_boundary(boundary)
@@ -263,6 +264,9 @@ def make_adaptive_seed_ero(
         
     
     init_ids = [int(value) for value in np.unique(init_seed) if value != background]
+    if not init_ids:
+        raise RuntimeError("No components found from the initial seeds. Exiting.")
+    
     max_seed_id = int(np.max(init_ids))
 
 
@@ -473,7 +477,7 @@ def make_adaptive_seed_thre(
                         base_name = None,
                        
                         init_segments = None,
-                        footprints = "ball",
+                        footprints = None,
                         
                         upper_thresholds = None,
                         split_size_limit = (None, None),
@@ -529,7 +533,7 @@ def make_adaptive_seed_thre(
         Prefix for output file names.
     init_segments : int, optional
         Number of initial segments to extract. Defaults to `segments` if not provided.
-    footprints : str or list, default="ball"
+    footprints : str or list, default=None
         Morphological footprints shape or list of shapes for erosion. If a list, must match `ero_iters`.
     upper_thresholds : list or array-like, optional
         Sequence of upper threshold values for range-based thresholding. Must match `thresholds` in length.
@@ -585,6 +589,7 @@ def make_adaptive_seed_thre(
     os.makedirs(output_folder,exist_ok=True)
 
     footprint_list = config_core.check_and_assign_footprint(footprints, ero_iters)
+    thresholds, upper_thresholds = config_core.check_and_assign_thresholds(thresholds, upper_thresholds)
         
     values_to_print = {
         "img_path": img_path,
@@ -619,13 +624,10 @@ def make_adaptive_seed_thre(
     if init_segments is None:
         init_segments = segments
 
-    if upper_thresholds is not None:
-        assert len(thresholds) == len(upper_thresholds), "lower_thresholds and upper_thresholds should have the same length"
-        assert thresholds[0]<upper_thresholds[0], "lower_threshold must be smaller than upper_threshold"
+    if upper_thresholds[0] is not None:
         mask = (img>=thresholds[0]) & (img<=upper_thresholds[0])
     else:
         mask = img>=thresholds[0]
-        upper_thresholds = [None] * len(thresholds)
     
     
     if boundary is not None:
@@ -639,13 +641,15 @@ def make_adaptive_seed_thre(
     
     seeds_dict = {}
     
-    output_img_name = f'INTER_thre_{thresholds[0]}_ero_{ero_iters}.tif'
+    output_img_name = f'INTER_thre_{thresholds[0]}_{upper_thresholds[0]}_ero_{ero_iters}.tif'
     if save_every_iter:
         save_seed(init_seed, output_folder, output_img_name, 
                   is_napari=is_napari, seeds_dict=seeds_dict)
             
     
     init_ids = [int(value) for value in np.unique(init_seed) if value != background]
+    if not init_ids:
+        raise RuntimeError("No components found from the initial seeds. Exiting.")
     max_seed_id = int(np.max(init_ids))
 
 
@@ -678,7 +682,6 @@ def make_adaptive_seed_thre(
         
         
         if upper_threshold is not None:
-            assert threshold< upper_threshold , "lower_threshold must be smaller than upper_threshold"
             mask = (img>=threshold) & (img<=upper_threshold)
         else:
             mask = img>=threshold

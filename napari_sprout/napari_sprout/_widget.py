@@ -13,7 +13,7 @@ from .widgets.seed_widget import SeedGenerationWidget
 from .widgets.grow_widget import SeedGrowthWidget
 from .utils.sprout_bridge import SPROUTBridge
 
-from .widgets.info_widget import LabelLayerInfoWidget
+from .widgets.info_widget import LayerInfoWidget
 from .widgets.edit_widget import QtLabelSelector
 from .widgets.map_widget import LabelMapperWidget
 from .widgets.tools_widget import SPROUTToolWidget
@@ -201,7 +201,7 @@ def make_sprout_widget_info(viewer: "napari.viewer.Viewer" = None):
         if viewer is None:
             raise RuntimeError("No napari viewer found")
     
-    widget = LabelLayerInfoWidget(viewer)
+    widget = LayerInfoWidget(viewer)
     # Ensure widget is visible
     widget.show()
     return widget

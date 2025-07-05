@@ -49,7 +49,7 @@ output_folder: "./result/demo_dog/seeds_all"
 #'ball' and 'cube' :Erosion all directions. 
 #'ball_XY', 'ball_XZ', 'ball_YZ': Erosion on the Plane. 
 # 'X', 'Y', 'Z': Erosion on the axis.
-# footprints: "ball" 
+# footprints: None
 
 
 # Is saving meshes, default is False
