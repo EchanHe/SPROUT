@@ -214,6 +214,12 @@ class SeedGenerationWidget(QWidget):
             # Get parameters
             lower = self.lower_threshold.value()
             upper = self.upper_threshold.value() if self.use_upper.isChecked() else None
+
+            # Cast to int if not None
+            if lower is not None:
+                lower = int(lower)
+            if upper is not None:
+                upper = int(upper)
             erosion = self.erosion_iter.value()
             footprint = self.footprint_combo.currentText()
             segments = self.segments_spin.value()
@@ -236,30 +242,31 @@ class SeedGenerationWidget(QWidget):
             # They return seeds_dict for {name: seed}, and will be added to labels
             
             print(f"Generating seeds with parameters")
-            seeds_dict , _ = make_seeds(
-                img = self.current_image,
-                boundary = boundary,
+            # seeds_dict , _ = make_seeds(
+            #     img = self.current_image,
+            #     boundary = boundary,
                 
-                thresholds = int(lower),
-                upper_thresholds = int(upper),
-                ero_iters = erosion,
-                segments = segments,
+            #     thresholds = lower,
+            #     upper_thresholds = upper,
+            #     ero_iters = erosion,
+            #     segments = segments,
                 
-                # TODO add widget that has a default output folder, also allow user to select output folder
-                output_folder = '~/napari_temp',
-                 # TODO add default, also allow user change
-                num_threads = 4,
-                # TODO add a field for None as default, but also allow user input
-                # it can be either a string or a list of string that matches the number of erosions
-                footprints = None,
-                # TODO get the name of current image too
-                base_name = "to_get_name", 
+            #     # TODO add widget that has a default output folder, also allow user to select output folder
+            #     output_folder = 'napari_temp',
+            #      # TODO add default, also allow user change
+            #     num_threads = 4,
+            #     # TODO add a field for None as default, but also allow user input
+            #     # it can be either a string or a list of string that matches the number of erosions
+            #     footprints = None,
+            #     # TODO get the name of current image too
+            #     base_name = "to_get_name", 
 
-                # fixed parameters
-                is_napari=True
-                )
+            #     # fixed parameters
+            #     is_napari=True
+            #     )
 
-            self.add_labels_layer(seeds_dict)
+            # self.add_labels_layer(seeds_dict)
+            
             # @ioannouE, using make_adaptive_seed_ero or make_adaptive_seed_thre
             # is based on the threshold, if threshold is a single value, use make_adaptive_seed_ero
             # if threshold is a list, use make_adaptive_seed_thre, in make_adaptive_seed_thre is thresholds and upper_thresholds
@@ -268,8 +275,8 @@ class SeedGenerationWidget(QWidget):
                 img = self.current_image,
                 boundary = boundary,  
                    
-                threshold =int(lower),
-                upper_threshold= int(upper),
+                threshold =lower,
+                upper_threshold= upper,
                 
                 ero_iters = erosion, 
                 segments= segments,        
@@ -277,7 +284,7 @@ class SeedGenerationWidget(QWidget):
                 
                 # TODO add qt fields for following parameters
                 # path, field that has a default output folder, also allow user to select output folder
-                output_folder = '~/napari_temp',             
+                output_folder = 'napari_temp',             
                 # int, has default value, say 1, use can change
                 num_threads = 4,
                 
@@ -320,7 +327,7 @@ class SeedGenerationWidget(QWidget):
             
                 # TODO add qt fields for following parameters
                 # path, field that has a default output folder, also allow user to select output folder
-                output_folder = '~/napari_temp',             
+                output_folder = 'napari_temp',             
                 # int, has default value, say 1, use can change
                 num_threads = 4,
                 footprints = None,

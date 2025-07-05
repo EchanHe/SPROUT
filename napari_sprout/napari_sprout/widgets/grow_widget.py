@@ -322,7 +322,7 @@ class SeedGrowthWidget(QWidget):
                 
                 # TODO add qt fields for following parameters
                 # path, field that has a default output folder, also allow user to select output folder
-                output_folder = '~/napari_temp/grow',    
+                output_folder = 'napari_temp/grow',    
                 # int, has default value, say 1 for now, use can change           
                 num_threads = 1,
                 # Can be None, or a int, or a list that matches the number of thresholds
