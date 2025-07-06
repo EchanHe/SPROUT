@@ -324,7 +324,7 @@ class SeedGrowthWidget(QWidget):
                 # path, field that has a default output folder, also allow user to select output folder
                 output_folder = 'napari_temp/grow',    
                 # int, has default value, say 1 for now, use can change           
-                num_threads = 1,
+                num_threads = 4,
                 # Can be None, or a int, or a list that matches the number of thresholds
                 # if None, will not save intermediate results
                 save_interval = None,  

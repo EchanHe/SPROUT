@@ -188,6 +188,10 @@ def save_config_with_output(output_dict, output_dir):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
     config_path = os.path.join(output_dir, f"config_{timestamp}.yaml")
 
+    # Set 'img', 'seg', 'boundary' keys to None if they exist and value is not None
+    for k in ("img", "seg", "boundary"):
+        if k in output_dict['params'] and output_dict['params'][k] is not None:
+            output_dict['params'][k] = None
 
 
     with open(config_path, "w") as f:
