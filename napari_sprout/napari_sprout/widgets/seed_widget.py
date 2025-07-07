@@ -249,6 +249,9 @@ class SeedGenerationWidget(QWidget):
             # So probably make a selection widget that allows user to select which method to use
             
             # They return seeds_dict for {name: seed}, and will be added to labels
+
+            # NOTE: maybe add UI for selecting the output folder
+            # NOTE: need to add list of thresholds for adaptive seed making
             
             selected_method = self.seed_method_combo.currentText()
             seeds_dict = {}
