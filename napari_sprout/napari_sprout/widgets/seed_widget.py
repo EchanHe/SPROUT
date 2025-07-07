@@ -62,6 +62,15 @@ class SeedGenerationWidget(QWidget):
         
         image_group.setLayout(image_layout)
         layout.addWidget(image_group)
+
+        # Seed method selection
+        seed_method_group = QGroupBox("Seed Method")
+        seed_method_layout = QFormLayout()
+        self.seed_method_combo = QComboBox()
+        self.seed_method_combo.addItems(["Original", "Adaptive (Erosion)", "Adaptive (Thresholds)"])
+        seed_method_layout.addRow("Method:", self.seed_method_combo)
+        seed_method_group.setLayout(seed_method_layout)
+        layout.addWidget(seed_method_group)
         
         # Threshold parameters
         threshold_group = QGroupBox("Threshold Parameters")
@@ -241,150 +250,88 @@ class SeedGenerationWidget(QWidget):
             
             # They return seeds_dict for {name: seed}, and will be added to labels
             
-            print(f"Generating seeds with parameters")
-            # seeds_dict , _ = make_seeds(
-            #     img = self.current_image,
-            #     boundary = boundary,
-                
-            #     thresholds = lower,
-            #     upper_thresholds = upper,
-            #     erosion_steps = erosion,
-            #     segments = segments,
-                
-            #     # TODO add widget that has a default output folder, also allow user to select output folder
-            #     output_folder = 'napari_temp',
-            #      # TODO add default, also allow user change
-            #     num_threads = 4,
-            #     # TODO add a field for None as default, but also allow user input
-            #     # it can be either a string or a list of string that matches the number of erosions
-            #     footprints = None,
-            #     # TODO get the name of current image too
-            #     base_name = "to_get_name", 
-
-            #     # fixed parameters
-            #     return_for_napari=True
-            #     )
-
-            # self.add_labels_layer(seeds_dict)
+            selected_method = self.seed_method_combo.currentText()
+            seeds_dict = {}
             
-            # @ioannouE, using make_adaptive_seed_ero or make_adaptive_seed_thre
-            # is based on the threshold, if threshold is a single value, use make_adaptive_seed_ero
-            # if threshold is a list, use make_adaptive_seed_thre, in make_adaptive_seed_thre is thresholds and upper_thresholds
-            # See line 844-857 in make_adaptive_seed.py
-            seeds_dict ,_ , _ = make_adaptive_seed_ero(
-                img = self.current_image,
-                boundary = boundary,  
-                   
-                threshold =lower,
-                upper_threshold= upper,
-                
-                erosion_steps = erosion, 
-                segments= segments,        
-                
-                
-                # TODO add qt fields for following parameters
-                # path, field that has a default output folder, also allow user to select output folder
-                output_folder = 'napari_temp',             
-                # int, has default value, say 1, use can change
-                num_threads = 4,
-                
-                footprints = None,
-                
-                # TODO fields for adadptive seed, 
-                # maybe put them into a group, and only reveal when adaptive seed is selected
-                sort = True,
-                no_split_max_iter =3,
-                min_size=5,
-                min_split_ratio = 0.01,
-                min_split_total_ratio = 0,
-                save_every_iter = True,
-                # list of int, default is none
-                init_segments = None,
-                # tuple of int/None, default is (None,None)                
-                split_size_limit = (None,None),
-                # tuple of int/None, default is (None,None)   
-                split_convex_hull_limit = (None, None),    
-                
-                # fixed parameters
-                return_for_napari=True
-                       
+            print(f"Generating seeds with method: {selected_method}")
+
+            if selected_method == "Original":
+                seeds_dict, _ = make_seeds(
+                    img=self.current_image,
+                    boundary=boundary,
+                    thresholds=lower,
+                    upper_thresholds=upper,
+                    erosion_steps=erosion,
+                    segments=segments,
+                    output_folder='napari_temp',
+                    num_threads=4,
+                    footprints=None,
+                    base_name="to_get_name",
+                    return_for_napari=True
+                )
+            elif selected_method == "Adaptive (Erosion)":
+                seeds_dict, _, _ = make_adaptive_seed_ero(
+                    img=self.current_image,
+                    boundary=boundary,
+                    threshold=lower,
+                    upper_threshold=upper,
+                    erosion_steps=erosion,
+                    segments=segments,
+                    output_folder='napari_temp',
+                    num_threads=4,
+                    footprints=None,
+                    sort=True,
+                    no_split_max_iter=3,
+                    min_size=5,
+                    min_split_ratio=0.01,
+                    min_split_total_ratio=0,
+                    save_every_iter=True,
+                    init_segments=None,
+                    split_size_limit=(None, None),
+                    split_convex_hull_limit=(None, None),
+                    return_for_napari=True
+                )
+            elif selected_method == "Adaptive (Thresholds)":
+                # NOTE: This method expects a list of thresholds.
+                # The current UI provides a single value.
+                thresholds = [lower]
+                show_info("Using single lower threshold for Adaptive (Thresholds) method.")
+                seeds_dict, _, _ = make_adaptive_seed_thre(
+                    img=self.current_image,
+                    boundary=boundary,
+                    thresholds=thresholds,
+                    upper_thresholds=None,
+                    erosion_steps=erosion,
+                    segments=segments,
+                    output_folder='napari_temp',
+                    num_threads=4,
+                    footprints=None,
+                    sort=True,
+                    no_split_max_iter=3,
+                    min_size=5,
+                    min_split_ratio=0.01,
+                    min_split_total_ratio=0,
+                    save_every_iter=True,
+                    init_segments=None,
+                    split_size_limit=(None, None),
+                    split_convex_hull_limit=(None, None),
+                    return_for_napari=True
                 )
 
-            seeds_dict ,_ , _ = make_adaptive_seed_thre(
-                img = self.current_image,
-                boundary = boundary,  
-                   
-                # TODO 
-                # Currently using default values, as this function require a list than just an int
-                thresholds =[130,140,150],
-                # Similar for upper_thresholds
-                upper_thresholds= None,
-                
-                erosion_steps = erosion, 
-                segments= segments, 
-            
-            
-                # TODO add qt fields for following parameters
-                # path, field that has a default output folder, also allow user to select output folder
-                output_folder = 'napari_temp',             
-                # int, has default value, say 1, use can change
-                num_threads = 4,
-                footprints = None,
-                
-                
-                # TODO fields for adadptive seed, 
-                # maybe put them into a group, and only reveal when adaptive seed is selected
+            if not seeds_dict:
+                show_error("Seed generation returned no seeds.")
+                return
 
-                sort = True,
-                no_split_max_iter =3,
-                min_size=5,
-                min_split_ratio = 0.01,
-                min_split_total_ratio = 0,
-                save_every_iter = True,
-                init_segments = None,
-                split_size_limit = (None,None),
-                split_convex_hull_limit = (None, None),      
-                
-                # fixed parameters
-                return_for_napari=True,       
-                )
-
-            
             self.add_labels_layer(seeds_dict)
+            
+            self.results_label.setText(f"Generated seeds using {selected_method}")
+            
+            if seeds_dict:
+                first_seed_name = list(seeds_dict.keys())[0]
+                seeds = seeds_dict[first_seed_name]
+                sizes = [np.sum(seeds == i) for i in np.unique(seeds) if i != 0]
+                self.seeds_generated.emit(seeds, sizes)
+                show_info(f"Successfully generated {len(sizes)} seeds using {selected_method}")
 
-            
-            # @ioannouE I kept the orignal interface for comparing for now.
-            
-            # Generate seeds
-            seeds, sizes = self.bridge.generate_seeds(
-                self.current_image,
-                lower,
-                segments,
-                erosion,
-                footprint,
-                upper,
-                boundary
-            )
-            
-            # Add seeds to viewer
-            if self.seeds_layer is not None and self.seeds_layer in self.viewer.layers:
-            #     self.seeds_layer.data = seeds
-            # else:
-                self.seeds_layer = self.viewer.add_labels(
-                    seeds,
-                    name="Generated Seeds"
-                )
-            
-            # Update results
-            self.results_label.setText(
-                f"Generated {len(sizes)} seeds\n"
-                f"Sizes: {sizes[:5]}{'...' if len(sizes) > 5 else ''}"
-            )
-            
-            # Emit signal
-            self.seeds_generated.emit(seeds, sizes)
-            
-            show_info(f"Successfully generated {len(sizes)} seeds")
-            
         except Exception as e:
             show_error(f"Error generating seeds: {str(e)}")
