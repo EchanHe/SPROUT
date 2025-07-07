@@ -50,7 +50,7 @@ def run_batch_seeds(file_path):
                                     boundary_path=optional_params['boundary_path'],
                                     
                                     output_folder = config['output_folder'],
-                                    ero_iters = config['ero_iters'],
+                                    erosion_steps = config['erosion_steps'],
                                     thresholds = config['thresholds'],
                                     segments = config['segments'],
                                     
@@ -114,7 +114,7 @@ def run_batch_adaptive_seed(file_path):
                 _ ,ori_combine_ids_map , output_dict=make_adaptive_seed.make_adaptive_seed_thre(                           
                                    thresholds=config['thresholds'],
                                     output_folder=config['output_folder'],
-                                    ero_iters=config['ero_iters'], 
+                                    erosion_steps=config['erosion_steps'], 
                                     segments= config['segments'],
                                     
                                     num_threads = config['num_threads'],
@@ -126,13 +126,13 @@ def run_batch_adaptive_seed(file_path):
                                     sort = optional_params["sort"],
                                     
                                                                         
-                                    no_split_limit =optional_params["no_split_limit"],
+                                    no_split_max_iter =optional_params["no_split_max_iter"],
                                     min_size=optional_params["min_size"],
-                                    min_split_prop = optional_params["min_split_prop"],
-                                    min_split_sum_prop = optional_params["min_split_sum_prop"],
+                                    min_split_ratio = optional_params["min_split_ratio"],
+                                    min_split_total_ratio = optional_params["min_split_total_ratio"],
                                     
                                     save_every_iter = optional_params["save_every_iter"],
-                                    save_merged_every_iter = optional_params["save_merged_every_iter"],
+
                                                                         
                                     init_segments = optional_params["init_segments"],
                                     footprints = optional_params["footprints"],
@@ -152,7 +152,7 @@ def run_batch_adaptive_seed(file_path):
                                        
                                     threshold=config['thresholds'],
                                     output_folder=config['output_folder'],
-                                    ero_iters=config['ero_iters'], 
+                                    erosion_steps=config['erosion_steps'], 
                                     segments= config['segments'],
                                     num_threads = config['num_threads'],
                                     
@@ -163,13 +163,12 @@ def run_batch_adaptive_seed(file_path):
                                     sort = optional_params["sort"],
                                     
                                                                         
-                                    no_split_limit =optional_params["no_split_limit"],
+                                    no_split_max_iter =optional_params["no_split_max_iter"],
                                     min_size=optional_params["min_size"],
-                                    min_split_prop = optional_params["min_split_prop"],
-                                    min_split_sum_prop = optional_params["min_split_sum_prop"],
+                                    min_split_ratio = optional_params["min_split_ratio"],
+                                    min_split_total_ratio = optional_params["min_split_total_ratio"],
                                     
                                     save_every_iter = optional_params["save_every_iter"],
-                                    save_merged_every_iter = optional_params["save_merged_every_iter"],
                                     
                                     init_segments = optional_params["init_segments"],
                                     footprints = optional_params["footprints"],

@@ -7,63 +7,6 @@ import tifffile
 
 from scipy.ndimage import binary_fill_holes
 
-# eval() the Dataframe 
-required_eval_params =[
-    'upper_thresholds',
-    'to_grow_ids'
-    
-]
-
-
-
-
-
-optional_params_default_grow = {
-    'upper_thresholds': None,
-    'boundary_path' : None,
-    'to_grow_ids': None,
-    'background': 0,
-    
-    'num_threads': None,
-    
-    'grow_to_end': False,
-    'is_sort': True,
-    
-    'min_diff': 50,
-    'tolerate_iters': 3,
-    
-    # For mesh making
-    'is_make_meshes': False,
-    'downsample_scale': 10,
-    'step_size': 1,  
-    
-    "final_grow_output_folder": None,
-    "name_prefix" : "final_grow",
-    "simple_naming": True
-}
-
-optional_params_default_seeds = {
-    'upper_thresholds': None,
-    'boundary_path' : None,
-
-    'background': 0,
-
-    'sort': True,
-    
-    'no_split_limit': 3,
-    'min_size': 5,
-    'min_split_prop': 0.01,
-    'min_split_sum_prop': 0,
-    
-    'save_every_iter': False,
-    'save_merged_every_iter': False,
-    'name_prefix': "Merged_seed",
-    'init_segments': None,
-    'footprints': "ball",
-    'split_size_limit': [None,None],
-    'split_convex_hull_limit': [None,None]
-}
-
 
 
 
@@ -99,41 +42,6 @@ def assign_optional_params(config, keys_with_defaults):
     
     return config_values
 
-def assign_config_values_pipeline(yaml_config, row, keys_with_defaults):
-    """
-    Deprecated
-    
-    Assign configuration values from YAML or a row of aDataFrame, falling back to default values if missing.
-
-    Args:
-        yaml_config (dict): Parsed YAML configuration as a dictionary.
-        row (pd.DataFrame): DataFrame row
-        keys_with_defaults (dict): Dictionary of keys and their default values.
-
-    Returns:
-        dict: A dictionary of configuration values with assigned defaults if missing.
-    """
-    config_values = {}
-    
-    for key, default in keys_with_defaults.items():
-        # Check if the key exists in YAML
-        if yaml_config and key in yaml_config:
-            config_values[key] = yaml_config[key]
-        # Check if the key exists in the DataFrame
-        elif row is not None and key in row:
-            if key in required_eval_params:
-                if isinstance(row[key], str):
-                    config_values[key] = eval(row[key])
-                else:
-                    config_values[key] = row[key]  
-            else:
-                config_values[key] = row[key]  
-            
-        # Assign default if not found
-        else:
-            config_values[key] = default
-    
-    return config_values
 
 
 
@@ -990,15 +898,17 @@ def dilation_one_iter(input_mask, threshold_binary,
 def reorder_segmentation(segmentation, min_size=None, sort_ids=True, top_n=None):
     """
     Reorder segmentation labels based on their size and optionally remove small segments.
-    
-    Parameters:
-    - segmentation: numpy array with class labels from 0 to n (0 is background).
-    - min_size: minimum size for a segment to be kept (optional).
-    - sort_ids: boolean indicating whether to sort class IDs by size (default: True).
-    - top_n: If specified, only the top N largest segments will be kept (default: None).
-    
+
+    Args:
+        segmentation (np.ndarray): Array with class labels (0 is background).
+        min_size (int, optional): Minimum size for a segment to be kept.
+        sort_ids (bool, optional): If True, sort class IDs by segment size (default: True).
+        top_n (int, optional): If set, keep only the top N largest segments.
+
     Returns:
-    - reordered_segmentation: numpy array with reordered class labels.
+        tuple:
+            - reordered_segmentation (np.ndarray): Array with reordered class labels.
+            - class_mapping (dict): Mapping from old to new class labels.
     """
     # Find unique classes excluding background
     unique_classes = np.unique(segmentation)

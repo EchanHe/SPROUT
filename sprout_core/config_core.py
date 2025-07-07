@@ -17,6 +17,42 @@ support_footprints =['ball','cube',
                      '2XZ_1Y','2XY_1Z','2YZ_1X']
 
 
+def check_and_assign_segment_list(segments, init_segments,  last_segments, erosion_steps =None, n_threhsolds=None):
+    
+    # Assert that only one of erosion_steps or n_threhsolds can be not None
+    if (erosion_steps is not None) and (n_threhsolds is not None):
+        raise ValueError("Only one of 'erosion_steps' or 'n_threhsolds' can be not None.")
+    if erosion_steps is not None:
+        length = erosion_steps +2
+    else:
+        length = n_threhsolds +1
+    
+    
+    # Handle segments parameter flexibly
+    if isinstance(segments, int):
+        segments_list = [segments] * length
+
+        if init_segments is not None:
+            segments_list[0] = init_segments
+
+        if last_segments is not None:
+            segments_list[-1] = last_segments
+
+    elif isinstance(segments, list):
+        if init_segments is not None or last_segments is not None:
+            raise ValueError(
+                "When 'segments' is a list, please do not use 'init_segments', 'mid_segments', or 'last_segments' to avoid ambiguity."
+            )
+        if len(segments) != length:
+            raise ValueError(
+                f"If 'segments' is a list, its length must be erosion_steps +2 or n_threhsolds +1 = {length}"
+            )
+        segments_list = segments
+    else:
+        raise TypeError("'segments' must be either an int or a list of ints.")
+
+    return segments_list
+    
 def check_and_assign_base_name(base_name, img_path, default_base_name):
     if base_name is None:
         if img_path is None:
@@ -114,19 +150,19 @@ def check_and_assign_thresholds(thresholds, upper_thresholds, reverse=False):
     
     return thresholds, upper_thresholds
 
-def check_and_assign_footprint(footprints, ero_iters , with_folder_name=False):
+def check_and_assign_footprint(footprints, erosion_steps , with_folder_name=False):
     if footprints is None:
         footprints = "ball"
     
     if isinstance(footprints, str):
 
         assert footprints in support_footprints, f"footprint {footprints} is invalid, use supported footprints"
-        footprint_list = [footprints]*ero_iters
+        footprint_list = [footprints]*erosion_steps
         if with_folder_name:
             folders = footprints
         
     elif isinstance(footprints, list):
-        assert len(footprints) ==ero_iters, "If input_footprints is a list, it must have the same length as ero_iters"
+        assert len(footprints) ==erosion_steps, "If input_footprints is a list, it must have the same length as erosion_steps"
         
         check_support_footprint = [footprint in support_footprints for footprint in footprints]
         if not np.all(check_support_footprint):
@@ -328,7 +364,7 @@ input_val_make_seeds = {
         "min": 0,
         "description": "List of thresholds, must contain at least one numeric value."
     },
-    "ero_iters": {
+    "erosion_steps": {
         "type": int,
         # "subtype": int,
         "min": 0,
@@ -457,7 +493,7 @@ input_val_make_grow = {
         "description": "num of threads"
     },
 
-    "dilate_iters": {
+    "dilation_steps": {
         "type": (int,list),
         "subtype": int,
         "min": 0,
@@ -484,13 +520,16 @@ input_val_make_grow = {
         "required": True,
         "description": "Output directory path as a string."
     },
-    "save_interval": {
+
+    #### Optional parameters
+    "save_every_n_iters": {
         "type": int,
         "min": 1,
-        "required": True,
+        "required": False,
+        "default": None,
         "description": "Save the grow result every n iters"
     }, 
-    #### Optional parameters
+    
     "workspace": {
         "type": str,
         "required": False,
@@ -532,7 +571,7 @@ input_val_make_grow = {
         'default': None,
         "description": "The name prefix"
     },   
-    "simple_naming": {
+    "use_simple_naming": {
         "type": bool,
         "required": False,
         'default': True
@@ -551,14 +590,14 @@ input_val_make_grow = {
         "required": False,
         'default': True
     },    
-    "tolerate_iters": {
+    "no_growth_max_iter": {
         "type": int,
         "min": 1,
         "required": False,
         'default': 3,
         "description": "limit for consecutive no-growth iterations."
     },    
-    "min_diff": {
+    "min_growth_size": {
         "type": int,
         "min": 0,
         "required": False,
@@ -594,7 +633,7 @@ input_val_make_adaptive_seed = {
         "min": 0,
         "description": "List of thresholds, must contain at least one numeric value."
     },
-    "ero_iters": {
+    "erosion_steps": {
         "type": int,
         "min": 0,
         "max": 1000,
@@ -602,10 +641,11 @@ input_val_make_adaptive_seed = {
         "description": "Number of iterations, must be a non-negative integer."
     },
     "segments": {
-        "type": int,
+        "type": (int,list),
+        "subtype": int,
         "min": 1,
         "required": True,
-        "description": "The algorithm keeps top <segments> largest disconnected components"
+        "description": "The algorithm keeps top <segments> largest disconnected components."
     },
     "output_folder": {
         "type": str,
@@ -645,7 +685,7 @@ input_val_make_adaptive_seed = {
         'default': True
     },   
     ## Optional for early stopping
-    "no_split_limit": {
+    "no_split_max_iter": {
         "type": int,
         "min": 0,
         "required": False,
@@ -659,7 +699,7 @@ input_val_make_adaptive_seed = {
         "default": 5,
         "description": "Minimum size for segments. Defaults is 5."
     },
-    "min_split_prop": {
+    "min_split_ratio": {
         "type": (int,float),
         "min": 0,
         "max": 1,
@@ -667,7 +707,7 @@ input_val_make_adaptive_seed = {
         "default": 0.01,
         "description": "Minimum proportion to consider a split. Defaults is 0.01."
     },
-    "min_split_sum_prop": {
+    "min_split_total_ratio": {
         "type": (int,float),
         "min": 0,
         "max": 1,
@@ -681,13 +721,7 @@ input_val_make_adaptive_seed = {
         "required": False,
         'default': True,
         "description": "Save results at every iteration. Defaults is False."
-    },       
-     "save_merged_every_iter": {
-        "type": bool,
-        "required": False,
-        'default': False,
-        "description": "Save merged results at every iteration. Defaults is False."
-    },      
+    },            
     "base_name": {
         "type": str,
         "required": False,
@@ -702,6 +736,14 @@ input_val_make_adaptive_seed = {
         "default": None,
         "description": "Number of segments for the first seed."
     },
+
+    "last_segments":{
+        "type": int,
+        "min": 1,
+        "required": False,
+        "default": None,
+        "description": "Number of segments for the last seed."
+    },   
     "footprints": {       
         "type": (str,list),
         "required": False,

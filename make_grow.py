@@ -143,12 +143,12 @@ def grow_mp(**kwargs):
         dict: A dictionary containing paths to the final output and log files.
     """
     # Extract configuration values from kwargs
-    dilate_iters = kwargs.get('dilate_iters', None)
+    dilation_steps = kwargs.get('dilation_steps', None)
     thresholds = kwargs.get('thresholds', None)  
     upper_thresholds = kwargs.get('upper_thresholds', None)  
     
     num_threads = kwargs.get('num_threads', None) 
-    save_interval = kwargs.get('save_interval', None)  
+    save_every_n_iters = kwargs.get('save_every_n_iters', None)  
     touch_rule = kwargs.get('touch_rule', "stop")  
     grow_to_end = kwargs.get('grow_to_end', False)  
     
@@ -167,12 +167,12 @@ def grow_mp(**kwargs):
 
     
     base_name = kwargs.get('base_name', None)  
-    simple_naming = kwargs.get('simple_naming', True)  
+    use_simple_naming = kwargs.get('use_simple_naming', True)  
     
     to_grow_ids = kwargs.get('to_grow_ids', None) 
     is_sort = kwargs.get('is_sort', True) 
-    min_diff = kwargs.get('min_diff', 50) 
-    tolerate_iters = kwargs.get('tolerate_iters', 3) 
+    min_growth_size = kwargs.get('min_growth_size', 50) 
+    no_growth_max_iter = kwargs.get('no_growth_max_iter', 3) 
     
     # For mesh making
     is_make_meshes = kwargs.get('is_make_meshes', False) 
@@ -180,13 +180,15 @@ def grow_mp(**kwargs):
     step_size  = kwargs.get('step_size', 1) 
     
     # for napari
-    is_napari = kwargs.get('is_napari', False)
+    return_for_napari = kwargs.get('return_for_napari', False)
+    
+    
     
     
     default_grow_to_end_iter = 200
     
     if grow_to_end:
-        dilate_iters = [default_grow_to_end_iter] * len(dilate_iters)    
+        dilation_steps = [default_grow_to_end_iter] * len(dilation_steps)    
     
     if num_threads is None:
         num_threads = max(1, max_threads // 2)
@@ -194,27 +196,25 @@ def grow_mp(**kwargs):
     if num_threads>=max_threads:
         num_threads =  max(1,max_threads-1)
     
-    # Test if the grown result and input's diff is more than this. Default is 10.
-    # min_diff = 50
-    # The number of iters for diff is less than diff_threshold
 
-    # Ensure thresholds and dilate_iters have the same length
+
+    # Ensure thresholds and dilation_steps have the same length
     if isinstance(thresholds, int):
         thresholds = [thresholds]
-    if isinstance(dilate_iters, int):
-        dilate_iters = [dilate_iters]
+    if isinstance(dilation_steps, int):
+        dilation_steps = [dilation_steps]
 
     thresholds, upper_thresholds = config_core.check_and_assign_thresholds(thresholds, upper_thresholds, reverse= True)
     
-    assert len(thresholds) == len(dilate_iters), f"thresholds and dilate_iters must have the same length, but got {len(thresholds)} and {len(dilate_iters)}."
+    assert len(thresholds) == len(dilation_steps), f"thresholds and dilation_steps must have the same length, but got {len(thresholds)} and {len(dilation_steps)}."
     
     
-    if isinstance(save_interval, list):
-        assert len(thresholds) == len(save_interval), f"Save interval list should have the same length as well"
-    if isinstance(save_interval, int):
-        save_interval = [save_interval] * len(thresholds)
-    if save_interval is None:
-        save_interval = dilate_iters
+    if isinstance(save_every_n_iters, list):
+        assert len(thresholds) == len(save_every_n_iters), f"Save interval list should have the same length as well"
+    if isinstance(save_every_n_iters, int):
+        save_every_n_iters = [save_every_n_iters] * len(thresholds)
+    if save_every_n_iters is None:
+        save_every_n_iters = dilation_steps
     
     if workspace is not None:
         img_path = os.path.join(workspace, img_path)
@@ -252,17 +252,23 @@ def grow_mp(**kwargs):
     # Record the start time
     start_time = datetime.now()
     # Print
+    
+    # Convert paths to absolute paths if they are not already
+    if output_folder is not None and not os.path.isabs(output_folder):
+        output_folder = os.path.abspath(output_folder)
+    
     values_to_print = {   
+            "Image Path": img_path,
             "Segmentation Path": seg_path,
             "Boundary Path": boundary_path,      
             "grow_to_end" : grow_to_end,
-            "Dilate Iterations": dilate_iters,
+            "Dilate Iterations": dilation_steps,
             "Grow Thresholds": thresholds,
             "Grow upper thresholds": upper_thresholds,
             "Output Folder": output_folder,
-            "Save Interval": save_interval,
+            "Save every iterations": save_every_n_iters,
             "num_threads": num_threads,
-            "Early stopping": f"min_diff = {min_diff} and tolerate_iters = {tolerate_iters}"
+            "Early stopping": f"min_growth_size = {min_growth_size} and no_growth_max_iter = {no_growth_max_iter}"
             }
     print("Start time: "+start_time.strftime("%Y-%m-%d %H:%M:%S"))
     print(f"Growing on: {img_path}")
@@ -286,13 +292,13 @@ def grow_mp(**kwargs):
         result = result.astype('uint8')
         
     # Iterate through and make growth results
-    for i, (threshold ,upper_threshold,dilate_iter) in enumerate(zip(thresholds , upper_thresholds,dilate_iters)):
+    for i, (threshold ,upper_threshold,dilate_iter) in enumerate(zip(thresholds , upper_thresholds,dilation_steps)):
         # Set the count for check diff for each growing threshold
         count_below_threshold = 0
         
         
         threshold_name = "_".join(str(s) for s in thresholds[:i+1])
-        dilate_name = "_".join(str(s) for s in dilate_iters[:i+1])
+        dilate_name = "_".join(str(s) for s in dilation_steps[:i+1])
         
         if upper_threshold is not None:
             threshold_binary = (img>=threshold) & (img<=upper_threshold)
@@ -313,11 +319,11 @@ def grow_mp(**kwargs):
                                             to_grow_ids=to_grow_ids,
                                             boundary=boundary)
             
-            ## Check if output size and input 's diff is bigger than min_diff
+            ## Check if output size and input 's diff is bigger than min_growth_size
 
             # Get the output size for the log
             output_size = np.sum(result!=0)
-            if output_size - input_size < min_diff:
+            if output_size - input_size < min_growth_size:
                 count_below_threshold += 1
             else:
                 count_below_threshold = 0
@@ -327,14 +333,14 @@ def grow_mp(**kwargs):
             # 1. Reach the final iter, 
             # 2. Not been growing for sometime
             # 3. Grow to the size of the current threshold   
-            if (i_dilate% save_interval[i]==0 or 
+            if (i_dilate% save_every_n_iters[i]==0 or 
                 i_dilate ==dilate_iter or 
-                count_below_threshold >= tolerate_iters or
+                count_below_threshold >= no_growth_max_iter or
                 (grow_to_end == True and abs(full_size - output_size) < 0.05) ):
                 
 
                 cur_threshold = f"{threshold}_{upper_threshold}"
-                if simple_naming:
+                if use_simple_naming:
                     output_grow_name = f'INTER_{base_name}_{cur_threshold}_{i_dilate}'
 
                 else:
@@ -355,16 +361,16 @@ def grow_mp(**kwargs):
                 
                 result,_ = sprout_core.reorder_segmentation(result, sort_ids=is_sort)
                 tifffile.imwrite(output_path,  result, compression ='zlib')
-                if is_napari:
+                if return_for_napari:
                     grows_dict[output_grow_name] =result
                 
-                print(f"\tGrown result has been saved {output_path}")
+                print(f"\tGrown result has been saved {os.path.abspath(output_path)}")
                 print(f"\tIter:{i_dilate}. Last Input size = {input_size} and Output_size = {output_size}")
 
                 
                 # Early stopping conditions
-                if count_below_threshold >= tolerate_iters:
-                    print(f"\tNot growing for {tolerate_iters} iters\nBreaking at iteration {i_dilate} with Input size = {input_size} and Output_size = {output_size}")
+                if count_below_threshold >= no_growth_max_iter:
+                    print(f"\tNot growing for {no_growth_max_iter} iters\nBreaking at iteration {i_dilate} with Input size = {input_size} and Output_size = {output_size}")
                     break
                 # If grow to end, check if the size is similar to the threshold size
                 # If the size is similar to the threshold size, break
@@ -381,7 +387,7 @@ def grow_mp(**kwargs):
     else:
         final_output_path = os.path.join(output_folder,f"{final_grow_name}.tif")
     tifffile.imwrite(final_output_path, result, compression ='zlib')
-    if is_napari:
+    if return_for_napari:
         grows_dict[final_grow_name] =result
     
 
@@ -428,8 +434,6 @@ def run_make_grow(file_path):
             config = yaml.safe_load(file)
             optional_params = config_core.validate_input_yaml(config, config_core.input_val_make_grow)
         
-        # optional_params_2 = sprout_core.assign_optional_params(config, sprout_core.optional_params_default_grow)
-
     _,log_dict = grow_mp(
         workspace = optional_params['workspace'],
         img_path = config['img_path'] ,
@@ -439,12 +443,12 @@ def run_make_grow(file_path):
         
         boundary_path = optional_params['boundary_path'],
         
-        dilate_iters = config['dilate_iters'],
+        dilation_steps = config['dilation_steps'],
         thresholds = config['thresholds'],
         upper_thresholds = optional_params["upper_thresholds"],
         num_threads = config['num_threads'],
         
-        save_interval = config['save_interval'],  
+        save_every_n_iters = config['save_every_n_iters'],  
         touch_rule = config['touch_rule'], 
         
         
@@ -453,12 +457,12 @@ def run_make_grow(file_path):
         
         final_grow_output_folder =optional_params["final_grow_output_folder"],
         base_name =  optional_params["base_name"],
-        simple_naming =  optional_params["simple_naming"],
+        use_simple_naming =  optional_params["use_simple_naming"],
         
 
         is_sort = optional_params['is_sort'],
-        min_diff = optional_params['min_diff'],
-        tolerate_iters = optional_params['tolerate_iters'],
+        min_growth_size = optional_params['min_growth_size'],
+        no_growth_max_iter = optional_params['no_growth_max_iter'],
         
         # For mesh making
         is_make_meshes = optional_params['is_make_meshes'],

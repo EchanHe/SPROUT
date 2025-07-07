@@ -316,7 +316,7 @@ class SeedGrowthWidget(QWidget):
                 
                 base_name = self.viewer.layers[self.image_combo.currentText()].name,
                                 
-                dilate_iters = dilate_iters,
+                dilation_steps = dilate_iters,
                 thresholds = thresholds,
                 upper_thresholds = upper_thresholds if any(u is not None for u in upper_thresholds) else None,
                 
@@ -327,7 +327,7 @@ class SeedGrowthWidget(QWidget):
                 num_threads = 4,
                 # Can be None, or a int, or a list that matches the number of thresholds
                 # if None, will not save intermediate results
-                save_interval = None,  
+                save_every_n_iters = None,  
                 # Default is 'stop', actually no other rules for now.
                 touch_rule = 'stop', 
                 # Default False 
@@ -337,12 +337,12 @@ class SeedGrowthWidget(QWidget):
                 # A list of ids to grow, default None, will grow all seeds
                 to_grow_ids = None,
                 # a int for detect min diff and a int for tolerate iterations
-                min_diff = 50,
-                tolerate_iters = 3,
+                min_growth_size = 50,
+                no_growth_max_iter = 3,
 
                     
                 # Fixed
-                is_napari = True,
+                return_for_napari = True,
                                    
                 )            
             end_time = time.time()

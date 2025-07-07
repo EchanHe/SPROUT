@@ -1,6 +1,5 @@
-import tifffile
 
-import numpy as np
+
 import threading
 import os, sys
 from datetime import datetime
@@ -45,7 +44,7 @@ pre_set_sub_folders_2d = [footprint[0] for footprint in pre_set_footprint_list_2
 
 
 def gen_seed_mp(volume, thre_fp_pairs, ero_iter , segments , 
-                        boundary = None ,result_dict = None, is_napari = False):
+                        boundary = None ,result_dict = None, return_for_napari = False):
     
     
     for threshold_ero_iter_pair in thre_fp_pairs:
@@ -74,7 +73,7 @@ def gen_seed_mp(volume, thre_fp_pairs, ero_iter , segments ,
                                           footprints = footprints,
                                           upper_threshold = upper_threshold,
                                           boundary = boundary,
-                                          is_return_seeds = is_napari)
+                                          is_return_seeds = return_for_napari)
         
 
         # log_dict['input_file'] = file_path
@@ -84,7 +83,7 @@ def gen_seed_mp(volume, thre_fp_pairs, ero_iter , segments ,
         with lock:
             # filename = f'output/json/Bount_ori_run_log_{init_threshold}_{target_threshold}.json'
             config_core.write_json(output_json_path, log_dict)   
-            if is_napari and result_dict is not None:
+            if return_for_napari and result_dict is not None:
                 result_dict.update(seed_dict)
                 # result_dict[output_seed_folder] = seed_dict
 
@@ -174,7 +173,7 @@ def make_seeds(**kwargs):
         Directory where output files will be saved.
     base_name : str, optional
         base_name for naming output files and folders.
-    ero_iters : int
+    erosion_steps : int
         Number of erosion iterations to perform.
     thresholds : int or list of int
         Lower threshold(s) for segmentation. Can be a single value or a list.
@@ -192,13 +191,13 @@ def make_seeds(**kwargs):
         Step size for mesh generation. Defaults to 1.
     footprints : str or list of str, optional
         Custom erosion footprints to use. If not provided, pre-set footprints are used based on image dimensionality.
-    is_napari : bool, optional
+    return_for_napari : bool, optional
         If True, returns seed masks for napari visualization. Defaults to False.
 
     Returns
     -------
     seed_dict : dict
-        Dictionary of generated seed masks (only if is_napari is True).
+        Dictionary of generated seed masks (only if return_for_napari is True).
     log_dict : dict
         Dictionary containing:
             - "output_seed_sub_folders": List of output subfolder paths for seed masks.
@@ -216,7 +215,7 @@ def make_seeds(**kwargs):
     - The function saves configuration and logs in the output directory.
     - Mesh generation requires the `make_mesh` module.
     - Threading is used for parallel processing of threshold/erosion parameter combinations.
-    - If `is_napari` is True, the function returns a dictionary of seed masks for visualization.
+    - If `return_for_napari` is True, the function returns a dictionary of seed masks for visualization.
     """
     
     
@@ -238,6 +237,8 @@ def make_seeds(**kwargs):
         img_path = os.path.join(workspace, img_path)
         output_folder =os.path.join(workspace, output_folder)
     
+    output_folder = os.path.abspath(output_folder)
+    
     base_name = config_core.check_and_assign_base_name(base_name, img_path, "seed")
 
             
@@ -247,7 +248,7 @@ def make_seeds(**kwargs):
 
     
     # Seed generation related 
-    ero_iters = kwargs.get('ero_iters', None)
+    erosion_steps = kwargs.get('erosion_steps', None)
     thresholds = kwargs.get('thresholds', None) 
     upper_thresholds = kwargs.get('upper_thresholds', None) 
 
@@ -263,7 +264,7 @@ def make_seeds(**kwargs):
 
     footprints = kwargs.get('footprints', None)
     
-    is_napari = kwargs.get('is_napari', False)
+    return_for_napari = kwargs.get('return_for_napari', False)
 
     if num_threads is None:
         num_threads = max(1, max_threads // 2)
@@ -281,20 +282,20 @@ def make_seeds(**kwargs):
         "output_log_files":[]
     }
     
-    # for ero_iter in ero_iters:
+    # for ero_iter in erosion_steps:
         
     ## Dealing with footprints
     if footprints is None:
         # if input footprints is not provided, use pre-set footprints
         if is_3d:
-            footprint_list = [footprint*ero_iters for footprint in pre_set_footprint_list]
+            footprint_list = [footprint*erosion_steps for footprint in pre_set_footprint_list]
             output_seed_sub_folders = pre_set_sub_folders
         else:
-            footprint_list = [footprint*ero_iters for footprint in pre_set_footprint_list_2d]
+            footprint_list = [footprint*erosion_steps for footprint in pre_set_footprint_list_2d]
             output_seed_sub_folders = pre_set_sub_folders_2d
     else:
         
-        footprint_list , output_seed_sub_folders = config_core.check_and_assign_footprint(footprints, ero_iters , with_folder_name=True)
+        footprint_list , output_seed_sub_folders = config_core.check_and_assign_footprint(footprints, erosion_steps , with_folder_name=True)
         footprint_list = [footprint_list]
         output_seed_sub_folders = [output_seed_sub_folders]
          
@@ -302,7 +303,6 @@ def make_seeds(**kwargs):
     # Create threshold pairs
 
     thresholds_pairs = list(zip(thresholds, upper_thresholds))
-    # threshold_ero_iter_pairs = list(itertools.product(thresholds, [ero_iters]))
     
     
     output_seed_sub_folders = [os.path.join(output_folder, base_name,
@@ -322,7 +322,7 @@ def make_seeds(**kwargs):
         Is 3D image: {is_3d}
         Threshold for Img {thresholds}
         Upper Thresholds for Img {upper_thresholds}
-        Erode {ero_iters} iterations
+        Erode {erosion_steps} iterations
         Keeping {segments} components
         Running in {num_threads} threads
         Output folder: {output_folder}
@@ -339,8 +339,8 @@ def make_seeds(**kwargs):
         #                                                             output_seed_sub_folder,output_json_path, footprints,
         #                                                             boundary))
 
-        thread = threading.Thread(target=gen_seed_mp, args=(img,sublist, ero_iters, segments,
-                                                                    boundary, seeds_dict, is_napari))
+        thread = threading.Thread(target=gen_seed_mp, args=(img,sublist, erosion_steps, segments,
+                                                                    boundary, seeds_dict, return_for_napari))
         threads.append(thread)
         thread.start()
         
@@ -409,8 +409,7 @@ def run_make_seeds(file_path):
             config = yaml.safe_load(file)
             optional_params = config_core.validate_input_yaml(config, config_core.input_val_make_seeds_all)
             
-        # optional_params_2 = sprout_core.assign_optional_params(config, sprout_core.optional_params_default_seeds)
-        
+
     
     _, output_dict = make_seeds(
         workspace= optional_params['workspace'],
@@ -418,7 +417,7 @@ def run_make_seeds(file_path):
             boundary_path = optional_params['boundary_path'],
             output_folder = config['output_folder'],
             num_threads = config['num_threads'],
-            ero_iters = config['ero_iters'],
+            erosion_steps = config['erosion_steps'],
             thresholds = config['thresholds'],
             segments = config['segments'],
             upper_thresholds = optional_params['upper_thresholds'],

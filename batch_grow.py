@@ -50,12 +50,12 @@ def run_batch_grow(file_path):
 
                 workspace = None,               
 
-                dilate_iters = config['dilate_iters'],
+                dilation_steps = config['dilation_steps'],
                 thresholds = config['thresholds'],
                 upper_thresholds = optional_params["upper_thresholds"],
                 num_threads = config['num_threads'],
                 
-                save_interval = config['save_interval'],  
+                save_every_n_iters = config['save_every_n_iters'],  
                 touch_rule = config['touch_rule'],             
     
                 grow_to_end = optional_params["grow_to_end"],
@@ -64,11 +64,11 @@ def run_batch_grow(file_path):
                 final_grow_output_folder = config['output_folder'],
                 
                 # base_name =  optional_params["base_name"],
-                simple_naming =  optional_params["simple_naming"],    
+                use_simple_naming =  optional_params["use_simple_naming"],    
 
                 is_sort = optional_params['is_sort'],
-                min_diff = optional_params['min_diff'],
-                tolerate_iters = optional_params['tolerate_iters'],
+                min_growth_size = optional_params['min_growth_size'],
+                no_growth_max_iter = optional_params['no_growth_max_iter'],
 
    
                 # For mesh making

@@ -248,7 +248,7 @@ class SeedGenerationWidget(QWidget):
                 
             #     thresholds = lower,
             #     upper_thresholds = upper,
-            #     ero_iters = erosion,
+            #     erosion_steps = erosion,
             #     segments = segments,
                 
             #     # TODO add widget that has a default output folder, also allow user to select output folder
@@ -262,7 +262,7 @@ class SeedGenerationWidget(QWidget):
             #     base_name = "to_get_name", 
 
             #     # fixed parameters
-            #     is_napari=True
+            #     return_for_napari=True
             #     )
 
             # self.add_labels_layer(seeds_dict)
@@ -278,7 +278,7 @@ class SeedGenerationWidget(QWidget):
                 threshold =lower,
                 upper_threshold= upper,
                 
-                ero_iters = erosion, 
+                erosion_steps = erosion, 
                 segments= segments,        
                 
                 
@@ -293,12 +293,11 @@ class SeedGenerationWidget(QWidget):
                 # TODO fields for adadptive seed, 
                 # maybe put them into a group, and only reveal when adaptive seed is selected
                 sort = True,
-                no_split_limit =3,
+                no_split_max_iter =3,
                 min_size=5,
-                min_split_prop = 0.01,
-                min_split_sum_prop = 0,
+                min_split_ratio = 0.01,
+                min_split_total_ratio = 0,
                 save_every_iter = True,
-                save_merged_every_iter = True,
                 # list of int, default is none
                 init_segments = None,
                 # tuple of int/None, default is (None,None)                
@@ -307,7 +306,7 @@ class SeedGenerationWidget(QWidget):
                 split_convex_hull_limit = (None, None),    
                 
                 # fixed parameters
-                is_napari=True
+                return_for_napari=True
                        
                 )
 
@@ -321,7 +320,7 @@ class SeedGenerationWidget(QWidget):
                 # Similar for upper_thresholds
                 upper_thresholds= None,
                 
-                ero_iters = erosion, 
+                erosion_steps = erosion, 
                 segments= segments, 
             
             
@@ -337,18 +336,17 @@ class SeedGenerationWidget(QWidget):
                 # maybe put them into a group, and only reveal when adaptive seed is selected
 
                 sort = True,
-                no_split_limit =3,
+                no_split_max_iter =3,
                 min_size=5,
-                min_split_prop = 0.01,
-                min_split_sum_prop = 0,
+                min_split_ratio = 0.01,
+                min_split_total_ratio = 0,
                 save_every_iter = True,
-                save_merged_every_iter = True,
                 init_segments = None,
                 split_size_limit = (None,None),
                 split_convex_hull_limit = (None, None),      
                 
                 # fixed parameters
-                is_napari=True,       
+                return_for_napari=True,       
                 )
 
             

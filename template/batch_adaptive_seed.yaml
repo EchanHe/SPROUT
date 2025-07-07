@@ -11,7 +11,7 @@ num_threads: 5
 thresholds: [100, 110, 120, 130, 140,150,160,170,180,190,200]
 
 # Number of erosions
-ero_iters: 0
+erosion_steps: 0
 
 # Integer >=1, The algorithm keeps top <segments> largest disconnected components
 segments: 30
@@ -36,22 +36,21 @@ background: 0
 sort: True
 
 # Early stop checking: Limit for consecutive no-split iterations. Defaults is 3.
-no_split_limit: 3
+no_split_max_iter: 3
 
 # Minimum size for segments. Defaults is 5.
 min_size: 5
 
 # Minimum proportion to consider a split. Defaults is 0.01.
-min_split_prop: 0.01
+min_split_ratio: 0.01
 
 # Minimum proportion of (sub-segments from next step)/(current segments) to consider a split (0-1).
 # Defaults is 0.
-min_split_sum_prop: 0
+min_split_total_ratio: 0
 
 # Save results at every iteration. Defaults is False.
 save_every_iter: True
-# Save merged results at every iteration. Defaults is False.
-save_merged_every_iter: False
+
 # Prefix for output file names. Defaults is "Merged_seed".
 name_prefix: "merged_seed"
 # Number of segments for the first seed, 

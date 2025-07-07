@@ -9,9 +9,9 @@ thresholds: [200, 190, 180, 170, 160, 150, 140, 130, 120, 110, 100]
 
 # A list of dilation steps to grow on each threshold
 # Order matters, and should have the same length to thresholds
-# one element example: dilate_iters: [30]
-dilate_iters: [5,5,5,5,5,5,5,5,5,5,5]
-# dilate_iters: [30]
+# one element example: dilation_steps: [30]
+dilation_steps: [5,5,5,5,5,5,5,5,5,5,5]
+# dilation_steps: [30]
 
 # Keep it "stop for now"
 touch_rule: "stop"
@@ -20,7 +20,7 @@ touch_rule: "stop"
 output_folder: "./result/demo_dog/grow"
 
 # Save the grow result every n iters
-save_interval: 5
+save_every_n_iters: 5
 
 # Number of threads
 num_threads: 4
@@ -48,7 +48,7 @@ num_threads: 4
 # Path to boundary image. Defaults is None.
 # boundary_path: './data/boundary.tif'
 
-# Whether grow to the very end, override the dilate_iters.
+# Whether grow to the very end, override the dilation_steps.
 # It will grow the result as close to the thresholded mask as possible
 # Default is False
 # grow_to_end: False
@@ -64,7 +64,7 @@ num_threads: 4
 # base_name: ~
 
 # Whether use simple naming, the original naming can be long
-# simple_naming: True
+# use_simple_naming: True
 
 # if you want to grow on all ids, put a ~
 # Default is None/~
@@ -77,11 +77,11 @@ num_threads: 4
 
 # Early stop checking: 
 # Limit for consecutive no-growth iterations. Defaults is 3.
-tolerate_iters: 3
+no_growth_max_iter: 3
 
 # The minimum difference to consider there is a growth in a dilation iteration
 # Default is 50
-min_diff: 50
+min_growth_size: 50
 
 ## Optional parameters: saving mesh ##
 # Is saving meshes, default is False
