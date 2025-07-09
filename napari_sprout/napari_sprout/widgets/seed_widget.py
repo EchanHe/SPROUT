@@ -3,7 +3,7 @@
 from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QSpinBox, QDoubleSpinBox, QComboBox, QGroupBox, QCheckBox,
-    QSlider, QFormLayout, QMessageBox, QLineEdit
+    QSlider, QFormLayout, QMessageBox, QLineEdit, QFileDialog
 )
 from qtpy.QtCore import Qt, Signal
 import numpy as np
@@ -76,12 +76,23 @@ class SeedGenerationWidget(QWidget):
         
         # --- Parameters for Original and Adaptive (Thresholds) methods ---
         self.list_params_group = QGroupBox("Threshold List Parameters")
+        self.list_params_group.setFocusPolicy(Qt.NoFocus) # Allow children to get focus
         list_params_layout = QFormLayout()
         self.lower_thresholds_list = QLineEdit("130, 140, 150")
         self.upper_thresholds_list = QLineEdit("255, 255, 255")
 
-        # Style to make QLineEdit look editable
-        style = "QLineEdit { background-color: white; border: 1px solid #999; }"
+        # Style to make QLineEdit look editable, text visible, and ensure cursor blinks.
+        style = """
+            QLineEdit {
+                background-color: white;
+                border: 1px solid #999;
+                color: black;
+                padding: 2px;
+            }
+            QLineEdit:focus {
+                border: 1px solid #0078d7; /* Blue border on focus */
+            }
+        """
         self.lower_thresholds_list.setStyleSheet(style)
         self.upper_thresholds_list.setStyleSheet(style)
 
@@ -154,6 +165,18 @@ class SeedGenerationWidget(QWidget):
         
         morph_group.setLayout(morph_layout)
         layout.addWidget(morph_group)
+
+        # Output folder selection
+        output_group = QGroupBox("Output Settings")
+        output_layout = QHBoxLayout()
+        self.output_folder_edit = QLineEdit("napari_temp")
+        self.output_folder_edit.setToolTip("Select the folder to save seed files.")
+        self.browse_folder_btn = QPushButton("Browse...")
+        output_layout.addWidget(QLabel("Output Folder:"))
+        output_layout.addWidget(self.output_folder_edit)
+        output_layout.addWidget(self.browse_folder_btn)
+        output_group.setLayout(output_layout)
+        layout.addWidget(output_group)
         
         # Generate button
         self.generate_btn = QPushButton("Generate Seeds")
@@ -178,6 +201,13 @@ class SeedGenerationWidget(QWidget):
         self.image_combo.currentIndexChanged.connect(self._on_image_changed)
         self.seed_method_combo.currentTextChanged.connect(self._on_seed_method_changed)
         self.use_upper_list.toggled.connect(self.upper_thresholds_list.setEnabled)
+        self.browse_folder_btn.clicked.connect(self._browse_output_folder)
+
+    def _browse_output_folder(self):
+        """Open a dialog to select an output folder."""
+        folder = QFileDialog.getExistingDirectory(self, "Select Output Folder")
+        if folder:
+            self.output_folder_edit.setText(folder)
 
     def _on_seed_method_changed(self, method: str):
         """Show/hide parameter sections based on the selected method."""
@@ -293,6 +323,10 @@ class SeedGenerationWidget(QWidget):
                 if isinstance(boundary_layer, Labels):
                     boundary = boundary_layer.data
 
+            output_folder = self.output_folder_edit.text()
+            if not output_folder:
+                show_error("Please specify an output folder. Default is 'napari_temp'")
+                output_folder = 'napari_temp'
             
             # TODO: @ioannouE
             # I have added interfaces for seed making they are
@@ -317,7 +351,7 @@ class SeedGenerationWidget(QWidget):
                     upper_thresholds=upper_thresholds,
                     erosion_steps=erosion,
                     segments=segments,
-                    output_folder='napari_temp',
+                    output_folder=output_folder,
                     num_threads=4,
                     footprints=None,
                     base_name="to_get_name",
@@ -331,7 +365,7 @@ class SeedGenerationWidget(QWidget):
                     upper_threshold=upper,
                     erosion_steps=erosion,
                     segments=segments,
-                    output_folder='napari_temp',
+                    output_folder=output_folder,
                     num_threads=4,
                     footprints=None,
                     sort=True,
@@ -353,7 +387,7 @@ class SeedGenerationWidget(QWidget):
                     upper_thresholds=upper_thresholds,
                     erosion_steps=erosion,
                     segments=segments,
-                    output_folder='napari_temp',
+                    output_folder=output_folder,
                     num_threads=4,
                     footprints=None,
                     sort=True,
