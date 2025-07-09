@@ -11,10 +11,80 @@ from datetime import datetime
 from skimage.filters import threshold_otsu
 import ast  # safer than eval
 
+from tifffile import imread
+
+
 support_footprints =['ball','cube',
                      'ball_XY','ball_XZ','ball_YZ',
                      'X','Y','Z',
                      '2XZ_1Y','2XY_1Z','2YZ_1X']
+
+
+def valid_input_data(img, seg=None, boundary=None):
+    # check if img only have one channel
+    if img.ndim not in [2, 3]:
+        raise ValueError(f"Image must be 2D or 3D, got {img.ndim}D.")
+    # if seg is provided, check if it has the same shape as img
+    if seg is not None:
+        # check if seg have the same number of channels as img
+        if seg.ndim not in [2, 3]:
+            raise ValueError(f"Segmentation must be 2D or 3D, got {seg.ndim}D.")
+        if img.shape != seg.shape:
+            raise ValueError(f"Image and segmentation must have the same shape, got {img.shape} and {seg.shape}.")
+    # if boundary is provided, check if it has the same shape as img
+    if boundary is not None:
+        if boundary.ndim not in [2, 3]:
+            raise ValueError(f"Boundary must be 2D or 3D, got {boundary.ndim}D.")
+        # check if boundary is True or false or just two value (0 or others)
+        if not np.issubdtype(boundary.dtype, np.bool_):
+            if not np.issubdtype(boundary.dtype, np.integer) or boundary.dtype != np.uint8:
+                raise ValueError(f"Boundary must be boolean or integer type, got {boundary.dtype}.")
+            # check if boundary only have two values
+            unique_values = np.unique(boundary)
+            if len(unique_values) != 2:
+                raise ValueError(f"Boundary must have only two values, got {unique_values}.")
+            
+        
+        
+        if img.shape != boundary.shape:
+            raise ValueError(f"Image and boundary must have the same shape, got {img.shape} and {boundary.shape}.")
+
+def check_and_load_data(array, path, name, must_exist=True):
+
+    if array is not None and path is not None:
+        raise ValueError(f"Both {name} and {name}_path provided; only one is allowed.")
+    if array is None and path is None and must_exist:
+        raise ValueError(f"Either {name} or {name}_path must be provided.")
+    if array is not None and path is None:
+        return array
+    if path is not None:
+        return imread(path)
+    return array
+
+def check_and_cast_boundary(boundary):
+    if boundary is None:
+        # print("No boundary provided, returning None.")
+        return None
+    
+    # Check if the boundary is a matrix with only True and False
+    if isinstance(boundary, np.ndarray) and np.issubdtype(boundary.dtype, np.bool_):
+        # print("Boundary is a valid True/False matrix.")
+        return boundary  # No changes needed
+
+    # Check if the boundary has only two values: 0 and another value
+    elif isinstance(boundary, np.ndarray) and len(np.unique(boundary)) == 2:
+        unique_values = np.unique(boundary)
+        if 0 in unique_values:
+            # print("Boundary has two values: 0 and another. Casting to True/False.")
+            # Cast to True/False: replace 0 with False and others with True
+            return boundary != 0
+        else:
+            raise ValueError("Boundary is not supported. It must be a True/False matrix or have two values (0 and other).")
+    
+    # If neither condition is met, raise an error
+    else:
+        raise ValueError("Boundary is not supported. It must be a True/False matrix or have two values (0 and other).")
+
 
 
 def check_and_assign_segment_list(segments, init_segments,  last_segments, erosion_steps =None, n_threhsolds=None):
@@ -134,8 +204,8 @@ def check_and_assign_thresholds(thresholds, upper_thresholds, reverse=False):
         # Ensure upper_thresholds are equal or strictly decreasing, but only if not all None
         if not all(up is None for up in upper_thresholds):
             filtered_upper = [up for up in upper_thresholds if up is not None]
-            if any(filtered_upper[i+1] > filtered_upper[i] for i in range(len(filtered_upper)-1)):
-                raise ValueError("Upper thresholds must be equal or strictly decreasing (ignoring None values).")        
+            if any(filtered_upper[i] > filtered_upper[i+1] for i in range(len(filtered_upper)-1)):
+                raise ValueError("Upper thresholds must be equal or strictly increasing (ignoring None values).")        
     else:
         # Ensure thresholds are equal or strictly increasing
         if any(thresholds[i] > thresholds[i+1] for i in range(len(thresholds)-1)):
@@ -144,8 +214,8 @@ def check_and_assign_thresholds(thresholds, upper_thresholds, reverse=False):
         # Ensure upper_thresholds are equal or strictly increasing, but only if not all None
         if not all(up is None for up in upper_thresholds):
             filtered_upper = [up for up in upper_thresholds if up is not None]
-            if any(filtered_upper[i] > filtered_upper[i+1] for i in range(len(filtered_upper)-1)):
-                raise ValueError("Upper thresholds must be equal or strictly increasing (ignoring None values).")
+            if any(filtered_upper[i+1] > filtered_upper[i] for i in range(len(filtered_upper)-1)):
+                raise ValueError("Upper thresholds must be equal or strictly decreasing (ignoring None values).")
     
     
     return thresholds, upper_thresholds
@@ -511,9 +581,9 @@ input_val_make_grow = {
     },
     "touch_rule": {
         "type": str,
-        "choices": ["stop", "no"],
+        "choices": ["stop", "overwrite"],
         "required": True,
-        "description": "The rule of growing"
+        "description": "The rule of growing, current supports 'stop' and 'overwrite'.",
     },
     "output_folder": {
         "type": str,
@@ -588,7 +658,8 @@ input_val_make_grow = {
     "is_sort": {
         "type": bool,
         "required": False,
-        'default': True
+        'default': False,
+        "description": "Sort the result on the segments by size"
     },    
     "no_growth_max_iter": {
         "type": int,

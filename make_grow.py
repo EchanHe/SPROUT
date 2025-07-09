@@ -105,8 +105,10 @@ def dilation_one_iter_mp(input_mask, threshold_binary,
     
     if touch_rule == 'stop':
         non_bg_mask = (result != 0)
-    else:
+    elif touch_rule == 'overwrite':
         non_bg_mask = None
+    else:
+        raise ValueError(f"Unknown touch_rule: {touch_rule}. Must be 'stop' or 'overwrite'.")
     
     for sublist in sublists:
         # print(f"Processing sublist {sublist}")
@@ -170,7 +172,7 @@ def grow_mp(**kwargs):
     use_simple_naming = kwargs.get('use_simple_naming', True)  
     
     to_grow_ids = kwargs.get('to_grow_ids', None) 
-    is_sort = kwargs.get('is_sort', True) 
+    is_sort = kwargs.get('is_sort', False) 
     min_growth_size = kwargs.get('min_growth_size', 50) 
     no_growth_max_iter = kwargs.get('no_growth_max_iter', 3) 
     
@@ -220,28 +222,24 @@ def grow_mp(**kwargs):
         img_path = os.path.join(workspace, img_path)
         seg_path = os.path.join(workspace, seg_path)
         output_folder = os.path.join(workspace, output_folder)
+        if boundary_path is not None:
+            boundary_path = os.path.join(workspace, boundary_path)
    
     base_name = config_core.check_and_assign_base_name(base_name, img_path, "grown_result")
 
     
-    # lodading the image and segmentation mask
-    # If img and seg are provided, use them; otherwise, read from paths
-    if img is None:
-        img = tifffile.imread(img_path)   
+    # loading the image and segmentation mask
 
-    if seg is None:
-        seg = tifffile.imread(seg_path)
+    
+    img = config_core.check_and_load_data(img, img_path, "img")
+    seg = config_core.check_and_load_data(seg, seg_path, "seg")
+    boundary = config_core.check_and_load_data(boundary, boundary_path, "boundary", must_exist=False)
+    
+
     
     
-    # Loading a boundary if it's provided
-    if boundary is None and boundary_path is not None:
-        if workspace is not None:
-            boundary_path = os.path.join(workspace, boundary_path)
-        boundary = tifffile.imread(boundary_path)
-        boundary = sprout_core.check_and_cast_boundary(boundary)
-    elif boundary is not None:
-        boundary = sprout_core.check_and_cast_boundary(boundary)
-        
+    config_core.valid_input_data(img, seg=seg, boundary=boundary)
+    boundary = config_core.check_and_cast_boundary(boundary)
     
     output_folder = os.path.join(output_folder, base_name)
     
@@ -266,6 +264,7 @@ def grow_mp(**kwargs):
             "Grow Thresholds": thresholds,
             "Grow upper thresholds": upper_thresholds,
             "Output Folder": output_folder,
+            "to_grow_ids"  : to_grow_ids,
             "Save every iterations": save_every_n_iters,
             "num_threads": num_threads,
             "Early stopping": f"min_growth_size = {min_growth_size} and no_growth_max_iter = {no_growth_max_iter}"
@@ -332,10 +331,15 @@ def grow_mp(**kwargs):
             # When it ends:
             # 1. Reach the final iter, 
             # 2. Not been growing for sometime
-            # 3. Grow to the size of the current threshold   
+            # 3. Grow to the size of the current threshold  
+            if no_growth_max_iter is None:
+                is_early_stop = False
+            else:
+                is_early_stop = (count_below_threshold >= no_growth_max_iter)
+             
             if (i_dilate% save_every_n_iters[i]==0 or 
                 i_dilate ==dilate_iter or 
-                count_below_threshold >= no_growth_max_iter or
+                is_early_stop or
                 (grow_to_end == True and abs(full_size - output_size) < 0.05) ):
                 
 
@@ -358,8 +362,9 @@ def grow_mp(**kwargs):
                     'cur_dilate_step': i_dilate,
                     })
                 
-                
-                result,_ = sprout_core.reorder_segmentation(result, sort_ids=is_sort)
+                # Do not sort intermediate results, as it will cause the ids to change
+                # So will mess up the growing id.
+                # result,_ = sprout_core.reorder_segmentation(result, sort_ids=is_sort)
                 tifffile.imwrite(output_path,  result, compression ='zlib')
                 if return_for_napari:
                     grows_dict[output_grow_name] =result
@@ -381,6 +386,8 @@ def grow_mp(**kwargs):
         print(f"\tFinish growing. Last Input size = {input_size} and Output_size = {output_size}\n")
     
     ## Save the final grow output as the final_<img_name>
+    # only sort it in the end
+    result,_ = sprout_core.reorder_segmentation(result, sort_ids=is_sort)
     final_grow_name = f"FINAL_GROW_{base_name}"
     if final_grow_output_folder is not None:
         final_output_path = os.path.join(final_grow_output_folder,f"{final_grow_name}.tif")
@@ -448,7 +455,7 @@ def run_make_grow(file_path):
         upper_thresholds = optional_params["upper_thresholds"],
         num_threads = config['num_threads'],
         
-        save_every_n_iters = config['save_every_n_iters'],  
+        save_every_n_iters = optional_params['save_every_n_iters'],  
         touch_rule = config['touch_rule'], 
         
         
@@ -478,7 +485,7 @@ def run_make_grow(file_path):
 if __name__ == "__main__":
     
     # Get the file path from the first command-line argument or use the default
-    file_path = sys.argv[1] if len(sys.argv) > 1 else './make_grow.yaml'
+    file_path = sys.argv[1] if len(sys.argv) > 1 else './tests/configs/grow/make_grow_test_overwrite.yaml'
     
     run_make_grow(file_path)
     

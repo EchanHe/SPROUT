@@ -11,14 +11,7 @@ from scipy.ndimage import binary_fill_holes
 
 
 
-def check_and_load_data(array, path, name):
-    if array is not None and path is not None:
-        raise ValueError(f"Both {name} and {name}_path provided; only one is allowed.")
-    if array is None and path is None:
-        raise ValueError(f"Either {name} or {name}_path must be provided.")
-    if path is not None:
-        return tifffile.imread(path)
-    return array
+
 
 def assign_optional_params(config, keys_with_defaults):
     """
@@ -46,26 +39,6 @@ def assign_optional_params(config, keys_with_defaults):
 
 
 
-
-def check_and_cast_boundary(boundary):
-    # Check if the boundary is a matrix with only True and False
-    if isinstance(boundary, np.ndarray) and np.issubdtype(boundary.dtype, np.bool_):
-        # print("Boundary is a valid True/False matrix.")
-        return boundary  # No changes needed
-
-    # Check if the boundary has only two values: 0 and another value
-    elif isinstance(boundary, np.ndarray) and len(np.unique(boundary)) == 2:
-        unique_values = np.unique(boundary)
-        if 0 in unique_values:
-            # print("Boundary has two values: 0 and another. Casting to True/False.")
-            # Cast to True/False: replace 0 with False and others with True
-            return boundary != 0
-        else:
-            raise ValueError("Boundary is not supported. It must be a True/False matrix or have two values (0 and other).")
-    
-    # If neither condition is met, raise an error
-    else:
-        raise ValueError("Boundary is not supported. It must be a True/False matrix or have two values (0 and other).")
 
 
 

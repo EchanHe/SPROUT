@@ -166,10 +166,10 @@ def make_adaptive_seed_ero(
         tuple: Merged seeds, original combine ID map, and output dictionary.
     """
     
-    img = sprout_core.check_and_load_data(img, img_path, "img")
-    if not (boundary is None and boundary_path is None):
-        boundary = sprout_core.check_and_load_data(boundary, boundary_path, "boundary")
-        
+    img = config_core.check_and_load_data(img, img_path, "img")
+
+    boundary = config_core.check_and_load_data(boundary, boundary_path, "boundary", must_exist=False)
+    config_core.valid_input_data(img, boundary=boundary)    
     
     
     min_split_ratio = min_split_ratio*100
@@ -552,9 +552,9 @@ def make_adaptive_seed_thre(
     
     
 
-    img = sprout_core.check_and_load_data(img, img_path, "img")
-    if not (boundary is None and boundary_path is None):
-        boundary = sprout_core.check_and_load_data(boundary, boundary_path, "boundary")
+    img = config_core.check_and_load_data(img, img_path, "img")
+    boundary = config_core.check_and_load_data(boundary, boundary_path, "boundary", must_exist=False)
+    config_core.valid_input_data(img, boundary=boundary)   
 
     if num_threads is None:
         num_threads = max(1, max_threads // 2)

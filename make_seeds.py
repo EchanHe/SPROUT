@@ -242,10 +242,9 @@ def make_seeds(**kwargs):
     base_name = config_core.check_and_assign_base_name(base_name, img_path, "seed")
 
             
-    img = sprout_core.check_and_load_data(img, img_path, "img")
-    if not (boundary is None and boundary_path is None):
-        boundary = sprout_core.check_and_load_data(boundary, boundary_path, "boundary")
-
+    img = config_core.check_and_load_data(img, img_path, "img")
+    boundary = config_core.check_and_load_data(boundary, boundary_path, "boundary", must_exist=False)
+    config_core.valid_input_data(img, boundary=boundary)
     
     # Seed generation related 
     erosion_steps = kwargs.get('erosion_steps', None)

@@ -11,9 +11,9 @@ import numpy as np
 from typing import Optional, List
 from napari.layers import Image, Labels
 from napari.utils.notifications import show_info, show_error
-from napari.qt.threading import thread_worker
 
-from ..utils.sprout_bridge import SPROUTBridge
+
+from ..utils.util_widget import create_output_folder_row, GrowOptionalParamGroupBox
 
 
 import sys
@@ -26,39 +26,87 @@ if root_dir not in sys.path:
 
 from make_grow import grow_mp
 
+
 class GrowthWorker(QThread):
     """Worker thread for seed growth."""
     progress = Signal(int)
-    finished = Signal(np.ndarray)
+    finished = Signal(dict, dict)  # emits grows_dict and log_dict
     error = Signal(str)
     
-    def __init__(self, bridge, image, seeds, thresholds, dilate_iters, 
-                 upper_thresholds=None, boundary=None, touch_rule='stop'):
+    def __init__(self, image, seeds, thresholds, dilate_iters,
+                 n_threads=4,   
+                 output_folder=None,
+                 upper_thresholds=None, boundary=None, touch_rule='stop',
+                 base_name='growth_result',
+                 save_every_n_iters = None,
+                 grow_to_end=False,
+                 is_sort = False,
+                 to_grow_ids=None,
+                 min_growth_size=50,
+                 no_growth_max_iter=3
+                 ):
         super().__init__()
-        self.bridge = bridge
         self.image = image
         self.seeds = seeds
         self.thresholds = thresholds
         self.dilate_iters = dilate_iters
+        
+
         self.upper_thresholds = upper_thresholds
         self.boundary = boundary
         self.touch_rule = touch_rule
+        self.base_name = base_name
+        self.output_folder = output_folder if output_folder else 'napari_temp/grow'
+        self.n_threads = n_threads
+        
+        self.save_every_n_iters = save_every_n_iters if save_every_n_iters is not None else None
+        self.grow_to_end = grow_to_end
+        self.is_sort = is_sort
+        
+        self.to_grow_ids = to_grow_ids 
+        self.min_growth_size = min_growth_size
+        self.no_growth_max_iter = no_growth_max_iter
     
     def run(self):
         try:
-            result = self.bridge.grow_seeds(
-                self.image,
-                self.seeds,
-                self.thresholds,
-                self.dilate_iters,
-                self.upper_thresholds,
-                self.boundary,
-                self.touch_rule,
-                callback=lambda p: self.progress.emit(int(p))
-            )
-            self.finished.emit(result)
+            print(f"Starting growth with {self.n_threads} threads")
+            grows_dict , log_dict = grow_mp(
+                
+                img = self.image,
+                seg = self.seeds,
+                boundary = self.boundary,
+                
+                base_name = self.base_name,
+                                
+                dilation_steps = self.dilate_iters,
+                thresholds = self.thresholds,
+                upper_thresholds = self.upper_thresholds,
+                
+                # Default is 'stop', actually no other rules for now.
+                touch_rule = self.touch_rule, 
+                
+                output_folder = self.output_folder, 
+                num_threads = self.n_threads,
+                
+                save_every_n_iters = self.save_every_n_iters, 
+                grow_to_end = self.grow_to_end,
+                is_sort = self.is_sort,
+                
+                to_grow_ids = self.to_grow_ids,
+                # a int for detect min diff and a int for tolerate iterations
+                min_growth_size = self.min_growth_size,
+                no_growth_max_iter = self.no_growth_max_iter,
+
+                    
+                # Fixed para
+                return_for_napari = True
+                                   
+                )      
+            self.finished.emit(grows_dict, log_dict)
         except Exception as e:
             self.error.emit(str(e))
+
+
 
 
 class SeedGrowthWidget(QWidget):
@@ -69,7 +117,6 @@ class SeedGrowthWidget(QWidget):
     def __init__(self, napari_viewer):
         super().__init__()
         self.viewer = napari_viewer
-        self.bridge = SPROUTBridge()
         self.current_image = None
         self.current_seeds = None
         self.current_boundary = None
@@ -101,6 +148,10 @@ class SeedGrowthWidget(QWidget):
         
         input_group.setLayout(input_layout)
         layout.addWidget(input_group)
+        
+        self.n_thread_spin = QSpinBox() 
+        self.n_thread_spin.setValue(4)  # Default to 4 threads
+        self.n_thread_spin.setRange(1, os.cpu_count() or 8)  # Default to 8 if os.cpu_count() is None
         
         # Growth parameters
         params_group = QGroupBox("Growth Parameters")
@@ -143,20 +194,43 @@ class SeedGrowthWidget(QWidget):
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
         layout.addWidget(self.progress_bar)
-        
+
+        output_dir_layout, self.output_folder_line = create_output_folder_row()
+        layout.addLayout(output_dir_layout)
+
         # Control buttons
         btn_layout = QHBoxLayout()
         self.grow_btn = QPushButton("Start Growth")
-        self.grow_btn.setStyleSheet("QPushButton { background-color: #2196F3; color: white; }")
+        self.grow_btn.setStyleSheet("""QPushButton { font-weight: bold; background-color: #45a049;}""")
         self.stop_btn = QPushButton("Stop")
+        self.stop_btn.setStyleSheet("""
+            QPushButton {
+                font-weight: bold;
+                background-color: #d9534f;  
+                color: white;
+            }
+            QPushButton:disabled {
+                background-color: #aaa;
+                color: #eee;
+            }
+        """)
         self.stop_btn.setEnabled(False)
-        self.save_btn = QPushButton("Save Result")
-        self.save_btn.setEnabled(False)
+        # self.save_btn = QPushButton("Save Result")
+        # self.save_btn.setEnabled(False)
         
         btn_layout.addWidget(self.grow_btn)
         btn_layout.addWidget(self.stop_btn)
-        btn_layout.addWidget(self.save_btn)
+        # btn_layout.addWidget(self.save_btn)
         layout.addLayout(btn_layout)
+
+
+        self.show_advanced_checkbox = QCheckBox("Show Advanced Grow Options")
+        self.show_advanced_checkbox.stateChanged.connect(self.toggle_grow_params_visibility)
+        layout.addWidget(self.show_advanced_checkbox)
+        
+        self.advanced_params_box = GrowOptionalParamGroupBox()
+        layout.addWidget(self.advanced_params_box)   
+        self.advanced_params_box.setVisible(False)
         
         # Status
         self.status_label = QLabel("Ready to grow seeds")
@@ -175,8 +249,11 @@ class SeedGrowthWidget(QWidget):
         self.remove_threshold_btn.clicked.connect(self._remove_threshold_row)
         self.grow_btn.clicked.connect(self.start_growth)
         self.stop_btn.clicked.connect(self.stop_growth)
-        self.save_btn.clicked.connect(self.save_result)
-    
+        # self.save_btn.clicked.connect(self.save_result)
+        
+    def toggle_grow_params_visibility(self, state):
+        self.advanced_params_box.setVisible(state == Qt.Checked)  
+          
     def refresh_layers(self):
         """Refresh the list of available layers."""
         self.image_combo.clear()
@@ -299,103 +376,37 @@ class SeedGrowthWidget(QWidget):
             self.progress_bar.setValue(0)
             self.status_label.setText("Growing seeds...")
 
-            # TODO @ioannouE I have add grow_mp here, 
-            # it return grows_dict for {name: growth_result}, and will be added to labels
-            
-            # and I think we need to add some fields for parameters
-            # I also commented GrowthWorker out, but use the self.bridge.grow_seeds
-            
-            import time
-            start_time = time.time()
-            # From make_grow
-            grows_dict , log_dict = grow_mp(
-                
-                img = self.current_image,
-                seg = self.current_seeds,
-                boundary = self.current_boundary,
-                
-                base_name = self.viewer.layers[self.image_combo.currentText()].name,
-                                
-                dilation_steps = dilate_iters,
-                thresholds = thresholds,
-                upper_thresholds = upper_thresholds if any(u is not None for u in upper_thresholds) else None,
-                
-                # TODO add qt fields for following parameters
-                # path, field that has a default output folder, also allow user to select output folder
-                output_folder = 'napari_temp/grow',    
-                # int, has default value, say 1 for now, use can change           
-                num_threads = 4,
-                # Can be None, or a int, or a list that matches the number of thresholds
-                # if None, will not save intermediate results
-                save_every_n_iters = None,  
-                # Default is 'stop', actually no other rules for now.
-                touch_rule = 'stop', 
-                # Default False 
-                grow_to_end = False,
-                # default False, if True, will sort the seeds by ids
-                is_sort = False,
-                # A list of ids to grow, default None, will grow all seeds
-                to_grow_ids = None,
-                # a int for detect min diff and a int for tolerate iterations
-                min_growth_size = 50,
-                no_growth_max_iter = 3,
 
-                    
-                # Fixed
-                return_for_napari = True,
-                                   
-                )            
-            end_time = time.time()
-            elapsed_time = end_time - start_time
-            print(f"Growth completed in {elapsed_time:.2f} seconds")
-            
-            for key, value in grows_dict.items():
-                print(f"{key}: {value.shape}")
-                self.viewer.add_labels(
-                    value,  
-                    name=key
-                )
-            
-            start_time = time.time()
-            # Testing bridge bridge
-            result = self.bridge.grow_seeds(
-                self.current_image,
-                self.current_seeds,
-                thresholds,
-                dilate_iters,
-                upper_thresholds if any(u is not None for u in upper_thresholds) else None,
-                self.current_boundary,
-                self.touch_rule_combo.currentText()
-
-            )
-
-            end_time = time.time()
-            elapsed_time = end_time - start_time
-            print(f"Growth clean version completed in {elapsed_time:.2f} seconds")
-
-            self.viewer.add_labels(
-                result,
-                name="Growth Result"
-            )
-
+            advance_params = self.advanced_params_box.get_params()
 
             # Create and start worker
-            # self.worker = GrowthWorker(
-            #     self.bridge,
-            #     self.current_image,
-            #     self.current_seeds,
-            #     thresholds,
-            #     dilate_iters,
-            #     upper_thresholds if any(u is not None for u in upper_thresholds) else None,
-            #     self.current_boundary,
-            #     self.touch_rule_combo.currentText()
-            # )
+            self.worker = GrowthWorker(
+                image= self.current_image,
+                seeds= self.current_seeds,
+                thresholds=  thresholds,
+                dilate_iters=  dilate_iters,
+                
+                n_threads= self.n_thread_spin.value(),
+                
+                output_folder= self.output_folder_line.text(),
+                upper_thresholds=upper_thresholds if any(u is not None for u in upper_thresholds) else None,
+                boundary= self.current_boundary,
+                touch_rule= self.touch_rule_combo.currentText(),
+                base_name=self.viewer.layers[self.image_combo.currentText()].name,
+                save_every_n_iters= advance_params['save_every_n_iters'],
+                grow_to_end= advance_params['grow_to_end'],
+                is_sort= advance_params['is_sort'],
+                to_grow_ids= advance_params['to_grow_ids'],
+                min_growth_size= advance_params['min_growth_size'],
+                no_growth_max_iter= advance_params['no_growth_max_iter']
+            )
             
-            # self.worker.progress.connect(self.progress_bar.setValue)
-            # self.worker.finished.connect(self._on_growth_finished)
-            # self.worker.error.connect(self._on_growth_error)
+            self.worker.progress.connect(self.progress_bar.setValue)
+            self.worker.finished.connect(self._on_growth_finished)
+            self.worker.error.connect(self._on_growth_error)
             
-            # self.worker.start()
+            self.worker.start()
+            # 
             
         except Exception as e:
             show_error(f"Error starting growth: {str(e)}")
@@ -409,29 +420,30 @@ class SeedGrowthWidget(QWidget):
             self._reset_ui()
             self.status_label.setText("Growth stopped by user")
     
-    def _on_growth_finished(self, result):
+    def _on_growth_finished(self, grows_dict, log_dict):
         """Handle growth completion."""
-        self.growth_result = result
+        # self.growth_result = result
         
         # Add result to viewer
-        self.viewer.add_labels(
-            result,
-            name="Growth Result"
-        )
+        for key, value in grows_dict.items():
+            print(f"{key}: {value.shape}")
+            self.viewer.add_labels(
+                value,  
+                name=key
+            )
         
         # Update UI
         self._reset_ui()
-        self.save_btn.setEnabled(True)
-        self.status_label.setText(f"Growth completed! Generated {len(np.unique(result)) - 1} regions")
+        self.status_label.setText(f"Growth completed!")
         
         # Emit signal
-        self.growth_completed.emit(result)
+        # self.growth_completed.emit(result)
         
         show_info("Growth completed successfully!")
     
     def _on_growth_error(self, error_msg):
         """Handle growth error."""
-        show_error(f"Growth error: {error_msg}")
+        show_error(f"Napari Growth Error: {error_msg}")
         self._reset_ui()
         self.status_label.setText("Growth failed - see error message")
     
@@ -441,23 +453,3 @@ class SeedGrowthWidget(QWidget):
         self.stop_btn.setEnabled(False)
         self.progress_bar.setVisible(False)
     
-    def save_result(self):
-        """Save the growth result."""
-        if self.growth_result is None:
-            return
-        
-        from qtpy.QtWidgets import QFileDialog
-        
-        filename, _ = QFileDialog.getSaveFileName(
-            self,
-            "Save Growth Result",
-            "growth_result.tif",
-            "TIFF Files (*.tif *.tiff)"
-        )
-        
-        if filename:
-            try:
-                self.bridge.save_segmentation(self.growth_result, filename)
-                show_info(f"Saved result to {filename}")
-            except Exception as e:
-                show_error(f"Error saving result: {str(e)}")

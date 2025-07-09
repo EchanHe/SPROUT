@@ -21,7 +21,7 @@ thresholds: [200, 190, 180, 170, 160, 150, 140, 130, 120, 110, 100]
 dilation_steps: [5,5,5,5,5,5,5,5,5,5,5]
 # dilation_steps: [30]
 
-# Keep it "stop for now"
+# Can be stop or overwrite
 touch_rule: "stop"
 # The name of the output folder
 # A folder of workspace + output_folder
@@ -81,8 +81,8 @@ num_threads: 4
 # to_grow_ids: [1,3,5]
 # to_grow_ids: ~
 
-# If want to sort class id by comp size. Default is True
-# is_sort: True
+# If want to sort class id by comp size. Default is False
+# is_sort: False
 
 # Early stop checking: 
 # Limit for consecutive no-growth iterations. Defaults is 3.
