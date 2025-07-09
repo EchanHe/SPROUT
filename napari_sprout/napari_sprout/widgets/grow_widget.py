@@ -161,7 +161,7 @@ class SeedGrowthWidget(QWidget):
         touch_layout = QHBoxLayout()
         touch_layout.addWidget(QLabel("Touch Rule:"))
         self.touch_rule_combo = QComboBox()
-        self.touch_rule_combo.addItems(["stop", "continue"])
+        self.touch_rule_combo.addItems(["stop", "overwrite"])
         touch_layout.addWidget(self.touch_rule_combo)
         touch_layout.addStretch()
         params_layout.addLayout(touch_layout)
@@ -249,8 +249,35 @@ class SeedGrowthWidget(QWidget):
         self.remove_threshold_btn.clicked.connect(self._remove_threshold_row)
         self.grow_btn.clicked.connect(self.start_growth)
         self.stop_btn.clicked.connect(self.stop_growth)
-        # self.save_btn.clicked.connect(self.save_result)
+        self.image_combo.currentTextChanged.connect(self.img_changed)
         
+        # self.save_btn.clicked.connect(self.save_result)
+
+    def _set_threshod_range(self, image_dtype):
+        """Set the range of the threshold spinboxes based on the image dtype."""
+        if image_dtype == np.uint8:
+            max_value = 255
+        elif image_dtype == np.uint16:
+            max_value = 65535
+        elif image_dtype == np.float32 or image_dtype == np.float64:
+            max_value = 1.0
+        else:
+            max_value = 255
+
+    #TODO add a method to set the range of the threshold spinboxes based on the image dtype
+    def img_changed(self, text):
+        """Handle image selection change."""
+        if text:
+            current_image = self.viewer.layers[text].data
+            # Get the image dtype
+            image_dtype = current_image.dtype
+            # Set the range of the threshold spinboxes based on the image dtype
+            if image_dtype == np.uint8:
+                print("Image dtype is uint8")
+            
+            # self.refresh_layers()
+
+ 
     def toggle_grow_params_visibility(self, state):
         self.advanced_params_box.setVisible(state == Qt.Checked)  
           
@@ -263,7 +290,8 @@ class SeedGrowthWidget(QWidget):
         
         for layer in self.viewer.layers:
             if isinstance(layer, Image):
-                self.image_combo.addItem(layer.name)
+                self.image_combo.addItem(layer.name)                
+                
             elif isinstance(layer, Labels):
                 self.seeds_combo.addItem(layer.name)
                 self.boundary_combo.addItem(layer.name)
@@ -287,13 +315,13 @@ class SeedGrowthWidget(QWidget):
         use_upper = QCheckBox()
         upper_spin = QDoubleSpinBox()
         upper_spin.setRange(0, 65535)
-        upper_spin.setValue(upper if upper else 500)
+        upper_spin.setValue(upper if upper else 65535)
         upper_spin.setEnabled(upper is not None)
         
-        use_upper.setChecked(upper is not None)
-        use_upper.toggled.connect(upper_spin.setEnabled)
+        # use_upper.setChecked(upper is not None)
+        # use_upper.toggled.connect(upper_spin.setEnabled)
         
-        upper_layout.addWidget(use_upper)
+        # upper_layout.addWidget(use_upper)
         upper_layout.addWidget(upper_spin)
         upper_widget.setLayout(upper_layout)
         
@@ -301,7 +329,7 @@ class SeedGrowthWidget(QWidget):
         
         # Dilate iterations
         dilate_spin = QSpinBox()
-        dilate_spin.setRange(1, 100)
+        dilate_spin.setRange(1, 1000)
         dilate_spin.setValue(dilate)
         self.threshold_table.setCellWidget(row, 2, dilate_spin)
     

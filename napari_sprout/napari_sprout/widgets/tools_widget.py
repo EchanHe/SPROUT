@@ -64,15 +64,36 @@ class SizeReferenceGroupBox(QGroupBox):
         self.setLayout(layout)
 
         # Connect mouse click if needed
-        self.viewer.mouse_drag_callbacks.append(self.store_click_position)
+        # Now add in showEvent
+        # self.viewer.mouse_drag_callbacks.append(self.store_click_position)
 
         self.sync_size_from_radius()
 
-    def closeEvent(self, event):
-        if self.store_click_position in self.viewer.mouse_drag_callbacks:
-            self.viewer.mouse_drag_callbacks.remove(self.store_click_position)
-        print("Callback removed when widget closed.")
-        super().closeEvent(event)
+    
+    def showEvent(self, event):
+        # print("showEvent called")
+        try:
+            if self.store_click_position not in self.viewer.mouse_drag_callbacks:
+                self.viewer.mouse_drag_callbacks.append(self.store_click_position)
+        except Exception:
+            print("Warning: Could not connect active layer change event.")
+            pass
+        
+        
+    def hideEvent(self, event):
+        # print("hideEvent called")
+        try:
+            if self.store_click_position in self.viewer.mouse_drag_callbacks:
+                self.viewer.mouse_drag_callbacks.remove(self.store_click_position)
+        except Exception:
+            print("Warning: Could not disconnect active layer change event.")
+            pass
+    
+    # def closeEvent(self, event):
+    #     if self.store_click_position in self.viewer.mouse_drag_callbacks:
+    #         self.viewer.mouse_drag_callbacks.remove(self.store_click_position)
+    #     print("Callback removed when widget closed.")
+    #     super().closeEvent(event)
 
     def store_click_position(self, viewer, event):
         if not hasattr(self, "click_radio") or self.click_radio is None:
@@ -911,3 +932,11 @@ class SPROUTToolWidget(QWidget):
         # You can append more QGroupBox widgets for other helper tools below...
         # e.g. self.other_tool = OtherGroupBox(viewer)
         # self.layout().addWidget(self.other_tool)
+
+
+    def showEvent(self, event):
+        print("showEvent called")
+
+        
+    def hideEvent(self, event):
+        print("hideEvent called")

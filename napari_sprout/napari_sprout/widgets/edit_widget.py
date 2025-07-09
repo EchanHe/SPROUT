@@ -5,7 +5,7 @@ from qtpy.QtWidgets import (QWidget, QVBoxLayout, QComboBox, QPushButton, QLabel
                             QFormLayout, QScrollArea , QSizePolicy)
 from copy import deepcopy
 from napari.layers import Labels
-
+from napari.utils.notifications import show_info, show_error
 from qtpy.QtWidgets import QFrame
 
 import numpy as np
@@ -441,7 +441,8 @@ class QtLabelSelector(QWidget):
         self.original_data_backup = target_layer.data.copy()
         data[data == src] = dst
         target_layer.data = data
-        QMessageBox.information(self, "Success", f"Class {src} changed to {dst}.")
+        # QMessageBox.information(self, "Success", f"Class {src} changed to {dst}.")
+        show_info(f"Class {src} changed to {dst} in layer {target_layer.name}.")
 
         self.clear_selection()
 
@@ -552,7 +553,8 @@ class QtLabelSelector(QWidget):
                 print("Layer was removed before update.")
                 return
             target_layer.data = result
-            QMessageBox.information(self, "Success", f"Split class {target_class} completed.")
+            # QMessageBox.information(self, "Success", f"Split class {target_class} completed.")
+            show_info(f"Split class {target_class} completed in layer {target_layer.name}.")
             self.clear_selection()
 
         self.run_in_background(
@@ -661,17 +663,23 @@ class QtLabelSelector(QWidget):
             data = data * (~mask)
 
         target_layer.data = data
-        self.clear_selection()
+        
         kept_or_removed = "kept" if self.mode_combo.currentText() == "Keep selected labels" else "removed"
         label_str = ", ".join(str(lbl) for lbl in sorted(self.selected_labels))
-        QMessageBox.information(
-            self,
-            "Done",
-            f"Label selection processing completed.\n"
+        
+        # QMessageBox.information(
+        #     self,
+        #     "Done",
+        #     f"Label selection processing completed.\n"
+        #     f"{kept_or_removed.capitalize()} labels: [{label_str}]"
+        # )
+        
+        show_info(
+            f"Label selection processing completed in layer {target_layer.name}.\n"
             f"{kept_or_removed.capitalize()} labels: [{label_str}]"
         )
         
-        
+        self.clear_selection()
 
     def run_fill_holes_operation(self):
         label_layer = self.last_bound_layer
@@ -706,7 +714,8 @@ class QtLabelSelector(QWidget):
                 print("Layer was removed before completion.")
                 return
             target_layer.data = result
-            QMessageBox.information(self, "Done", "Hole filling completed.")
+            # QMessageBox.information(self, "Done", "Hole filling completed.")
+            show_info(f"Hole filling completed in layer {target_layer.name}.")
 
         # Run the long task in background
         self.run_in_background(
@@ -716,12 +725,6 @@ class QtLabelSelector(QWidget):
             buttons_to_disable=self.all_edit_buttons
         )
 
-
-        # Call the fill logic
-        # filled = self.fill_holes_in_labels(data, area_threshold, target_label, apply_in_2d)
-        # target_layer.data = filled
-
-        # QMessageBox.information(self, "Done", "Hole filling completed.")
 
     
     def fill_holes_in_labels(self, label_img, area_threshold=64, target_label=None, apply_in_2d=False):
@@ -879,7 +882,8 @@ class QtLabelSelector(QWidget):
                 print("Layer was removed before update.")
                 return
             target_layer.data = result
-            QMessageBox.information(self, "Done", f"{op_name} operation completed.")
+            # QMessageBox.information(self, "Done", f"{op_name} operation completed.")
+            show_info(f"{op_name} operation completed in layer {target_layer.name}.")
 
         # background task to perform morphology
         self.run_in_background(
@@ -1007,7 +1011,8 @@ class QtLabelSelector(QWidget):
                 print("Layer removed before update.")
                 return
             target_layer.data = result
-            QMessageBox.information(self, "Done", "Filtering completed.")
+            # QMessageBox.information(self, "Done", "Filtering completed.")
+            show_info(f"Filtering completed in layer {target_layer.name}.")
 
         # start the background task
         self.run_in_background(
@@ -1089,7 +1094,8 @@ class QtLabelSelector(QWidget):
                 print("Layer was removed before update.")
                 return
             target_layer.data = result
-            QMessageBox.information(self, "Done", f"Kept top {top_n} labels.")
+            # QMessageBox.information(self, "Done", f"Kept top {top_n} labels.")
+            show_info(f"Kept top {top_n} labels in layer {target_layer.name}.")
 
         self.run_in_background(
             self._do_keep_top_n_labels,
