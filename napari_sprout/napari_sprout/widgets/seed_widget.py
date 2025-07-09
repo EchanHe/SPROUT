@@ -3,7 +3,7 @@
 from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QSpinBox, QDoubleSpinBox, QComboBox, QGroupBox, QCheckBox,
-    QSlider, QFormLayout, QMessageBox
+    QSlider, QFormLayout, QMessageBox, QLineEdit
 )
 from qtpy.QtCore import Qt, Signal
 import numpy as np
@@ -25,6 +25,7 @@ if root_dir not in sys.path:
 from make_seeds import make_seeds
 from make_adaptive_seed import make_adaptive_seed_thre, make_adaptive_seed_ero
 
+
 class SeedGenerationWidget(QWidget):
     """Widget for interactive seed generation."""
     
@@ -41,7 +42,8 @@ class SeedGenerationWidget(QWidget):
         
         self._init_ui()
         self._connect_signals()
-    
+        self._on_seed_method_changed("Original") # Set initial state
+
     def _init_ui(self):
         """Initialize the user interface."""
         layout = QVBoxLayout()
@@ -72,8 +74,31 @@ class SeedGenerationWidget(QWidget):
         seed_method_group.setLayout(seed_method_layout)
         layout.addWidget(seed_method_group)
         
-        # Threshold parameters
-        threshold_group = QGroupBox("Threshold Parameters")
+        # --- Parameters for Original and Adaptive (Thresholds) methods ---
+        self.list_params_group = QGroupBox("Threshold List Parameters")
+        list_params_layout = QFormLayout()
+        self.lower_thresholds_list = QLineEdit("130, 140, 150")
+        self.upper_thresholds_list = QLineEdit("255, 255, 255")
+
+        # Style to make QLineEdit look editable
+        style = "QLineEdit { background-color: white; border: 1px solid #999; }"
+        self.lower_thresholds_list.setStyleSheet(style)
+        self.upper_thresholds_list.setStyleSheet(style)
+
+        # Add tooltips for clarity
+        self.lower_thresholds_list.setToolTip("Enter comma-separated integer values for lower thresholds.")
+        self.upper_thresholds_list.setToolTip("Enter comma-separated integer values for upper thresholds.")
+
+        self.use_upper_list = QCheckBox("Use upper thresholds list")
+        self.use_upper_list.setChecked(True)
+        list_params_layout.addRow("Lower Thresholds (comma-separated):", self.lower_thresholds_list)
+        list_params_layout.addRow(self.use_upper_list)
+        list_params_layout.addRow("Upper Thresholds (comma-separated):", self.upper_thresholds_list)
+        self.list_params_group.setLayout(list_params_layout)
+        layout.addWidget(self.list_params_group)
+
+        # --- Parameters for Adaptive (Erosion) method ---
+        self.single_param_group = QGroupBox("Threshold Parameters")
         threshold_layout = QFormLayout()
         
         # Lower threshold with slider
@@ -105,8 +130,8 @@ class SeedGenerationWidget(QWidget):
         self.preview_threshold_btn = QPushButton("Preview Threshold")
         threshold_layout.addRow(self.preview_threshold_btn)
         
-        threshold_group.setLayout(threshold_layout)
-        layout.addWidget(threshold_group)
+        self.single_param_group.setLayout(threshold_layout)
+        layout.addWidget(self.single_param_group)
         
         # Morphological parameters
         morph_group = QGroupBox("Morphological Parameters")
@@ -151,7 +176,18 @@ class SeedGenerationWidget(QWidget):
         self.preview_threshold_btn.clicked.connect(self.preview_threshold)
         self.generate_btn.clicked.connect(self.generate_seeds)
         self.image_combo.currentIndexChanged.connect(self._on_image_changed)
-    
+        self.seed_method_combo.currentTextChanged.connect(self._on_seed_method_changed)
+        self.use_upper_list.toggled.connect(self.upper_thresholds_list.setEnabled)
+
+    def _on_seed_method_changed(self, method: str):
+        """Show/hide parameter sections based on the selected method."""
+        if method in ["Original", "Adaptive (Thresholds)"]:
+            self.list_params_group.setVisible(True)
+            self.single_param_group.setVisible(False)
+        elif method == "Adaptive (Erosion)":
+            self.list_params_group.setVisible(False)
+            self.single_param_group.setVisible(True)
+
     def refresh_layers(self):
         """Refresh the list of available layers."""
         self.image_combo.clear()
@@ -206,13 +242,15 @@ class SeedGenerationWidget(QWidget):
             
         except Exception as e:
             show_error(f"Error in threshold preview: {str(e)}")
+    
     def add_labels_layer(self, seeds_dict):
         for seed_name, seed in seeds_dict.items():
             print(f"Adding seed layer: {seed_name}")
             self.seeds_layer = self.viewer.add_labels(
                 seed,
                 name=seed_name
-        )
+            )
+    
     def generate_seeds(self):
         """Generate seeds with current parameters."""
         if self.current_image is None:
@@ -220,15 +258,30 @@ class SeedGenerationWidget(QWidget):
             return
         
         try:
-            # Get parameters
-            lower = self.lower_threshold.value()
-            upper = self.upper_threshold.value() if self.use_upper.isChecked() else None
+            # Get parameters based on selected method
+            selected_method = self.seed_method_combo.currentText()
+            
+            lower = None
+            upper = None
+            thresholds = []
+            upper_thresholds = None
 
-            # Cast to int if not None
-            if lower is not None:
-                lower = int(lower)
-            if upper is not None:
-                upper = int(upper)
+            if selected_method == "Adaptive (Erosion)":
+                lower = int(self.lower_threshold.value())
+                if self.use_upper.isChecked():
+                    upper = int(self.upper_threshold.value())
+            else: # Original or Adaptive (Thresholds)
+                try:
+                    thresholds = [int(x.strip()) for x in self.lower_thresholds_list.text().split(',') if x.strip()]
+                    if self.use_upper_list.isChecked():
+                        upper_thresholds = [int(x.strip()) for x in self.upper_thresholds_list.text().split(',') if x.strip()]
+                        if len(thresholds) != len(upper_thresholds):
+                            show_error("Lower and upper threshold lists must have the same number of elements.")
+                            return
+                except ValueError:
+                    show_error("Thresholds must be comma-separated integers.")
+                    return
+
             erosion = self.erosion_iter.value()
             footprint = self.footprint_combo.currentText()
             segments = self.segments_spin.value()
@@ -249,11 +302,9 @@ class SeedGenerationWidget(QWidget):
             # So probably make a selection widget that allows user to select which method to use
             
             # They return seeds_dict for {name: seed}, and will be added to labels
-
             # NOTE: maybe add UI for selecting the output folder
             # NOTE: need to add list of thresholds for adaptive seed making
             
-            selected_method = self.seed_method_combo.currentText()
             seeds_dict = {}
             
             print(f"Generating seeds with method: {selected_method}")
@@ -262,8 +313,8 @@ class SeedGenerationWidget(QWidget):
                 seeds_dict, _ = make_seeds(
                     img=self.current_image,
                     boundary=boundary,
-                    thresholds=lower,
-                    upper_thresholds=upper,
+                    thresholds=thresholds,
+                    upper_thresholds=upper_thresholds,
                     erosion_steps=erosion,
                     segments=segments,
                     output_folder='napari_temp',
@@ -295,15 +346,11 @@ class SeedGenerationWidget(QWidget):
                     return_for_napari=True
                 )
             elif selected_method == "Adaptive (Thresholds)":
-                # NOTE: This method expects a list of thresholds.
-                # The current UI provides a single value.
-                thresholds = [lower]
-                show_info("Using single lower threshold for Adaptive (Thresholds) method.")
                 seeds_dict, _, _ = make_adaptive_seed_thre(
                     img=self.current_image,
                     boundary=boundary,
                     thresholds=thresholds,
-                    upper_thresholds=None,
+                    upper_thresholds=upper_thresholds,
                     erosion_steps=erosion,
                     segments=segments,
                     output_folder='napari_temp',
