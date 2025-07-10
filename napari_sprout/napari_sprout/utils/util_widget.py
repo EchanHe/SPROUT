@@ -110,6 +110,10 @@ class GrowOptionalParamGroupBox(QGroupBox):
             from napari.utils.notifications import show_error
             show_error("Invalid IDs format. Please enter a comma-separated list of integers.")
        
+        # if to_grow_ids is empty, set to None
+        if not to_grow_ids:
+            to_grow_ids = None
+       
         if not self.early_stop_checkbox.isChecked():
             no_growth_max_iter = None
         else:

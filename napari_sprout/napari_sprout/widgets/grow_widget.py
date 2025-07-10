@@ -123,6 +123,8 @@ class SeedGrowthWidget(QWidget):
         self.growth_result = None
         self.worker = None
         
+        self.previous_image_name = None
+        
         self._init_ui()
         self._connect_signals()
     
@@ -240,12 +242,12 @@ class SeedGrowthWidget(QWidget):
         self.setLayout(layout)
         
         # Add default threshold
-        self._add_threshold_row(100, None, 5)
+        # self._add_threshold_row(100, None, 5)
     
     def _connect_signals(self):
         """Connect widget signals."""
         self.refresh_btn.clicked.connect(self.refresh_layers)
-        self.add_threshold_btn.clicked.connect(self._add_threshold_row)
+        self.add_threshold_btn.clicked.connect(self._add_threshold_row_adaptive)
         self.remove_threshold_btn.clicked.connect(self._remove_threshold_row)
         self.grow_btn.clicked.connect(self.start_growth)
         self.stop_btn.clicked.connect(self.stop_growth)
@@ -253,27 +255,31 @@ class SeedGrowthWidget(QWidget):
         
         # self.save_btn.clicked.connect(self.save_result)
 
-    def _set_threshod_range(self, image_dtype):
+    def _get_img_dtype_max(self, image_dtype):
         """Set the range of the threshold spinboxes based on the image dtype."""
         if image_dtype == np.uint8:
             max_value = 255
         elif image_dtype == np.uint16:
             max_value = 65535
+        elif image_dtype == np.uint32:
+            max_value = 4294967295
         elif image_dtype == np.float32 or image_dtype == np.float64:
             max_value = 1.0
         else:
             max_value = 255
+        return max_value
 
     #TODO add a method to set the range of the threshold spinboxes based on the image dtype
     def img_changed(self, text):
         """Handle image selection change."""
-        if text:
-            current_image = self.viewer.layers[text].data
-            # Get the image dtype
-            image_dtype = current_image.dtype
-            # Set the range of the threshold spinboxes based on the image dtype
-            if image_dtype == np.uint8:
-                print("Image dtype is uint8")
+        if text and text != self.previous_image_name:
+            self.previous_image_name = text
+            
+            # Clear all threshold rows
+            self.threshold_table.setRowCount(0)
+
+            # Add a default row with appropriate dtype range
+            self._add_threshold_row_adaptive()
             
             # self.refresh_layers()
 
@@ -283,21 +289,93 @@ class SeedGrowthWidget(QWidget):
           
     def refresh_layers(self):
         """Refresh the list of available layers."""
+        current_image_name = self.image_combo.currentText()
+        
+        self.image_combo.blockSignals(True)  # prevent triggering img_changed temporarily
         self.image_combo.clear()
         self.seeds_combo.clear()
         self.boundary_combo.clear()
         self.boundary_combo.addItem("None")
         
+        image_names = []
         for layer in self.viewer.layers:
             if isinstance(layer, Image):
-                self.image_combo.addItem(layer.name)                
-                
+                image_names.append(layer.name)
+                self.image_combo.addItem(layer.name)
             elif isinstance(layer, Labels):
                 self.seeds_combo.addItem(layer.name)
                 self.boundary_combo.addItem(layer.name)
+        
+        # Restore image selection if it still exists
+        if current_image_name in image_names:
+            self.image_combo.setCurrentText(current_image_name)
+        self.image_combo.blockSignals(False)
+
+        # If current_text changed (e.g., setCurrentText fails), manually trigger img_changed
+        if self.image_combo.currentText() != self.previous_image_name:
+            self.img_changed(self.image_combo.currentText())
+
+
+    def _add_threshold_row_adaptive(self, dilate=5):
+        """Add a new threshold row to the table."""
+        row = self.threshold_table.rowCount()
+        self.threshold_table.insertRow(row)
+        
+        
+        if not self.image_combo.currentText():
+            show_error("Please select an image layer first")
+            return
+        
+        # only allow to add threshold row when there is an image selected
+        current_image = self.viewer.layers[self.image_combo.currentText()].data
+        if row==0:
+
+            
+            upper_value = self._get_img_dtype_max(current_image.dtype)
+            lower_value = 0 
+        else:
+            # when adding a new row, use the previous row's values
+            lower_widget = self.threshold_table.cellWidget(row - 1, 0)
+            lower_value = lower_widget.value()
+            upper_widget = self.threshold_table.cellWidget(row - 1, 1)
+            upper_value = upper_widget.value()
+            
+
+            
+            dilate_widget = self.threshold_table.cellWidget(row - 1, 2)
+            dilate = dilate_widget.value()
+
+        lower_min = 0
+        lower_max = upper_value
+        
+        upper_min = lower_value
+        upper_max = self._get_img_dtype_max(current_image.dtype)            
+    
+        # Lower threshold
+        # lower_spin = QDoubleSpinBox()
+        lower_spin = QSpinBox()
+        lower_spin.setRange(lower_min, lower_max)
+        lower_spin.setValue(lower_value)
+        self.threshold_table.setCellWidget(row, 0, lower_spin)
+        
+
+        # upper_spin = QDoubleSpinBox()
+        upper_spin = QSpinBox()
+        upper_spin.setRange(upper_min, upper_max)
+        upper_spin.setValue(upper_value)
+        
+        
+        self.threshold_table.setCellWidget(row, 1, upper_spin)
+        
+        # Dilate iterations
+        dilate_spin = QSpinBox()
+        dilate_spin.setRange(1, 1000)
+        dilate_spin.setValue(dilate)
+        self.threshold_table.setCellWidget(row, 2, dilate_spin)
     
     def _add_threshold_row(self, lower=100, upper=None, dilate=5):
-        """Add a new threshold row to the table."""
+        """depracated: use _add_threshold_row_adaptive instead
+        Add a new threshold row to the table."""
         row = self.threshold_table.rowCount()
         self.threshold_table.insertRow(row)
         
@@ -352,14 +430,15 @@ class SeedGrowthWidget(QWidget):
             
             # Upper threshold
             upper_widget = self.threshold_table.cellWidget(row, 1)
-            upper_layout = upper_widget.layout()
-            use_upper = upper_layout.itemAt(0).widget()
-            upper_spin = upper_layout.itemAt(1).widget()
+            upper_thresholds.append(upper_widget.value())
+            # upper_layout = upper_widget.layout()
+            # use_upper = upper_layout.itemAt(0).widget()
+            # upper_spin = upper_layout.itemAt(1).widget()
             
-            if use_upper.isChecked():
-                upper_thresholds.append(upper_spin.value())
-            else:
-                upper_thresholds.append(None)
+            # if use_upper.isChecked():
+            #     upper_thresholds.append(upper_spin.value())
+            # else:
+            #     upper_thresholds.append(None)
             
             # Dilate iterations
             dilate_widget = self.threshold_table.cellWidget(row, 2)
