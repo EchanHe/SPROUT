@@ -35,29 +35,29 @@ class SPROUTWidget(QWidget):
         layout = QVBoxLayout()
         
         # Set minimum size to ensure visibility
-        self.setMinimumSize(300, 400)
+        self.setMinimumSize(500, 500)
         
         # Header
         header_layout = QHBoxLayout()
-        title = QLabel("<h2>SPROUT Segmentation</h2>")
+        title = QLabel("<h4>SPROUT Segmentation</h2>")
         header_layout.addWidget(title)
         header_layout.addStretch()
         
         # Load image button
-        self.load_btn = QPushButton("Load Image")
-        header_layout.addWidget(self.load_btn)
+        # self.load_btn = QPushButton("Load Image")
+        # header_layout.addWidget(self.load_btn)
         
         layout.addLayout(header_layout)
         
         # Info label
-        info_text = (
-            "Semi-automated Parcellation of Region Outputs Using "
-            "Thresholding and Transformation"
-        )
-        info_label = QLabel(info_text)
-        info_label.setWordWrap(True)
-        info_label.setStyleSheet("QLabel { color: #666; }")
-        layout.addWidget(info_label)
+        # info_text = (
+        #     "Semi-automated Parcellation of Region Outputs Using "
+        #     "Thresholding and Transformation"
+        # )
+        # info_label = QLabel(info_text)
+        # info_label.setWordWrap(True)
+        # info_label.setStyleSheet("QLabel { color: #666; }")
+        # layout.addWidget(info_label)
         
         # Tab widget for workflow steps
         self.tabs = QTabWidget()
@@ -83,7 +83,7 @@ class SPROUTWidget(QWidget):
     
     def _connect_signals(self):
         """Connect widget signals."""
-        self.load_btn.clicked.connect(self.load_image)
+        # self.load_btn.clicked.connect(self.load_image)
         self.seed_widget.seeds_generated.connect(self._on_seeds_generated)
         self.grow_widget.growth_completed.connect(self._on_growth_completed)
     

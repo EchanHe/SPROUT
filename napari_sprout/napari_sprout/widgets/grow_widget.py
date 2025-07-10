@@ -13,7 +13,8 @@ from napari.layers import Image, Labels
 from napari.utils.notifications import show_info, show_error
 
 
-from ..utils.util_widget import create_output_folder_row, GrowOptionalParamGroupBox,MainParamWidget
+from ..utils.util_widget import (create_output_folder_row, GrowOptionalParamGroupBox,
+                                 MainGrowParamWidget)
 
 
 import sys
@@ -153,7 +154,7 @@ class SeedGrowthWidget(QWidget):
 
 
         
-        self.main_param_widget = MainParamWidget(title="Parameters", mode="grow",
+        self.main_param_widget = MainGrowParamWidget(title="Parameters",
                                                  image_combo=self.image_combo,viewer=self.viewer)
         layout.addWidget(self.main_param_widget)
         
@@ -216,14 +217,15 @@ class SeedGrowthWidget(QWidget):
         self.refresh_btn.clicked.connect(self.refresh_layers)
         self.grow_btn.clicked.connect(self.start_growth)
         self.stop_btn.clicked.connect(self.stop_growth)
-        self.image_combo.currentTextChanged.connect(self.img_changed)
+        self.image_combo.currentTextChanged.connect(self._on_image_changed)
         
         # self.save_btn.clicked.connect(self.save_result)
 
 
 
-    def img_changed(self, text):
+    def _on_image_changed(self, _):
         """Handle image selection change."""
+        text = self.image_combo.currentText()
         if text and text != self.previous_image_name:
             self.previous_image_name = text
             
@@ -259,7 +261,7 @@ class SeedGrowthWidget(QWidget):
 
         # If current_text changed (e.g., setCurrentText fails), manually trigger img_changed
         if self.image_combo.currentText() != self.previous_image_name:
-            self.img_changed(self.image_combo.currentText())
+            self._on_image_changed(self.image_combo.currentText())
 
 
     def start_growth(self):
@@ -310,7 +312,7 @@ class SeedGrowthWidget(QWidget):
                 thresholds=  main_params['thresholds'],
                 dilate_iters=  main_params['dilation_steps'],
                 
-                n_threads= main_params['threads'],
+                n_threads= main_params['num_threads'],
                 
                 output_folder= self.output_folder_line.text(),
                 upper_thresholds=main_params["upper_thresholds"] if any(u is not None for u in main_params["upper_thresholds"]) else None,
