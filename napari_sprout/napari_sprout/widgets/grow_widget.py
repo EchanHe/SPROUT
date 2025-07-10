@@ -13,7 +13,7 @@ from napari.layers import Image, Labels
 from napari.utils.notifications import show_info, show_error
 
 
-from ..utils.util_widget import create_output_folder_row, GrowOptionalParamGroupBox
+from ..utils.util_widget import create_output_folder_row, GrowOptionalParamGroupBox,MainParamWidget
 
 
 import sys
@@ -150,52 +150,27 @@ class SeedGrowthWidget(QWidget):
         
         input_group.setLayout(input_layout)
         layout.addWidget(input_group)
+
+
         
-        self.n_thread_spin = QSpinBox() 
-        self.n_thread_spin.setValue(4)  # Default to 4 threads
-        self.n_thread_spin.setRange(1, os.cpu_count() or 8)  # Default to 8 if os.cpu_count() is None
-        
-        # Growth parameters
-        params_group = QGroupBox("Growth Parameters")
-        params_layout = QVBoxLayout()
-        
-        # Touch rule
-        touch_layout = QHBoxLayout()
-        touch_layout.addWidget(QLabel("Touch Rule:"))
-        self.touch_rule_combo = QComboBox()
-        self.touch_rule_combo.addItems(["stop", "overwrite"])
-        touch_layout.addWidget(self.touch_rule_combo)
-        touch_layout.addStretch()
-        params_layout.addLayout(touch_layout)
-        
-        # Threshold table
-        self.threshold_table = QTableWidget()
-        self.threshold_table.setColumnCount(3)
-        self.threshold_table.setHorizontalHeaderLabels(
-            ["Lower Threshold", "Upper Threshold", "Dilate Iterations"]
-        )
-        self.threshold_table.horizontalHeader().setStretchLastSection(True)
-        self.threshold_table.setMaximumHeight(200)
-        
-        # Add/remove buttons
-        table_btn_layout = QHBoxLayout()
-        self.add_threshold_btn = QPushButton("Add Threshold")
-        self.remove_threshold_btn = QPushButton("Remove Selected")
-        table_btn_layout.addWidget(self.add_threshold_btn)
-        table_btn_layout.addWidget(self.remove_threshold_btn)
-        table_btn_layout.addStretch()
-        
-        params_layout.addWidget(QLabel("Growth Thresholds (process from high to low):"))
-        params_layout.addWidget(self.threshold_table)
-        params_layout.addLayout(table_btn_layout)
-        
-        params_group.setLayout(params_layout)
-        layout.addWidget(params_group)
+        self.main_param_widget = MainParamWidget(title="Parameters", mode="grow",
+                                                 image_combo=self.image_combo,viewer=self.viewer)
+        layout.addWidget(self.main_param_widget)
         
         # Progress bar
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
         layout.addWidget(self.progress_bar)
+
+        self.show_advanced_checkbox = QCheckBox("Show Advanced Grow Options")
+        self.show_advanced_checkbox.stateChanged.connect(self._toggle_grow_params_visibility)
+        layout.addWidget(self.show_advanced_checkbox)
+        
+        self.advanced_params_box = GrowOptionalParamGroupBox()
+        layout.addWidget(self.advanced_params_box)   
+        self.advanced_params_box.setVisible(False)
+
+
 
         output_dir_layout, self.output_folder_line = create_output_folder_row()
         layout.addLayout(output_dir_layout)
@@ -225,14 +200,6 @@ class SeedGrowthWidget(QWidget):
         # btn_layout.addWidget(self.save_btn)
         layout.addLayout(btn_layout)
 
-
-        self.show_advanced_checkbox = QCheckBox("Show Advanced Grow Options")
-        self.show_advanced_checkbox.stateChanged.connect(self.toggle_grow_params_visibility)
-        layout.addWidget(self.show_advanced_checkbox)
-        
-        self.advanced_params_box = GrowOptionalParamGroupBox()
-        layout.addWidget(self.advanced_params_box)   
-        self.advanced_params_box.setVisible(False)
         
         # Status
         self.status_label = QLabel("Ready to grow seeds")
@@ -247,44 +214,23 @@ class SeedGrowthWidget(QWidget):
     def _connect_signals(self):
         """Connect widget signals."""
         self.refresh_btn.clicked.connect(self.refresh_layers)
-        self.add_threshold_btn.clicked.connect(self._add_threshold_row_adaptive)
-        self.remove_threshold_btn.clicked.connect(self._remove_threshold_row)
         self.grow_btn.clicked.connect(self.start_growth)
         self.stop_btn.clicked.connect(self.stop_growth)
         self.image_combo.currentTextChanged.connect(self.img_changed)
         
         # self.save_btn.clicked.connect(self.save_result)
 
-    def _get_img_dtype_max(self, image_dtype):
-        """Set the range of the threshold spinboxes based on the image dtype."""
-        if image_dtype == np.uint8:
-            max_value = 255
-        elif image_dtype == np.uint16:
-            max_value = 65535
-        elif image_dtype == np.uint32:
-            max_value = 4294967295
-        elif image_dtype == np.float32 or image_dtype == np.float64:
-            max_value = 1.0
-        else:
-            max_value = 255
-        return max_value
 
-    #TODO add a method to set the range of the threshold spinboxes based on the image dtype
+
     def img_changed(self, text):
         """Handle image selection change."""
         if text and text != self.previous_image_name:
             self.previous_image_name = text
             
-            # Clear all threshold rows
-            self.threshold_table.setRowCount(0)
-
-            # Add a default row with appropriate dtype range
-            self._add_threshold_row_adaptive()
-            
-            # self.refresh_layers()
+            self.main_param_widget.clean_table()
 
  
-    def toggle_grow_params_visibility(self, state):
+    def _toggle_grow_params_visibility(self, state):
         self.advanced_params_box.setVisible(state == Qt.Checked)  
           
     def refresh_layers(self):
@@ -316,136 +262,6 @@ class SeedGrowthWidget(QWidget):
             self.img_changed(self.image_combo.currentText())
 
 
-    def _add_threshold_row_adaptive(self, dilate=5):
-        """Add a new threshold row to the table."""
-        row = self.threshold_table.rowCount()
-        self.threshold_table.insertRow(row)
-        
-        
-        if not self.image_combo.currentText():
-            show_error("Please select an image layer first")
-            return
-        
-        # only allow to add threshold row when there is an image selected
-        current_image = self.viewer.layers[self.image_combo.currentText()].data
-        if row==0:
-
-            
-            upper_value = self._get_img_dtype_max(current_image.dtype)
-            lower_value = 0 
-        else:
-            # when adding a new row, use the previous row's values
-            lower_widget = self.threshold_table.cellWidget(row - 1, 0)
-            lower_value = lower_widget.value()
-            upper_widget = self.threshold_table.cellWidget(row - 1, 1)
-            upper_value = upper_widget.value()
-            
-
-            
-            dilate_widget = self.threshold_table.cellWidget(row - 1, 2)
-            dilate = dilate_widget.value()
-
-        lower_min = 0
-        lower_max = upper_value
-        
-        upper_min = lower_value
-        upper_max = self._get_img_dtype_max(current_image.dtype)            
-    
-        # Lower threshold
-        # lower_spin = QDoubleSpinBox()
-        lower_spin = QSpinBox()
-        lower_spin.setRange(lower_min, lower_max)
-        lower_spin.setValue(lower_value)
-        self.threshold_table.setCellWidget(row, 0, lower_spin)
-        
-
-        # upper_spin = QDoubleSpinBox()
-        upper_spin = QSpinBox()
-        upper_spin.setRange(upper_min, upper_max)
-        upper_spin.setValue(upper_value)
-        
-        
-        self.threshold_table.setCellWidget(row, 1, upper_spin)
-        
-        # Dilate iterations
-        dilate_spin = QSpinBox()
-        dilate_spin.setRange(1, 1000)
-        dilate_spin.setValue(dilate)
-        self.threshold_table.setCellWidget(row, 2, dilate_spin)
-    
-    def _add_threshold_row(self, lower=100, upper=None, dilate=5):
-        """depracated: use _add_threshold_row_adaptive instead
-        Add a new threshold row to the table."""
-        row = self.threshold_table.rowCount()
-        self.threshold_table.insertRow(row)
-        
-        # Lower threshold
-        lower_spin = QDoubleSpinBox()
-        lower_spin.setRange(0, 65535)
-        lower_spin.setValue(lower)
-        self.threshold_table.setCellWidget(row, 0, lower_spin)
-        
-        # Upper threshold
-        upper_widget = QWidget()
-        upper_layout = QHBoxLayout()
-        upper_layout.setContentsMargins(0, 0, 0, 0)
-        
-        use_upper = QCheckBox()
-        upper_spin = QDoubleSpinBox()
-        upper_spin.setRange(0, 65535)
-        upper_spin.setValue(upper if upper else 65535)
-        upper_spin.setEnabled(upper is not None)
-        
-        # use_upper.setChecked(upper is not None)
-        # use_upper.toggled.connect(upper_spin.setEnabled)
-        
-        # upper_layout.addWidget(use_upper)
-        upper_layout.addWidget(upper_spin)
-        upper_widget.setLayout(upper_layout)
-        
-        self.threshold_table.setCellWidget(row, 1, upper_widget)
-        
-        # Dilate iterations
-        dilate_spin = QSpinBox()
-        dilate_spin.setRange(1, 1000)
-        dilate_spin.setValue(dilate)
-        self.threshold_table.setCellWidget(row, 2, dilate_spin)
-    
-    def _remove_threshold_row(self):
-        """Remove selected threshold row."""
-        current_row = self.threshold_table.currentRow()
-        if current_row >= 0:
-            self.threshold_table.removeRow(current_row)
-    
-    def _get_threshold_params(self):
-        """Get threshold parameters from table."""
-        thresholds = []
-        upper_thresholds = []
-        dilate_iters = []
-        
-        for row in range(self.threshold_table.rowCount()):
-            # Lower threshold
-            lower_widget = self.threshold_table.cellWidget(row, 0)
-            thresholds.append(lower_widget.value())
-            
-            # Upper threshold
-            upper_widget = self.threshold_table.cellWidget(row, 1)
-            upper_thresholds.append(upper_widget.value())
-            # upper_layout = upper_widget.layout()
-            # use_upper = upper_layout.itemAt(0).widget()
-            # upper_spin = upper_layout.itemAt(1).widget()
-            
-            # if use_upper.isChecked():
-            #     upper_thresholds.append(upper_spin.value())
-            # else:
-            #     upper_thresholds.append(None)
-            
-            # Dilate iterations
-            dilate_widget = self.threshold_table.cellWidget(row, 2)
-            dilate_iters.append(dilate_widget.value())
-        
-        return thresholds, upper_thresholds, dilate_iters
-    
     def start_growth(self):
         """Start the growth process."""
         # Get inputs
@@ -464,17 +280,18 @@ class SeedGrowthWidget(QWidget):
                 self.current_boundary = self.viewer.layers[self.boundary_combo.currentText()].data
             
             # Get parameters
-            thresholds, upper_thresholds, dilate_iters = self._get_threshold_params()
+            # thresholds, upper_thresholds, dilate_iters = self._get_threshold_params()
             
-            if not thresholds:
-                show_error("Please add at least one threshold")
-                return
+            main_params = self.main_param_widget.get_params()
+
             
-            # Sort thresholds from high to low
-            sorted_indices = sorted(range(len(thresholds)), key=lambda i: thresholds[i], reverse=True)
-            thresholds = [int(thresholds[i]) for i in sorted_indices]
-            upper_thresholds = [int(upper_thresholds[i]) if upper_thresholds[i] is not None else None for i in sorted_indices]
-            dilate_iters = [dilate_iters[i] for i in sorted_indices]
+            # Deprecated: sort thresholds from high to low
+            # TODO raise an error instead            
+            # # Sort thresholds from high to low
+            # sorted_indices = sorted(range(len(thresholds)), key=lambda i: thresholds[i], reverse=True)
+            # thresholds = [int(thresholds[i]) for i in sorted_indices]
+            # upper_thresholds = [int(upper_thresholds[i]) if upper_thresholds[i] is not None else None for i in sorted_indices]
+            # dilate_iters = [dilate_iters[i] for i in sorted_indices]
             
             # Update UI
             self.grow_btn.setEnabled(False)
@@ -490,15 +307,15 @@ class SeedGrowthWidget(QWidget):
             self.worker = GrowthWorker(
                 image= self.current_image,
                 seeds= self.current_seeds,
-                thresholds=  thresholds,
-                dilate_iters=  dilate_iters,
+                thresholds=  main_params['thresholds'],
+                dilate_iters=  main_params['dilation_steps'],
                 
-                n_threads= self.n_thread_spin.value(),
+                n_threads= main_params['threads'],
                 
                 output_folder= self.output_folder_line.text(),
-                upper_thresholds=upper_thresholds if any(u is not None for u in upper_thresholds) else None,
+                upper_thresholds=main_params["upper_thresholds"] if any(u is not None for u in main_params["upper_thresholds"]) else None,
                 boundary= self.current_boundary,
-                touch_rule= self.touch_rule_combo.currentText(),
+                touch_rule= main_params['touch_rule'],
                 base_name=self.viewer.layers[self.image_combo.currentText()].name,
                 save_every_n_iters= advance_params['save_every_n_iters'],
                 grow_to_end= advance_params['grow_to_end'],
@@ -542,7 +359,8 @@ class SeedGrowthWidget(QWidget):
         # Update UI
         self._reset_ui()
         self.status_label.setText(f"Growth completed!")
-        
+        # import psutil, os
+        # print("MEM (MB):", psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024)
         # Emit signal
         # self.growth_completed.emit(result)
         
