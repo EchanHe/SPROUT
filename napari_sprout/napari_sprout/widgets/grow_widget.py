@@ -4,7 +4,7 @@ from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QSpinBox, QDoubleSpinBox, QComboBox, QGroupBox, QCheckBox,
     QTableWidget, QTableWidgetItem, QFormLayout, QProgressBar,
-    QHeaderView
+    QHeaderView, QFileDialog, QMessageBox
 )
 from qtpy.QtCore import Qt, Signal, QThread
 import numpy as np
@@ -16,7 +16,7 @@ from napari.utils.notifications import show_info, show_error
 from ..utils.util_widget import (create_output_folder_row, GrowOptionalParamGroupBox,
                                  MainGrowParamWidget,apply_threshold_preview,ThresholdWidget)
 
-
+import yaml
 import sys
 import os
 # get the current file's absolute path
@@ -180,7 +180,15 @@ class SeedGrowthWidget(QWidget):
         self.advanced_params_box.setVisible(False)
 
 
+        # Import/Export yaml buttons
+        button_layout = QHBoxLayout()
+        self.import_btn = QPushButton("Import YAML")
+        self.export_btn = QPushButton("Export YAML")
+        button_layout.addWidget(self.import_btn)
+        button_layout.addWidget(self.export_btn)
+        layout.addLayout(button_layout)   
 
+        # Output folder selection
         output_dir_layout, self.output_folder_line = create_output_folder_row()
         layout.addLayout(output_dir_layout)
 
@@ -201,12 +209,10 @@ class SeedGrowthWidget(QWidget):
             }
         """)
         self.stop_btn.setEnabled(False)
-        # self.save_btn = QPushButton("Save Result")
-        # self.save_btn.setEnabled(False)
+
         
         btn_layout.addWidget(self.grow_btn)
         btn_layout.addWidget(self.stop_btn)
-        # btn_layout.addWidget(self.save_btn)
         layout.addLayout(btn_layout)
 
         
@@ -227,8 +233,9 @@ class SeedGrowthWidget(QWidget):
         self.stop_btn.clicked.connect(self.stop_growth)
         self.image_combo.currentTextChanged.connect(self._on_image_changed)
         
-        # self.save_btn.clicked.connect(self.save_result)
 
+        self.import_btn.clicked.connect(self.import_yaml)
+        self.export_btn.clicked.connect(self.export_yaml)
 
 
     def _on_image_changed(self, _):
@@ -420,3 +427,32 @@ class SeedGrowthWidget(QWidget):
 
         self.threshold_widget.preview_btn.setEnabled(True)  # Re-enable button after processing
         # Optionally, you can connect this to a signal or update other UI elements
+        
+    # TODO to implement import/export yaml for grow parameters
+    # This is a placeholder for the import/export functionality.    
+    def import_yaml(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Open YAML File", "", "YAML Files (*.yaml *.yml);;All Files (*)"
+        )
+        if file_path:
+            try:
+                with open(file_path, "r") as f:
+                    data = yaml.safe_load(f)
+                print("[Imported YAML]:", data)
+            except Exception as e:
+                QMessageBox.critical(self, "Import Error", str(e))
+
+    def export_yaml(self):
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Save YAML File", "", "YAML Files (*.yaml *.yml);;All Files (*)"
+        )
+        if file_path:
+            try:
+                main_params = self.main_param_widget.get_params()
+                advanced_params = self.advanced_params_box.get_params()
+                print("TODO export yaml with main and advanced params")
+                print("[Exported YAML]:", main_params, advanced_params)
+                with open(file_path, "w") as f:
+                    yaml.dump({"a":"test"}, f, sort_keys=False)
+            except Exception as e:
+                QMessageBox.critical(self, "Export Error", str(e))

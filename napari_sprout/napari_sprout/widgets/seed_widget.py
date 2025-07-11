@@ -15,7 +15,7 @@ from napari.utils.notifications import show_info, show_error
 from ..utils.util_widget import (create_output_folder_row, SeedOptionalParamGroupBox,
                                  MainSeedParamWidget, ThresholdWidget,apply_threshold_preview)
 
-
+import yaml
 import sys
 import os
 # get the current file's absolute path
@@ -276,6 +276,14 @@ class SeedGenerationWidget(QWidget):
 
         layout.addWidget(advanced_block)
 
+        # Import/Export yaml buttons
+        button_layout = QHBoxLayout()
+        self.import_btn = QPushButton("Import YAML")
+        self.export_btn = QPushButton("Export YAML")
+        button_layout.addWidget(self.import_btn)
+        button_layout.addWidget(self.export_btn)
+        layout.addLayout(button_layout)   
+
         # Output folder selection
         output_group = QGroupBox("Output Settings")
         output_layout = QVBoxLayout()
@@ -362,6 +370,10 @@ class SeedGenerationWidget(QWidget):
         self.image_combo.currentIndexChanged.connect(self._on_image_changed)
 
         self.use_upper_list.toggled.connect(self.upper_thresholds_list.setEnabled)
+        
+        self.import_btn.clicked.connect(self.import_yaml)
+        self.export_btn.clicked.connect(self.export_yaml)
+        
         # self.browse_folder_btn.clicked.connect(self._browse_output_folder)
 
     def _browse_output_folder(self):
@@ -678,3 +690,32 @@ class SeedGenerationWidget(QWidget):
             # show_info("Seed generation stopped.")
             # self.viewer.window.statusBar().showMessage("Seed generation stopped.", 1000)
             
+
+    # TODO to implement import/export yaml for seed parameters
+    # This is a placeholder for the import/export functionality.
+    def import_yaml(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Open YAML File", "", "YAML Files (*.yaml *.yml);;All Files (*)"
+        )
+        if file_path:
+            try:
+                with open(file_path, "r") as f:
+                    data = yaml.safe_load(f)
+                print("[Imported YAML]:", data)
+            except Exception as e:
+                QMessageBox.critical(self, "Import Error", str(e))
+
+    def export_yaml(self):
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Save YAML File", "", "YAML Files (*.yaml *.yml);;All Files (*)"
+        )
+        if file_path:
+            try:
+                main_params = self.main_param_widget.get_params()
+                advanced_params = self.advanced_params_box.get_params()
+                print("TODO export yaml with main and advanced params")
+                print("[Exported YAML]:", main_params, advanced_params)
+                with open(file_path, "w") as f:
+                    yaml.dump({"a":"test"}, f, sort_keys=False)
+            except Exception as e:
+                QMessageBox.critical(self, "Export Error", str(e))
