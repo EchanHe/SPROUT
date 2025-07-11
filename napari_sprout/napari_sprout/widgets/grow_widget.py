@@ -138,7 +138,7 @@ class SeedGrowthWidget(QWidget):
         layout = QVBoxLayout()
         
         # Input selection
-        input_group = QGroupBox("Input Selection")
+        input_group = QGroupBox("Input Options")
         input_layout = QFormLayout()
         
         self.image_combo = QComboBox()
@@ -400,23 +400,23 @@ class SeedGrowthWidget(QWidget):
             return
 
         try:
-            if lower is None:
-                lower, upper = self.threshold_widget.get_thresholds()
-
-            binary = apply_threshold_preview(self.current_image, lower, upper)
-
-            # delete existing preview layer if it exists
-            if self.preview_layer and self.preview_layer in self.viewer.layers:
-                self.viewer.layers.remove(self.preview_layer)
-                self.preview_layer = None
-
-            # delete existing seeds layer if it exists
-            self.preview_layer = self.viewer.add_labels(
-                binary.astype(np.uint8),
-                name="Threshold Preview",
-                opacity=0.5,
-            )
-
-            show_info(f"Preview updated: {np.sum(binary)} pixels selected")
+            self.threshold_widget.run_preview_in_thread(self.current_image, callback=self._on_preview_result)
         except Exception as e:
             show_error(f"Error in preview: {e}")
+    
+    def _on_preview_result(self, binary):
+        """Handle the result of the threshold preview."""
+        if self.preview_layer and self.preview_layer in self.viewer.layers:
+            self.viewer.layers.remove(self.preview_layer)
+            self.preview_layer = None
+
+        # delete existing seeds layer if it exists
+        self.preview_layer = self.viewer.add_labels(
+            binary.astype(np.uint8),
+            name="Threshold Preview",
+            opacity=0.5,
+        )
+        show_info(f"Preview updated: {np.sum(binary)} pixels selected")
+
+        self.threshold_widget.preview_btn.setEnabled(True)  # Re-enable button after processing
+        # Optionally, you can connect this to a signal or update other UI elements

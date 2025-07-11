@@ -12,7 +12,6 @@ from typing import Optional
 from napari.layers import Image, Labels
 from napari.utils.notifications import show_info, show_error
 
-from ..utils.sprout_bridge import SPROUTBridge
 from ..utils.util_widget import (create_output_folder_row, SeedOptionalParamGroupBox,
                                  MainSeedParamWidget, ThresholdWidget,apply_threshold_preview)
 
@@ -180,7 +179,7 @@ class SeedGenerationWidget(QWidget):
         layout = QVBoxLayout()
         
         # Image selection
-        image_group = QGroupBox("Image Selection")
+        image_group = QGroupBox("Input Options")
         image_layout = QFormLayout()
         
         self.image_combo = QComboBox()
@@ -232,43 +231,8 @@ class SeedGenerationWidget(QWidget):
         self.list_params_group.setLayout(list_params_layout)
         # layout.addWidget(self.list_params_group)
 
-        # --- Parameters for Adaptive (Erosion) method ---
-        # self.single_param_group = QGroupBox("Threshold Parameters")
-        # threshold_layout = QFormLayout()
         
-        # # Lower threshold with slider
-        # self.lower_threshold = QDoubleSpinBox()
-        # self.lower_threshold.setRange(0, 65535)
-        # self.lower_threshold.setDecimals(1)
-        # self.lower_threshold.setValue(150)
-        
-        # self.lower_slider = QSlider(Qt.Horizontal)
-        # self.lower_slider.setRange(0, 65535)
-        # self.lower_slider.setValue(150)
-        
-        # lower_layout = QHBoxLayout()
-        # lower_layout.addWidget(self.lower_threshold)
-        # lower_layout.addWidget(self.lower_slider)
-        
-        # # Upper threshold
-        # self.use_upper = QCheckBox("Use upper threshold")
-        # self.upper_threshold = QDoubleSpinBox()
-        # self.upper_threshold.setRange(0, 65535)
-        # self.upper_threshold.setDecimals(1)
-        # self.upper_threshold.setValue(255)
-        # self.upper_threshold.setEnabled(False)
-        
-        # threshold_layout.addRow("Lower Threshold:", lower_layout)
-        # threshold_layout.addRow(self.use_upper)
-        # threshold_layout.addRow("Upper Threshold:", self.upper_threshold)
-        
-        # self.preview_threshold_btn = QPushButton("Preview Threshold")
-        # threshold_layout.addRow(self.preview_threshold_btn)
-        
-        # self.single_param_group.setLayout(threshold_layout)
-        # layout.addWidget(self.single_param_group)
-        
-        self.threshold_widget = ThresholdWidget()
+        self.threshold_widget = ThresholdWidget(add_connected_components=True)
         self.threshold_widget.preview_requested.connect(self.preview_threshold)
         layout.addWidget(self.threshold_widget)
         
@@ -444,15 +408,7 @@ class SeedGenerationWidget(QWidget):
             if isinstance(layer, Image):
                 self.current_image = layer.data
                 self.threshold_widget.set_range_by_dtype(self.current_image.dtype)
-                
-                # Deprecated, this is used for update on built-in threshold widget
-                # img_min, img_max = np.min(self.current_image), np.max(self.current_image)
-                # self.lower_threshold.setRange(img_min, img_max)
-                # self.upper_threshold.setRange(img_min, img_max)
-                # self.lower_slider.setRange(int(img_min), int(img_max))
-                # self.lower_threshold.setValue(img_min + (img_max - img_min) * 0.1)
-                # self.upper_threshold.setValue(img_min + (img_max - img_min) * 0.5)
-    
+       
 
     
     def preview_threshold(self, lower=None, upper=None):
@@ -464,26 +420,47 @@ class SeedGenerationWidget(QWidget):
             if lower is None:
                 lower, upper = self.threshold_widget.get_thresholds()
 
-            binary = apply_threshold_preview(self.current_image, lower, upper)
+            self.threshold_widget.run_preview_in_thread(self.current_image, callback=self._on_preview_result)
 
 
-            # delete existing preview layer if it exists
-            if self.preview_layer and self.preview_layer in self.viewer.layers:
-                self.viewer.layers.remove(self.preview_layer)
-                self.preview_layer = None
-
-            # delete existing seeds layer if it exists
-            self.preview_layer = self.viewer.add_labels(
-                binary.astype(np.uint8),
-                name="Threshold Preview",
-                opacity=0.5,
-            )
+            # binary = self.threshold_widget.apply_preview(self.current_image)
 
 
-            show_info(f"Preview updated: {np.sum(binary)} pixels selected")
+            # # delete existing preview layer if it exists
+            # if self.preview_layer and self.preview_layer in self.viewer.layers:
+            #     self.viewer.layers.remove(self.preview_layer)
+            #     self.preview_layer = None
+
+            # # delete existing seeds layer if it exists
+            # self.preview_layer = self.viewer.add_labels(
+            #     binary.astype(np.uint8),
+            #     name="Threshold Preview",
+            #     opacity=0.5,
+            # )
+
+
+            # show_info(f"Preview updated: {np.sum(binary)} pixels selected")
         except Exception as e:
             show_error(f"Error in preview: {e}")
     
+    def _on_preview_result(self, binary):
+        """Handle the result of the threshold preview."""
+        # delete existing preview layer if it exists
+        if self.preview_layer and self.preview_layer in self.viewer.layers:
+            self.viewer.layers.remove(self.preview_layer)
+            self.preview_layer = None
+
+        # delete existing seeds layer if it exists
+        self.preview_layer = self.viewer.add_labels(
+            binary.astype(np.uint8),
+            name="Threshold Preview",
+            opacity=0.5,
+        )
+        show_info(f"Preview updated: {np.sum(binary)} pixels selected")
+
+        self.threshold_widget.preview_btn.setEnabled(True)  # Re-enable button after processing
+    
+        
     def add_labels_layer(self, seeds_dict):
         for seed_name, seed in seeds_dict.items():
             print(f"Adding seed layer: {seed_name}")

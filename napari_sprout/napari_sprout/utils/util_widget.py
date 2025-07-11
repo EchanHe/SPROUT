@@ -2,19 +2,27 @@ import os, sys
 from qtpy.QtWidgets import (
     QGroupBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,QDoubleSpinBox,
     QSpinBox, QCheckBox, QFileDialog , QVBoxLayout , QComboBox , QTableWidget,QWidget,QSlider,
-     QHeaderView, QTableWidgetItem
+     QHeaderView
     
 )
-from qtpy.QtCore import Signal, Qt
+from qtpy.QtCore import Signal, Qt ,QThreadPool,QObject,QRunnable,Slot
 from napari.utils.notifications import show_error, show_info
 import numpy as np
 
-current_dir = os.path.dirname(os.path.abspath(__file__))
-root_dir = os.path.abspath(os.path.join(current_dir, "../../../sprout_core"))
-if root_dir not in sys.path:
-    sys.path.insert(0, root_dir)
+# current_dir = os.path.dirname(os.path.abspath(__file__))
+# root_dir = os.path.abspath(os.path.join(current_dir, "../../"))
+# if root_dir not in sys.path:
+#     sys.path.insert(0, root_dir)
+from pathlib import Path
+sprout_path = Path(__file__).parent.parent.parent.parent
+if str(sprout_path) not in sys.path:
+    sys.path.insert(0, str(sprout_path))
 
-from config_core import support_footprints, support_footprints_2d
+from sprout_core.config_core import support_footprints, support_footprints_2d
+from sprout_core.sprout_core import get_ccomps_with_size_order
+
+
+
 
 def create_output_folder_row(default_folder=None):
 
@@ -43,11 +51,46 @@ def create_output_folder_row(default_folder=None):
     return layout, folder_edit
 
 
+class PreviewWorkerSignals(QObject):
+    finished = Signal(np.ndarray)
+    error = Signal(str)
+
+class PreviewWorker(QRunnable):
+    def __init__(self, image, lower, upper, use_cc=False, cc_n=100):
+        super().__init__()
+        self.image = image
+        self.lower = lower
+        self.upper = upper
+        self.use_cc = use_cc
+        self.cc_n = cc_n
+        self.signals = PreviewWorkerSignals()
+
+    @Slot()
+    def run(self):
+        try:
+            binary = (self.image >= self.lower) & (self.image <= self.upper)
+            if self.use_cc:
+                binary, _ = get_ccomps_with_size_order(binary, self.cc_n)
+
+            num_classes = np.unique(binary).size
+            if num_classes <=255:
+                binary = binary.astype(np.uint8)
+            elif num_classes <= 65535:
+                binary = binary.astype(np.uint16)
+            
+            self.signals.finished.emit(binary)
+
+        except Exception as e:
+            self.signals.error.emit(str(e))
+
+
 class ThresholdWidget(QGroupBox):
     preview_requested = Signal(float, float)  # Always emit lower + upper
 
-    def __init__(self, title = 'Threshold Preview', show_preview_button=True):
+    def __init__(self, title = 'Threshold Preview', show_preview_button=True,
+                 add_connected_components=False):
         super().__init__(title)
+        self.add_connected_components = add_connected_components
 
         layout = QFormLayout()
 
@@ -94,6 +137,24 @@ class ThresholdWidget(QGroupBox):
         upper_layout.addWidget(self.upper_spin)
         upper_layout.addWidget(self.upper_slider)
         layout.addRow("Upper Threshold:", upper_layout)
+
+        # Connected components (optional)
+        if self.add_connected_components:
+            self.use_connected_components_checkbox = QCheckBox("Use Connected Components")
+            self.connected_components_spin = QSpinBox()
+            self.connected_components_spin.setRange(1, 1000)
+            self.connected_components_spin.setValue(100)
+            self.connected_components_spin.setEnabled(False)
+
+            self.use_connected_components_checkbox.toggled.connect(
+                self.connected_components_spin.setEnabled
+            )
+
+            cc_layout = QHBoxLayout()
+            cc_layout.addWidget(self.use_connected_components_checkbox)
+            cc_layout.addWidget(QLabel("Max Components:"))
+            cc_layout.addWidget(self.connected_components_spin)
+            layout.addRow(cc_layout)
 
         # Preview button
         if show_preview_button:
@@ -162,6 +223,58 @@ class ThresholdWidget(QGroupBox):
             max_val = 255
 
         self.set_range(0, max_val)
+
+
+    def run_preview_in_thread(self, image, callback=None):
+        
+        self.preview_btn.setEnabled(False)  # Disable button during processing
+        
+        lower = self.lower_spin.value()
+        upper = self.upper_spin.value()
+        use_cc = False
+        cc_n = 100
+        if self.add_connected_components and self.use_connected_components_checkbox.isChecked():
+            use_cc = True
+            cc_n = self.connected_components_spin.value()
+
+        worker = PreviewWorker(image, lower, upper, use_cc, cc_n)
+
+        if callback:
+            worker.signals.finished.connect(callback)
+        worker.signals.error.connect(lambda e: show_error(f"Preview error: {e}"))
+
+        QThreadPool.globalInstance().start(worker)
+    
+        
+        
+    def apply_preview(self, image: np.ndarray):
+        """
+        Apply the current thresholds to the given image and return a binary mask.
+        
+        Parameters
+        ----------
+        image : np.ndarray
+            Input image to apply thresholds on
+            
+        Returns
+        -------
+        binary : np.ndarray
+            Binary mask after applying thresholds
+        """
+        lower = self.lower_spin.value()
+        upper = self.upper_spin.value()
+        
+        if upper is None:
+            binary =  image >= lower
+        else:
+            binary =  (image >= lower) & (image <= upper)
+        
+        
+        if self.add_connected_components and self.use_connected_components_checkbox.isChecked():
+            n_components = self.connected_components_spin.value()
+            binary,_ = get_ccomps_with_size_order(binary, n_components)
+        
+        return binary
 
 
 def apply_threshold_preview(
@@ -346,57 +459,6 @@ class MainSeedParamWidget(QGroupBox):
         # Add to main layout
         layout.addLayout(combined_table_layout)
 
-        # TODO, implement a widget to show summary list-type params
-        # TODO also can be used to sync to table reversely
-        # ---- Editable Summary Section ----
-        summary_group = QGroupBox("Summary & Sync")
-        summary_layout = QFormLayout()
-
-        self.editable_checkbox = QCheckBox("Editable")
-        self.editable_checkbox.setChecked(False)
-
-        self.threshold_edit = QLineEdit()
-        self.upper_threshold_edit = QLineEdit()
-        self.footprint_edit = QLineEdit()
-
-        # set readonly for the summary edits
-        for edit in [self.threshold_edit, self.upper_threshold_edit, self.footprint_edit]:
-            edit.setReadOnly(True)
-
-        # check box to toggle editability
-        self.editable_checkbox.toggled.connect(lambda v: [
-            edit.setReadOnly(not v)
-            for edit in [self.threshold_edit, self.upper_threshold_edit, self.footprint_edit]
-        ])
-
-        # show numbers
-        self.threshold_count_label = QLabel()
-        self.upper_threshold_count_label = QLabel()
-        self.footprint_count_label = QLabel()
-
-        threshold_row = QHBoxLayout()
-        threshold_row.addWidget(self.threshold_edit)
-        threshold_row.addWidget(self.threshold_count_label)
-
-        upper_row = QHBoxLayout()
-        upper_row.addWidget(self.upper_threshold_edit)
-        upper_row.addWidget(self.upper_threshold_count_label)
-
-        footprint_row = QHBoxLayout()
-        footprint_row.addWidget(self.footprint_edit)
-        footprint_row.addWidget(self.footprint_count_label)
-
-        summary_layout.addRow("Lower Thresholds:", threshold_row)
-        summary_layout.addRow("Upper Thresholds:", upper_row)
-        summary_layout.addRow("Footprints:", footprint_row)
-        summary_layout.addRow(self.editable_checkbox)
-
-        # ➡ Sync button
-        self.sync_btn = QPushButton("⬅ Sync to Tables")
-        summary_layout.addRow(self.sync_btn)
-
-        summary_group.setLayout(summary_layout)
-        # layout.addWidget(summary_group)
 
 
         self.setLayout(layout)
@@ -408,7 +470,6 @@ class MainSeedParamWidget(QGroupBox):
         self.remove_footprint_btn.clicked.connect(self._remove_footprint_row)
         self.remove_footprint_btn_all.clicked.connect(lambda: self.footprint_table.setRowCount(0))
         
-        self.sync_btn.clicked.connect(self.sync_to_table)
 
     def get_params(self):
         # return parameters as a dictionary
@@ -534,7 +595,6 @@ class MainSeedParamWidget(QGroupBox):
         upper_spin.setValue(upper_value)
         self.threshold_table.setCellWidget(row, 1, upper_spin)
 
-        # self.update_summary()
      
         
     
@@ -544,8 +604,7 @@ class MainSeedParamWidget(QGroupBox):
         current_row = self.threshold_table.currentRow()
         if current_row >= 0:
             self.threshold_table.removeRow(current_row)
-        
-        # self.update_summary()
+    
 
     def _get_img_dtype_max(self, image_dtype):
         """Set the range of the threshold spinboxes based on the image dtype."""
@@ -569,69 +628,7 @@ class MainSeedParamWidget(QGroupBox):
         self._add_footprint_row()
 
 
-    def update_summary(self):
-        # --- Thresholds ---
-        lower_vals = []
-        upper_vals = []
 
-        for row in range(self.threshold_table.rowCount()):
-            lower_item = self.threshold_table.item(row, 0)
-            upper_item = self.threshold_table.item(row, 1)
-
-            try:
-                if lower_item:
-                    lower_vals.append(str(int(float(lower_item.text()))))
-                if upper_item:
-                    upper_vals.append(str(int(float(upper_item.text()))))
-            except Exception:
-                continue  # Skip malformed entries
-
-        self.threshold_edit.setText(", ".join(lower_vals))
-        self.upper_threshold_edit.setText(", ".join(upper_vals))
-        self.threshold_count_label.setText(f"[{len(lower_vals)}]")
-        self.upper_threshold_count_label.setText(f"[{len(upper_vals)}]")
-
-        # --- Footprints ---
-        footprint_vals = []
-        for row in range(self.footprint_table.rowCount()):
-            fp_item = self.footprint_table.item(row, 0)
-            if fp_item:
-                footprint_vals.append(fp_item.text())
-
-        self.footprint_edit.setText(", ".join(footprint_vals))
-        self.footprint_count_label.setText(f"[{len(footprint_vals)}]")
-
-    def sync_to_table(self):
-        if not self.editable_checkbox.isChecked():
-            return  # only sync if editable is checked
-
-        try:
-            # --- Thresholds ---
-            lower_vals = [int(v.strip()) for v in self.threshold_edit.text().split(",") if v.strip()]
-            upper_vals = [int(v.strip()) for v in self.upper_threshold_edit.text().split(",") if v.strip()]
-
-            if len(lower_vals) != len(upper_vals):
-                raise ValueError("Lower and upper threshold count mismatch.")
-
-            self.threshold_table.setRowCount(0)
-            for lo, up in zip(lower_vals, upper_vals):
-                row = self.threshold_table.rowCount()
-                self.threshold_table.insertRow(row)
-                self.threshold_table.setItem(row, 0, QTableWidgetItem(str(lo)))
-                self.threshold_table.setItem(row, 1, QTableWidgetItem(str(up)))
-
-            # --- Footprints ---
-            footprints = [fp.strip() for fp in self.footprint_edit.text().split(",") if fp.strip()]
-            self.footprint_table.setRowCount(0)
-            for fp in footprints:
-                row = self.footprint_table.rowCount()
-                self.footprint_table.insertRow(row)
-                self.footprint_table.setItem(row, 0, QTableWidgetItem(fp))
-
-            # self.update_summary()
-            show_info("✅ Successfully synced to tables.")
-        except Exception as e:
-            show_error(f"⚠️ Failed to sync to tables: {str(e)}")
 
 class MainGrowParamWidget(QGroupBox):
     def __init__(self, title="Parameters", viewer=None, image_combo=None,
@@ -825,6 +822,217 @@ class MainGrowParamWidget(QGroupBox):
 
 
 
+
+
+class SeedOptionalParamGroupBox(QGroupBox):
+    def __init__(self, default_output=None):
+        super().__init__("Advanced Seed Parameters")
+        layout = QFormLayout()
+
+        # sort (bool)
+        self.sort_checkbox = QCheckBox("Enable sorting")
+        self.sort_checkbox.setChecked(True)
+        layout.addRow("Sort segments", self.sort_checkbox)
+
+        # min_size (int)
+        self.min_size_spin = QSpinBox()
+        self.min_size_spin.setRange(1, 10000)
+        self.min_size_spin.setValue(5)
+        layout.addRow("Min segment size", self.min_size_spin)
+
+
+        self.no_split_spin = QSpinBox()
+        self.no_split_spin.setRange(0, 100)
+        self.no_split_spin.setValue(3)
+        self.no_split_spin.setToolTip("Max no-split iterations")
+
+        self.min_split_ratio_spin = QDoubleSpinBox()
+        self.min_split_ratio_spin.setDecimals(3)
+        self.min_split_ratio_spin.setRange(0.0, 1.0)
+        self.min_split_ratio_spin.setSingleStep(0.01)
+        self.min_split_ratio_spin.setValue(0.01)
+        self.min_split_ratio_spin.setToolTip("Min split ratio")
+
+        self.min_split_total_ratio_spin = QDoubleSpinBox()
+        self.min_split_total_ratio_spin.setDecimals(3)
+        self.min_split_total_ratio_spin.setRange(0.0, 1.0)
+        self.min_split_total_ratio_spin.setSingleStep(0.01)
+        self.min_split_total_ratio_spin.setValue(0.0)
+        self.min_split_total_ratio_spin.setToolTip("Min total split ratio")
+
+        # add to row layout
+        no_split_row_layout = QHBoxLayout()
+        no_split_row_layout.addWidget(QLabel("No-split Iter:"))
+        no_split_row_layout.addWidget(self.no_split_spin)
+        # no_split_row_layout.addSpacing(8)
+        no_split_row_layout.addWidget(QLabel("Min Ratio:"))
+        no_split_row_layout.addWidget(self.min_split_ratio_spin)
+        # no_split_row_layout.addSpacing(8)
+        no_split_row_layout.addWidget(QLabel("Total Ratio:"))
+        no_split_row_layout.addWidget(self.min_split_total_ratio_spin)
+
+        # add to the split parameters row
+        layout.addRow("Split Parameters", no_split_row_layout)
+
+        # # min_split_ratio (float)
+        # self.min_split_ratio_spin = QDoubleSpinBox()
+        # self.min_split_ratio_spin.setDecimals(3)
+        # self.min_split_ratio_spin.setRange(0.0, 1.0)
+        # self.min_split_ratio_spin.setSingleStep(0.01)
+        # self.min_split_ratio_spin.setValue(0.01)
+        # layout.addRow("Min split ratio", self.min_split_ratio_spin)
+
+        # # min_split_total_ratio (float)
+        # self.min_split_total_ratio_spin = QDoubleSpinBox()
+        # self.min_split_total_ratio_spin.setDecimals(3)
+        # self.min_split_total_ratio_spin.setRange(0.0, 1.0)
+        # self.min_split_total_ratio_spin.setSingleStep(0.01)
+        # self.min_split_total_ratio_spin.setValue(0.0)
+        # layout.addRow("Min total split ratio", self.min_split_total_ratio_spin)
+
+
+        # split_size_limit (tuple of float or None)
+        self.size_lower_line = QLineEdit()
+        self.size_upper_line = QLineEdit()
+        size_layout = QHBoxLayout()
+        size_layout.addWidget(QLabel("Lower"))
+        size_layout.addWidget(self.size_lower_line)
+        size_layout.addWidget(QLabel("Upper"))
+        size_layout.addWidget(self.size_upper_line)
+        layout.addRow("Split size limit", size_layout)
+
+        # split_convex_hull_limit (tuple of float or None)
+        self.hull_lower_line = QLineEdit()
+        self.hull_upper_line = QLineEdit()
+        hull_layout = QHBoxLayout()
+        hull_layout.addWidget(QLabel("Lower"))
+        hull_layout.addWidget(self.hull_lower_line)
+        hull_layout.addWidget(QLabel("Upper"))
+        hull_layout.addWidget(self.hull_upper_line)
+        layout.addRow("Convex hull limit", hull_layout)
+
+        self.setLayout(layout)
+
+    def get_params(self):
+        def parse_optional_float(text):
+            try:
+                return float(text)
+            except ValueError:
+                return None
+
+        return {
+            "sort": self.sort_checkbox.isChecked(),
+            "no_split_max_iter": self.no_split_spin.value(),
+            "min_size": self.min_size_spin.value(),
+            "min_split_ratio": self.min_split_ratio_spin.value(),
+            "min_split_total_ratio": self.min_split_total_ratio_spin.value(),
+            "split_size_limit": (
+                parse_optional_float(self.size_lower_line.text()),
+                parse_optional_float(self.size_upper_line.text())
+            ),
+            "split_convex_hull_limit": (
+                parse_optional_float(self.hull_lower_line.text()),
+                parse_optional_float(self.hull_upper_line.text())
+            )
+        }
+
+class GrowOptionalParamGroupBox(QGroupBox):
+    def __init__(self, default_output=None):
+        super().__init__("Advanced Grow Parameters")
+
+
+        layout = QFormLayout()
+
+        # Save every n iterations
+        self.save_iter_checkbox = QCheckBox("Save every N iterations")
+        self.save_iter_checkbox.stateChanged.connect(self._toggle_save_iters)
+        self.save_every_n_spin = QSpinBox()
+        self.save_every_n_spin.setRange(0, 100)
+        self.save_every_n_spin.setEnabled(False)
+        layout.addRow(self.save_iter_checkbox, self.save_every_n_spin)
+
+        # Grow to end
+        self.grow_to_end_checkbox = QCheckBox("Grow to end")
+        layout.addRow(self.grow_to_end_checkbox)
+
+        # Sort seed ids
+        self.sort_checkbox = QCheckBox("Sort the result by size")
+        layout.addRow(self.sort_checkbox)
+
+        # Grow specific IDs
+        self.id_list_line = QLineEdit()
+        self.id_list_line.setPlaceholderText("e.g. 1,3,5")
+        layout.addRow(QLabel("IDs to Grow (optional):"), self.id_list_line)
+
+        self.early_stop_checkbox = QCheckBox("Early stop if no growth")
+        self.early_stop_checkbox.setToolTip("Stop growing if no growth occurs for a specified number of iterations.")
+        self.early_stop_checkbox.setChecked(True)
+        self.early_stop_checkbox.stateChanged.connect(self._toggle_no_growth_spin)
+        layout.addRow(self.early_stop_checkbox)
+        # Max no-growth iters
+        self.no_growth_spin = QSpinBox()
+        self.no_growth_spin.setRange(1, 100)
+        self.no_growth_spin.setValue(3)
+        self.no_growth_spin.setEnabled(True)
+        layout.addRow(QLabel("Max No-Growth Iterations:"), self.no_growth_spin)
+
+        # Min growth size
+        self.min_growth_spin = QSpinBox()
+        self.min_growth_spin.setRange(0, 1000000)
+        self.min_growth_spin.setValue(50)
+        self.min_growth_spin.setEnabled(True)
+        layout.addRow(QLabel("Minimum Growth Size:"), self.min_growth_spin)
+
+
+
+        self.setLayout(layout)
+
+    def _toggle_no_growth_spin(self):
+        self.no_growth_spin.setEnabled(self.early_stop_checkbox.isChecked())
+        # if not self.early_stop_checkbox.isChecked():
+        #     self.no_growth_spin.setValue(3)
+        self.min_growth_spin.setEnabled(self.early_stop_checkbox.isChecked())
+    
+    def _browse_output_folder(self):
+        folder = QFileDialog.getExistingDirectory(self, "Select Output Folder")
+        if folder:
+            self.output_folder_line.setText(folder)
+
+    def _toggle_save_iters(self):
+        self.save_every_n_spin.setEnabled(self.save_iter_checkbox.isChecked())
+
+    def get_params(self):
+        to_grow_text = self.id_list_line.text().strip()
+        to_grow_text.replace(" ", "")  # remove any spaces
+
+        try:
+            to_grow_ids = [int(x) for x in to_grow_text.split(",") if x.strip().isdigit()]
+        except:
+            to_grow_ids = None
+            # show error in napari message box
+            from napari.utils.notifications import show_error
+            show_error("Invalid IDs format. Please enter a comma-separated list of integers.")
+       
+        # if to_grow_ids is empty, set to None
+        if not to_grow_ids:
+            to_grow_ids = None
+       
+        if not self.early_stop_checkbox.isChecked():
+            no_growth_max_iter = None
+        else:
+            no_growth_max_iter = self.no_growth_spin.value()
+        
+        return {
+            "save_every_n_iters": self.save_every_n_spin.value() if self.save_iter_checkbox.isChecked() else None,
+            "grow_to_end": self.grow_to_end_checkbox.isChecked(),
+            "is_sort": self.sort_checkbox.isChecked(),
+            "to_grow_ids": to_grow_ids,
+            "min_growth_size": self.min_growth_spin.value(),
+            "no_growth_max_iter": no_growth_max_iter
+        }
+        
+
+## Deprecated classes, kept for reference
 
 class MainParamWidget(QGroupBox):
     def __init__(self, title="Parameters", viewer=None, image_combo=None,
@@ -1089,210 +1297,3 @@ class MainParamWidget(QGroupBox):
         dilate_spin.setValue(dilate)
         self.threshold_table.setCellWidget(row, 2, dilate_spin)
     
-
-class SeedOptionalParamGroupBox(QGroupBox):
-    def __init__(self, default_output=None):
-        super().__init__("Advanced Seed Parameters")
-        layout = QFormLayout()
-
-        # sort (bool)
-        self.sort_checkbox = QCheckBox("Enable sorting")
-        self.sort_checkbox.setChecked(True)
-        layout.addRow("Sort segments", self.sort_checkbox)
-
-        # min_size (int)
-        self.min_size_spin = QSpinBox()
-        self.min_size_spin.setRange(1, 10000)
-        self.min_size_spin.setValue(5)
-        layout.addRow("Min segment size", self.min_size_spin)
-
-
-        self.no_split_spin = QSpinBox()
-        self.no_split_spin.setRange(0, 100)
-        self.no_split_spin.setValue(3)
-        self.no_split_spin.setToolTip("Max no-split iterations")
-
-        self.min_split_ratio_spin = QDoubleSpinBox()
-        self.min_split_ratio_spin.setDecimals(3)
-        self.min_split_ratio_spin.setRange(0.0, 1.0)
-        self.min_split_ratio_spin.setSingleStep(0.01)
-        self.min_split_ratio_spin.setValue(0.01)
-        self.min_split_ratio_spin.setToolTip("Min split ratio")
-
-        self.min_split_total_ratio_spin = QDoubleSpinBox()
-        self.min_split_total_ratio_spin.setDecimals(3)
-        self.min_split_total_ratio_spin.setRange(0.0, 1.0)
-        self.min_split_total_ratio_spin.setSingleStep(0.01)
-        self.min_split_total_ratio_spin.setValue(0.0)
-        self.min_split_total_ratio_spin.setToolTip("Min total split ratio")
-
-        # add to row layout
-        no_split_row_layout = QHBoxLayout()
-        no_split_row_layout.addWidget(QLabel("No-split Iter:"))
-        no_split_row_layout.addWidget(self.no_split_spin)
-        # no_split_row_layout.addSpacing(8)
-        no_split_row_layout.addWidget(QLabel("Min Ratio:"))
-        no_split_row_layout.addWidget(self.min_split_ratio_spin)
-        # no_split_row_layout.addSpacing(8)
-        no_split_row_layout.addWidget(QLabel("Total Ratio:"))
-        no_split_row_layout.addWidget(self.min_split_total_ratio_spin)
-
-        # add to the split parameters row
-        layout.addRow("Split Parameters", no_split_row_layout)
-
-        # # min_split_ratio (float)
-        # self.min_split_ratio_spin = QDoubleSpinBox()
-        # self.min_split_ratio_spin.setDecimals(3)
-        # self.min_split_ratio_spin.setRange(0.0, 1.0)
-        # self.min_split_ratio_spin.setSingleStep(0.01)
-        # self.min_split_ratio_spin.setValue(0.01)
-        # layout.addRow("Min split ratio", self.min_split_ratio_spin)
-
-        # # min_split_total_ratio (float)
-        # self.min_split_total_ratio_spin = QDoubleSpinBox()
-        # self.min_split_total_ratio_spin.setDecimals(3)
-        # self.min_split_total_ratio_spin.setRange(0.0, 1.0)
-        # self.min_split_total_ratio_spin.setSingleStep(0.01)
-        # self.min_split_total_ratio_spin.setValue(0.0)
-        # layout.addRow("Min total split ratio", self.min_split_total_ratio_spin)
-
-
-        # split_size_limit (tuple of float or None)
-        self.size_lower_line = QLineEdit()
-        self.size_upper_line = QLineEdit()
-        size_layout = QHBoxLayout()
-        size_layout.addWidget(QLabel("Lower"))
-        size_layout.addWidget(self.size_lower_line)
-        size_layout.addWidget(QLabel("Upper"))
-        size_layout.addWidget(self.size_upper_line)
-        layout.addRow("Split size limit", size_layout)
-
-        # split_convex_hull_limit (tuple of float or None)
-        self.hull_lower_line = QLineEdit()
-        self.hull_upper_line = QLineEdit()
-        hull_layout = QHBoxLayout()
-        hull_layout.addWidget(QLabel("Lower"))
-        hull_layout.addWidget(self.hull_lower_line)
-        hull_layout.addWidget(QLabel("Upper"))
-        hull_layout.addWidget(self.hull_upper_line)
-        layout.addRow("Convex hull limit", hull_layout)
-
-        self.setLayout(layout)
-
-    def get_params(self):
-        def parse_optional_float(text):
-            try:
-                return float(text)
-            except ValueError:
-                return None
-
-        return {
-            "sort": self.sort_checkbox.isChecked(),
-            "no_split_max_iter": self.no_split_spin.value(),
-            "min_size": self.min_size_spin.value(),
-            "min_split_ratio": self.min_split_ratio_spin.value(),
-            "min_split_total_ratio": self.min_split_total_ratio_spin.value(),
-            "split_size_limit": (
-                parse_optional_float(self.size_lower_line.text()),
-                parse_optional_float(self.size_upper_line.text())
-            ),
-            "split_convex_hull_limit": (
-                parse_optional_float(self.hull_lower_line.text()),
-                parse_optional_float(self.hull_upper_line.text())
-            )
-        }
-
-class GrowOptionalParamGroupBox(QGroupBox):
-    def __init__(self, default_output=None):
-        super().__init__("Advanced Grow Parameters")
-
-
-        layout = QFormLayout()
-
-        # Save every n iterations
-        self.save_iter_checkbox = QCheckBox("Save every N iterations")
-        self.save_iter_checkbox.stateChanged.connect(self._toggle_save_iters)
-        self.save_every_n_spin = QSpinBox()
-        self.save_every_n_spin.setRange(0, 100)
-        self.save_every_n_spin.setEnabled(False)
-        layout.addRow(self.save_iter_checkbox, self.save_every_n_spin)
-
-        # Grow to end
-        self.grow_to_end_checkbox = QCheckBox("Grow to end")
-        layout.addRow(self.grow_to_end_checkbox)
-
-        # Sort seed ids
-        self.sort_checkbox = QCheckBox("Sort the result by size")
-        layout.addRow(self.sort_checkbox)
-
-        # Grow specific IDs
-        self.id_list_line = QLineEdit()
-        self.id_list_line.setPlaceholderText("e.g. 1,3,5")
-        layout.addRow(QLabel("IDs to Grow (optional):"), self.id_list_line)
-
-        self.early_stop_checkbox = QCheckBox("Early stop if no growth")
-        self.early_stop_checkbox.setToolTip("Stop growing if no growth occurs for a specified number of iterations.")
-        self.early_stop_checkbox.setChecked(True)
-        self.early_stop_checkbox.stateChanged.connect(self._toggle_no_growth_spin)
-        layout.addRow(self.early_stop_checkbox)
-        # Max no-growth iters
-        self.no_growth_spin = QSpinBox()
-        self.no_growth_spin.setRange(1, 100)
-        self.no_growth_spin.setValue(3)
-        self.no_growth_spin.setEnabled(True)
-        layout.addRow(QLabel("Max No-Growth Iterations:"), self.no_growth_spin)
-
-        # Min growth size
-        self.min_growth_spin = QSpinBox()
-        self.min_growth_spin.setRange(0, 1000000)
-        self.min_growth_spin.setValue(50)
-        self.min_growth_spin.setEnabled(True)
-        layout.addRow(QLabel("Minimum Growth Size:"), self.min_growth_spin)
-
-
-
-        self.setLayout(layout)
-
-    def _toggle_no_growth_spin(self):
-        self.no_growth_spin.setEnabled(self.early_stop_checkbox.isChecked())
-        # if not self.early_stop_checkbox.isChecked():
-        #     self.no_growth_spin.setValue(3)
-        self.min_growth_spin.setEnabled(self.early_stop_checkbox.isChecked())
-    
-    def _browse_output_folder(self):
-        folder = QFileDialog.getExistingDirectory(self, "Select Output Folder")
-        if folder:
-            self.output_folder_line.setText(folder)
-
-    def _toggle_save_iters(self):
-        self.save_every_n_spin.setEnabled(self.save_iter_checkbox.isChecked())
-
-    def get_params(self):
-        to_grow_text = self.id_list_line.text().strip()
-        to_grow_text.replace(" ", "")  # remove any spaces
-
-        try:
-            to_grow_ids = [int(x) for x in to_grow_text.split(",") if x.strip().isdigit()]
-        except:
-            to_grow_ids = None
-            # show error in napari message box
-            from napari.utils.notifications import show_error
-            show_error("Invalid IDs format. Please enter a comma-separated list of integers.")
-       
-        # if to_grow_ids is empty, set to None
-        if not to_grow_ids:
-            to_grow_ids = None
-       
-        if not self.early_stop_checkbox.isChecked():
-            no_growth_max_iter = None
-        else:
-            no_growth_max_iter = self.no_growth_spin.value()
-        
-        return {
-            "save_every_n_iters": self.save_every_n_spin.value() if self.save_iter_checkbox.isChecked() else None,
-            "grow_to_end": self.grow_to_end_checkbox.isChecked(),
-            "is_sort": self.sort_checkbox.isChecked(),
-            "to_grow_ids": to_grow_ids,
-            "min_growth_size": self.min_growth_spin.value(),
-            "no_growth_max_iter": no_growth_max_iter
-        }
