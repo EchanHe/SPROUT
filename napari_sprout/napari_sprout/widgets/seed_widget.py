@@ -14,7 +14,7 @@ from napari.utils.notifications import show_info, show_error
 
 from ..utils.sprout_bridge import SPROUTBridge
 from ..utils.util_widget import (create_output_folder_row, SeedOptionalParamGroupBox,
-                                 MainSeedParamWidget, ThresholdWidget)
+                                 MainSeedParamWidget, ThresholdWidget,apply_threshold_preview)
 
 
 import sys
@@ -161,7 +161,7 @@ class SeedGenerationWidget(QWidget):
     def __init__(self, napari_viewer):
         super().__init__()
         self.viewer = napari_viewer
-        self.bridge = SPROUTBridge()
+
         
         self.worker = None
         
@@ -174,7 +174,6 @@ class SeedGenerationWidget(QWidget):
         
         self._init_ui()
         self._connect_signals()
-        self._on_seed_method_changed("Original") # Set initial state
 
     def _init_ui(self):
         """Initialize the user interface."""
@@ -197,14 +196,7 @@ class SeedGenerationWidget(QWidget):
         image_group.setLayout(image_layout)
         layout.addWidget(image_group)
 
-        # Seed method selection
-        seed_method_group = QGroupBox("Seed Method")
-        seed_method_layout = QFormLayout()
-        self.seed_method_combo = QComboBox()
-        self.seed_method_combo.addItems(["Original", "Adaptive (Erosion)", "Adaptive (Thresholds)"])
-        seed_method_layout.addRow("Method:", self.seed_method_combo)
-        seed_method_group.setLayout(seed_method_layout)
-        layout.addWidget(seed_method_group)
+
         
         # --- Parameters for Original and Adaptive (Thresholds) methods ---
         self.list_params_group = QGroupBox("Threshold List Parameters")
@@ -404,7 +396,7 @@ class SeedGenerationWidget(QWidget):
         self.stop_btn.clicked.connect(self.stop_generation)
         
         self.image_combo.currentIndexChanged.connect(self._on_image_changed)
-        self.seed_method_combo.currentTextChanged.connect(self._on_seed_method_changed)
+
         self.use_upper_list.toggled.connect(self.upper_thresholds_list.setEnabled)
         # self.browse_folder_btn.clicked.connect(self._browse_output_folder)
 
@@ -414,16 +406,6 @@ class SeedGenerationWidget(QWidget):
         if folder:
             self.output_folder_edit.setText(folder)
 
-    def _on_seed_method_changed(self, method: str):
-        
-        print(f"Seed method changed to: {method}")    
-        ## For now do nothing
-        # if method in ["Original", "Adaptive (Thresholds)"]:
-        #     self.list_params_group.setVisible(True)
-        #     self.single_param_group.setVisible(False)
-        # elif method == "Adaptive (Erosion)":
-        #     self.list_params_group.setVisible(False)
-        #     self.single_param_group.setVisible(True)
 
     def refresh_layers(self):
         """Refresh the list of available layers."""
@@ -471,34 +453,7 @@ class SeedGenerationWidget(QWidget):
                 # self.lower_threshold.setValue(img_min + (img_max - img_min) * 0.1)
                 # self.upper_threshold.setValue(img_min + (img_max - img_min) * 0.5)
     
-    # def preview_threshold(self):
-    #     """Preview the threshold result."""
-    #     if self.current_image is None:
-    #         show_error("Please select an image first")
-    #         return
-        
-    #     try:
-    #         # Get threshold values
-    #         lower = self.lower_threshold.value()
-    #         upper = self.upper_threshold.value() if self.use_upper.isChecked() else None
-            
-    #         # Apply threshold
-    #         binary = self.bridge.apply_threshold_preview(self.current_image, lower, upper)
-            
-    #         # Update or create preview layer
-    #         if self.preview_layer is not None and self.preview_layer in self.viewer.layers:
-    #             self.preview_layer.data = binary
-    #         else:
-    #             self.preview_layer = self.viewer.add_labels(
-    #                 binary.astype(np.uint8),
-    #                 name="Threshold Preview",
-    #                 opacity=0.5
-    #             )
-            
-    #         show_info(f"Threshold preview updated: {np.sum(binary)} pixels selected")
-            
-    #     except Exception as e:
-    #         show_error(f"Error in threshold preview: {str(e)}")
+
     
     def preview_threshold(self, lower=None, upper=None):
         if self.current_image is None:
@@ -509,14 +464,21 @@ class SeedGenerationWidget(QWidget):
             if lower is None:
                 lower, upper = self.threshold_widget.get_thresholds()
 
-            binary = self.bridge.apply_threshold_preview(self.current_image, lower, upper)
+            binary = apply_threshold_preview(self.current_image, lower, upper)
 
+
+            # delete existing preview layer if it exists
             if self.preview_layer and self.preview_layer in self.viewer.layers:
-                self.preview_layer.data = binary
-            else:
-                self.preview_layer = self.viewer.add_labels(binary.astype(np.uint8),
-                                                            name="Threshold Preview",
-                                                            opacity=0.5)
+                self.viewer.layers.remove(self.preview_layer)
+                self.preview_layer = None
+
+            # delete existing seeds layer if it exists
+            self.preview_layer = self.viewer.add_labels(
+                binary.astype(np.uint8),
+                name="Threshold Preview",
+                opacity=0.5,
+            )
+
 
             show_info(f"Preview updated: {np.sum(binary)} pixels selected")
         except Exception as e:
@@ -538,32 +500,7 @@ class SeedGenerationWidget(QWidget):
         current_name = self.image_combo.currentText()
         
         try:
-            # Get parameters based on selected method
-            selected_method = self.seed_method_combo.currentText()
-            
-            
-            ## TODO can be deleted did extract logic in main_param_widget
-            # lower = None
-            # upper = None
-            # thresholds = []
-            # upper_thresholds = None
-
-            # if selected_method == "Adaptive (Erosion)":
-            #     lower = int(self.lower_threshold.value())
-            #     if self.use_upper.isChecked():
-            #         upper = int(self.upper_threshold.value())
-            # else: # Original or Adaptive (Thresholds)
-            #     try:
-            #         thresholds = [int(x.strip()) for x in self.lower_thresholds_list.text().split(',') if x.strip()]
-            #         if self.use_upper_list.isChecked():
-            #             upper_thresholds = [int(x.strip()) for x in self.upper_thresholds_list.text().split(',') if x.strip()]
-            #             if len(thresholds) != len(upper_thresholds):
-            #                 show_error("Lower and upper threshold lists must have the same number of elements.")
-            #                 return
-            #     except ValueError:
-            #         show_error("Thresholds must be comma-separated integers.")
-            #         return
-
+        
 
             
             # Get boundary if selected
@@ -591,9 +528,10 @@ class SeedGenerationWidget(QWidget):
             
             self._set_ui_for_generation()
             
-            
-            print(f"Generating seeds with method: {selected_method}")
             main_params = self.main_param_widget.get_params()
+            selected_method = main_params['seed_method']
+            print(f"Generating seeds with method: {selected_method}")
+            
             
             advance_params  = self.advanced_params_box.get_params()
             

@@ -14,7 +14,7 @@ from napari.utils.notifications import show_info, show_error
 
 
 from ..utils.util_widget import (create_output_folder_row, GrowOptionalParamGroupBox,
-                                 MainGrowParamWidget)
+                                 MainGrowParamWidget,apply_threshold_preview,ThresholdWidget)
 
 
 import sys
@@ -51,6 +51,7 @@ class GrowthWorker(QThread):
         self.seeds = seeds
         self.thresholds = thresholds
         self.dilate_iters = dilate_iters
+        
         
 
         self.upper_thresholds = upper_thresholds
@@ -118,6 +119,9 @@ class SeedGrowthWidget(QWidget):
     def __init__(self, napari_viewer):
         super().__init__()
         self.viewer = napari_viewer
+        
+        self.preview_layer = None
+        
         self.current_image = None
         self.current_seeds = None
         self.current_boundary = None
@@ -152,6 +156,10 @@ class SeedGrowthWidget(QWidget):
         input_group.setLayout(input_layout)
         layout.addWidget(input_group)
 
+
+        self.threshold_widget = ThresholdWidget()
+        self.threshold_widget.preview_requested.connect(self.preview_threshold)
+        layout.addWidget(self.threshold_widget)        
 
         
         self.main_param_widget = MainGrowParamWidget(title="Parameters",
@@ -231,7 +239,12 @@ class SeedGrowthWidget(QWidget):
             
             self.main_param_widget.clean_table()
 
- 
+
+            layer = self.viewer.layers[self.image_combo.currentText()]
+            if isinstance(layer, Image):
+                self.current_image = layer.data
+            self.threshold_widget.set_range_by_dtype(self.current_image.dtype)
+            
     def _toggle_grow_params_visibility(self, state):
         self.advanced_params_box.setVisible(state == Qt.Checked)  
           
@@ -380,3 +393,30 @@ class SeedGrowthWidget(QWidget):
         self.stop_btn.setEnabled(False)
         self.progress_bar.setVisible(False)
     
+
+    def preview_threshold(self, lower=None, upper=None):
+        if self.current_image is None:
+            show_error("Please select an image first")
+            return
+
+        try:
+            if lower is None:
+                lower, upper = self.threshold_widget.get_thresholds()
+
+            binary = apply_threshold_preview(self.current_image, lower, upper)
+
+            # delete existing preview layer if it exists
+            if self.preview_layer and self.preview_layer in self.viewer.layers:
+                self.viewer.layers.remove(self.preview_layer)
+                self.preview_layer = None
+
+            # delete existing seeds layer if it exists
+            self.preview_layer = self.viewer.add_labels(
+                binary.astype(np.uint8),
+                name="Threshold Preview",
+                opacity=0.5,
+            )
+
+            show_info(f"Preview updated: {np.sum(binary)} pixels selected")
+        except Exception as e:
+            show_error(f"Error in preview: {e}")

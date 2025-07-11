@@ -43,11 +43,11 @@ def create_output_folder_row(default_folder=None):
     return layout, folder_edit
 
 
-class ThresholdWidget(QWidget):
+class ThresholdWidget(QGroupBox):
     preview_requested = Signal(float, float)  # Always emit lower + upper
 
-    def __init__(self, show_preview_button=True):
-        super().__init__()
+    def __init__(self, title = 'Threshold Preview', show_preview_button=True):
+        super().__init__(title)
 
         layout = QFormLayout()
 
@@ -163,6 +163,34 @@ class ThresholdWidget(QWidget):
 
         self.set_range(0, max_val)
 
+
+def apply_threshold_preview(
+    image: np.ndarray,
+    threshold,
+    upper_threshold = None
+) -> np.ndarray:
+    """
+    Apply threshold to create a binary preview.
+    
+    Parameters
+    ----------
+    image : np.ndarray
+        Input image
+    threshold : float
+        Lower threshold
+    upper_threshold : float, optional
+        Upper threshold
+        
+    Returns
+    -------
+    binary : np.ndarray
+        Binary threshold result
+    """
+    if upper_threshold is None:
+        return image >= threshold
+    else:
+        return (image >= threshold) & (image <= upper_threshold)
+
 class MainSeedParamWidget(QGroupBox):
     def __init__(self, title="Parameters", viewer=None, image_combo=None):
         super().__init__(title)
@@ -176,14 +204,24 @@ class MainSeedParamWidget(QGroupBox):
 
         # Top rowlayout 
         top_row_layout = QHBoxLayout()
+        
+        # second row layout
+        second_row_layout = QHBoxLayout()
+
+        # seed method
+        top_row_layout.addWidget(QLabel("Seed Method:"))
+        self.seed_method_combo = QComboBox()
+        self.seed_method_combo.addItems(["Original", "Adaptive (Erosion)", "Adaptive (Thresholds)"])
+        self.seed_method_combo.setFixedWidth(150)
+        top_row_layout.addWidget(self.seed_method_combo)
 
         # erosion steps
-        top_row_layout.addWidget(QLabel("Erosion Steps:"))
+        second_row_layout.addWidget(QLabel("Erosion Steps:"))
         self.erosion_spin = QSpinBox()
         self.erosion_spin.setRange(1, 1000)
         self.erosion_spin.setValue(1)
-        self.erosion_spin.setMaximumWidth(80)
-        top_row_layout.addWidget(self.erosion_spin)
+        self.erosion_spin.setFixedWidth(40)
+        second_row_layout.addWidget(self.erosion_spin)
         
         # Threads
         top_row_layout.addWidget(QLabel("Threads:"))
@@ -191,24 +229,31 @@ class MainSeedParamWidget(QGroupBox):
         self.thread_spin.setMinimum(1)
         self.thread_spin.setMaximum(os.cpu_count())
         self.thread_spin.setValue(min(4, os.cpu_count() - 1))
-        self.thread_spin.setFixedWidth(80)
+        self.thread_spin.setFixedWidth(30)
         top_row_layout.addWidget(self.thread_spin)
 
-        # Add some space between the two sections
-        top_row_layout.addSpacing(20)
 
 
-        top_row_layout.addWidget(QLabel("Segments:"))
+
+        second_row_layout.addWidget(QLabel("Segments:"))
         self.segments_spin = QSpinBox()
         self.segments_spin.setRange(1, 1000)
         self.segments_spin.setValue(10)
-        self.segments_spin.setMaximumWidth(80)
-        top_row_layout.addWidget(self.segments_spin)
+        self.segments_spin.setFixedWidth(40)
+        second_row_layout.addWidget(self.segments_spin)
 
-            
+    
+        
 
         top_row_layout.addStretch()
         layout.addLayout(top_row_layout)
+        second_row_layout.addStretch()
+        layout.addLayout(second_row_layout) 
+
+
+        
+
+        
 
         # #  Threshold Table
         # self.threshold_table = QTableWidget()
@@ -389,7 +434,8 @@ class MainSeedParamWidget(QGroupBox):
             "thresholds": thresholds,
             "upper_thresholds": upper_thresholds,
             "erosion_steps": self.erosion_spin.value(),
-            "footprints": footprints
+            "footprints": footprints,
+            "seed_method": self.seed_method_combo.currentText() if self.seed_method_combo else None,
         }
 
     def _get_footprints(self):
@@ -488,7 +534,7 @@ class MainSeedParamWidget(QGroupBox):
         upper_spin.setValue(upper_value)
         self.threshold_table.setCellWidget(row, 1, upper_spin)
 
-        self.update_summary()
+        # self.update_summary()
      
         
     
@@ -499,7 +545,7 @@ class MainSeedParamWidget(QGroupBox):
         if current_row >= 0:
             self.threshold_table.removeRow(current_row)
         
-        self.update_summary()
+        # self.update_summary()
 
     def _get_img_dtype_max(self, image_dtype):
         """Set the range of the threshold spinboxes based on the image dtype."""
@@ -582,7 +628,7 @@ class MainSeedParamWidget(QGroupBox):
                 self.footprint_table.insertRow(row)
                 self.footprint_table.setItem(row, 0, QTableWidgetItem(fp))
 
-            self.update_summary()
+            # self.update_summary()
             show_info("✅ Successfully synced to tables.")
         except Exception as e:
             show_error(f"⚠️ Failed to sync to tables: {str(e)}")

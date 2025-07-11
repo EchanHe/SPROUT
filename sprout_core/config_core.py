@@ -19,6 +19,8 @@ support_footprints =['ball','cube',
                      'X','Y','Z',
                      '2XZ_1Y','2XY_1Z','2YZ_1X']
 
+support_footprints_2d = ['ball', 'cube' ,'disk' , 'square', 'X', 'Y']
+
 
 def valid_input_data(img, seg=None, boundary=None):
     # check if img only have one channel
