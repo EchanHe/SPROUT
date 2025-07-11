@@ -151,71 +151,64 @@ def find_seed_by_ero_mp(volume, input_threshold_ero_iter_pairs , segments ,
 
 def make_seeds(**kwargs):
     """
-    Generate seed masks for image segmentation using erosion and thresholding.
+    Generate seed masks by applying thresholding and morphological erosion.
 
-    This function processes an input image to generate seed masks for segmentation, supporting both 2D and 3D images. 
-    It allows for configurable erosion iterations, thresholding, and footprint shapes, and can run in parallel using multiple threads. 
-    Optionally, it can generate mesh files from the resulting seeds.
+    This function takes an image (2D or 3D) and generates seed masks based on thresholding,
+    optional upper thresholds, and erosion with custom or pre-defined footprints. It supports
+    parallel processing and can optionally generate meshes for each seed mask.
 
     Parameters
     ----------
     img : np.ndarray, optional
-        The input image array. If not provided, `img_path` must be specified.
-    workspace : str, optional
-        Base directory to prepend to `img_path` and `output_folder`.
+        Input image array. If not provided, `img_path` must be specified.
     img_path : str, optional
-        Path to the input image file. Used if `img` is not provided.
+        Path to the input image (used if `img` is not provided).
     boundary : np.ndarray, optional
-        Boundary mask array. If not provided, `boundary_path` may be used.
+        Optional binary mask restricting seed growth.
     boundary_path : str, optional
-        Path to the boundary mask file.
-    output_folder : str, optional
-        Directory where output files will be saved.
+        Path to the boundary mask.
+    workspace : str, optional
+        Root path to prepend to image and output paths.
+    output_folder : str
+        Output directory to save seed masks and logs.
     base_name : str, optional
-        base_name for naming output files and folders.
+        Prefix for output files and folders. Defaults to input image name.
     erosion_steps : int
-        Number of erosion iterations to perform.
-    thresholds : int or list of int
-        Lower threshold(s) for segmentation. Can be a single value or a list.
-    upper_thresholds : int or list of int, optional
-        Upper threshold(s) for segmentation. If provided, must match the length of `thresholds`.
+        Number of erosion iterations to apply.
+    thresholds : int or list[int]
+        Lower threshold(s) for binary segmentation.
+    upper_thresholds : int or list[int], optional
+        Upper threshold(s) for segmentation. If provided, must match `thresholds`.
     segments : int, optional
-        Number of connected components to keep after segmentation.
+        Number of largest connected components to keep in each seed.
     num_threads : int, optional
-        Number of threads to use for parallel processing. Defaults to 1.
+        Number of threads for parallel processing. Defaults to half of CPU cores.
+    footprints : list[str] or str, optional
+        Names of erosion footprints (e.g. 'cube', 'sphere'). Defaults to pre-defined ones.
     is_make_meshes : bool, optional
-        Whether to generate mesh files from the seed masks. Defaults to False.
+        If True, generate 3D meshes from seed masks. Defaults to False.
     downsample_scale : int, optional
         Downsampling factor for mesh generation. Defaults to 10.
     step_size : int, optional
         Step size for mesh generation. Defaults to 1.
-    footprints : str or list of str, optional
-        Custom erosion footprints to use. If not provided, pre-set footprints are used based on image dimensionality.
     return_for_napari : bool, optional
-        If True, returns seed masks for napari visualization. Defaults to False.
+        If True, return seed masks in a dictionary for napari. Defaults to False.
 
     Returns
     -------
-    seed_dict : dict
-        Dictionary of generated seed masks (only if return_for_napari is True).
+    seeds_dict : dict
+        A dictionary of {name: seed_mask_array}, returned only if `return_for_napari` is True.
     log_dict : dict
-        Dictionary containing:
-            - "output_seed_sub_folders": List of output subfolder paths for seed masks.
-            - "output_log_files": List of log file paths for each run.
-
-    Raises
-    ------
-    AssertionError
-        If `thresholds` and `upper_thresholds` are provided but have different lengths, or if lower threshold is not less than upper threshold.
-    ValueError
-        If provided footprints are invalid or not supported.
+        Contains:
+            - "output_seed_sub_folders": list of subfolder paths for each footprint
+            - "output_log_files": list of log file paths
 
     Notes
     -----
-    - The function saves configuration and logs in the output directory.
-    - Mesh generation requires the `make_mesh` module.
-    - Threading is used for parallel processing of threshold/erosion parameter combinations.
-    - If `return_for_napari` is True, the function returns a dictionary of seed masks for visualization.
+    - Each threshold-footprint pair is processed in a separate thread.
+    - Output seed masks are saved in TIFF format, grouped by footprint.
+    - If `is_make_meshes` is True, 3D meshes (.ply) are generated for each seed.
+    - Configuration and logs are saved in each seed folder.
     """
     
     

@@ -331,8 +331,8 @@ class MainSeedParamWidget(QGroupBox):
         # erosion steps
         second_row_layout.addWidget(QLabel("Erosion Steps:"))
         self.erosion_spin = QSpinBox()
-        self.erosion_spin.setRange(1, 1000)
-        self.erosion_spin.setValue(1)
+        self.erosion_spin.setRange(0, 1000)
+        self.erosion_spin.setValue(0)
         self.erosion_spin.setFixedWidth(40)
         second_row_layout.addWidget(self.erosion_spin)
         
@@ -477,8 +477,7 @@ class MainSeedParamWidget(QGroupBox):
         thresholds, upper_thresholds = self._get_threshold_params()
         footprints = self._get_footprints()
         # assert footprints is len 1 or len == erosion_steps
-        if len(footprints) == 0:
-            raise ValueError("Please add at least one footprint")
+
 
             
         if len(footprints) == 1:

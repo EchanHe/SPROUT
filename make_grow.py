@@ -136,13 +136,86 @@ def dilation_one_iter_mp(input_mask, threshold_binary,
         
 def grow_mp(**kwargs):
     """
-    Main function to perform multi-threaded growing on a segmentation mask.
+    Perform multi-step, multi-threaded seed growth for image segmentation.
 
-    Args:
-        kwargs: Key-value arguments containing growing parameters.
+    This function expands initial seed masks across an image based on threshold criteria
+    and morphological dilation. It supports multi-step growth using different thresholds
+    and dilation iterations, parallel processing, optional early stopping, and
+    exporting of intermediate and final results.
 
-    Returns:
-        dict: A dictionary containing paths to the final output and log files.
+    Parameters
+    ----------
+    img : np.ndarray, optional
+        Input grayscale image. If not provided, `img_path` must be given.
+    img_path : str, optional
+        Path to the image file.
+    seg : np.ndarray, optional
+        Initial seed mask (segmentation). If not provided, `seg_path` must be given.
+    seg_path : str, optional
+        Path to the seed mask file.
+    boundary : np.ndarray, optional
+        Optional mask to constrain the growth.
+    boundary_path : str, optional
+        Path to the boundary mask file.
+    workspace : str, optional
+        Base path prepended to image, segmentation, boundary, and output paths.
+    output_folder : str
+        Directory to store intermediate and final results.
+    final_grow_output_folder : str, optional
+        Alternative directory to store the final grown result.
+    base_name : str, optional
+        Name prefix for result files. Defaults to inferred from image name.
+    dilation_steps : int or list[int]
+        Number of dilation iterations per step.
+    thresholds : int or list[int]
+        Lower threshold(s) to guide growth.
+    upper_thresholds : int or list[int], optional
+        Optional upper threshold(s) to constrain intensity range.
+    touch_rule : str, default='stop'
+        Rule for growth collision. Currently only 'stop' is supported.
+    num_threads : int, optional
+        Number of parallel threads to use. Defaults to half of available CPUs.
+    save_every_n_iters : int or list[int], optional
+        Interval(s) for saving intermediate results. Defaults to `dilation_steps`.
+    grow_to_end : bool, default=False
+        If True, grow until no further size increase or mask saturation.
+    to_grow_ids : list[int], optional
+        Subset of label IDs to grow. If None, all will be grown.
+    is_sort : bool, default=False
+        Whether to re-sort label IDs before saving the final result.
+    min_growth_size : int, default=50
+        Minimum increase in size to consider a growth step meaningful.
+    no_growth_max_iter : int, default=3
+        Stop early if no meaningful growth occurs for this many iterations.
+    return_for_napari : bool, default=False
+        If True, return result as a dictionary of arrays for napari visualization.
+    use_simple_naming : bool, default=True
+        If True, use a simple naming scheme for intermediate files.
+    is_make_meshes : bool, optional
+        If True, generate meshes for all intermediate and final results.
+    downsample_scale : int, default=10
+        Scale factor to downsample image before mesh generation.
+    step_size : int, default=1
+        Step size for marching cubes algorithm in mesh generation.
+
+    Returns
+    -------
+    grows_dict : dict
+        Dictionary mapping names (str) to grown segmentation arrays (np.ndarray).
+        Only returned if `return_for_napari=True`.
+    log_dict : dict
+        Dictionary containing:
+            - "final_output_path": path to the final grown .tif file
+            - "log_path": CSV file recording growth steps and sizes
+            - "output_folder": directory containing all output files
+
+    Notes
+    -----
+    - Intermediate results are saved with prefix `INTER_`, final result with `FINAL_GROW_`.
+    - Growth is constrained by thresholds and optionally by a boundary mask.
+    - Growth stops early if saturation is reached or no further meaningful change occurs.
+    - If `is_make_meshes` is True, mesh (.ply) files will be generated using marching cubes.
+    - The function logs and saves all configurations used for reproducibility.
     """
     # Extract configuration values from kwargs
     dilation_steps = kwargs.get('dilation_steps', None)
@@ -485,7 +558,7 @@ def run_make_grow(file_path):
 if __name__ == "__main__":
     
     # Get the file path from the first command-line argument or use the default
-    file_path = sys.argv[1] if len(sys.argv) > 1 else './tests/configs/grow/make_grow_test_overwrite.yaml'
+    file_path = sys.argv[1] if len(sys.argv) > 1 else './template/make_grow.yaml'
     
     run_make_grow(file_path)
     

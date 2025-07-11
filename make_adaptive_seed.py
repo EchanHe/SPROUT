@@ -665,7 +665,7 @@ def make_adaptive_seed_thre(
     
 
     for idx_threshold, (threshold, upper_threshold) in enumerate(zip(thresholds[1:], upper_thresholds[1:])):
-        print(f"working on thre {threshold}")
+        print(f"working on thre ({threshold}, {upper_threshold})")
         
         output_dict["split_id"][threshold] = {}
         output_dict["split_ori_id"][threshold] = {}
