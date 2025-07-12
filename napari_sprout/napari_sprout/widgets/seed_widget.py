@@ -693,6 +693,9 @@ class SeedGenerationWidget(QWidget):
 
     # TODO to implement import/export yaml for seed parameters
     # This is a placeholder for the import/export functionality.
+
+    # TODO: need to consider threshold as a list
+    # how to set threshold in the widget?
     def import_yaml(self):
         file_path, _ = QFileDialog.getOpenFileName(
             self, "Open YAML File", "", "YAML Files (*.yaml *.yml);;All Files (*)"

@@ -196,3 +196,5 @@ cython_debug/
 
 
 .DS_Store
+for_testing/*
+napari_temp/*
