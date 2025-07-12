@@ -700,10 +700,55 @@ class SeedGenerationWidget(QWidget):
         if file_path:
             try:
                 with open(file_path, "r") as f:
-                    data = yaml.safe_load(f)
-                print("[Imported YAML]:", data)
+                    params = yaml.safe_load(f)
+
+                # Map flat YAML keys to main and advanced parameter dictionaries
+                main_params_to_set = {}
+                advanced_params_to_set = {}
+
+                # Main parameters
+                main_keys = ["seed_method", "thresholds", "upper_thresholds", "erosion_steps", "segments", "num_threads", "footprints"]
+                for key in main_keys:
+                    if key in params:
+                        main_params_to_set[key] = params[key]
+                # Handle single threshold values for erosion method
+                if 'threshold' in params and 'thresholds' not in main_params_to_set:
+                    main_params_to_set['thresholds'] = [params['threshold']]
+                if 'upper_threshold' in params and 'upper_thresholds' not in main_params_to_set:
+                    main_params_to_set['upper_thresholds'] = [params['upper_threshold']]
+                
+                if main_params_to_set:
+                    self.main_param_widget.set_params(main_params_to_set)
+
+                # Advanced parameters
+                advanced_keys = ["sort", "no_split_max_iter", "min_size", "min_split_ratio", "min_split_total_ratio", "split_size_limit", "split_convex_hull_limit"]
+                for key in advanced_keys:
+                    if key in params:
+                        advanced_params_to_set[key] = params[key]
+
+                if advanced_params_to_set:
+                    self.advanced_params_box.set_params(advanced_params_to_set)
+                    self.show_advanced_checkbox.setChecked(True)
+                
+                # Output parameters
+                if 'output_folder' in params:
+                    self.output_folder_line.setText(params["output_folder"])
+                if 'save_every_iter' in params:
+                    self.save_every_iter_checkbox.setChecked(params["save_every_iter"])
+
+                # Update threshold line edits, which are part of this widget
+                if 'thresholds' in params:
+                    threshold_str = ", ".join(map(str, params.get('thresholds', [])))
+                    self.lower_thresholds_list.setText(threshold_str)
+                
+                if 'upper_thresholds' in params:
+                    upper_threshold_str = ", ".join(map(str, params.get('upper_thresholds', [])))
+                    self.upper_thresholds_list.setText(upper_threshold_str)
+
+                show_info(f"Parameters successfully loaded from {os.path.basename(file_path)}.")
+
             except Exception as e:
-                QMessageBox.critical(self, "Import Error", str(e))
+                QMessageBox.critical(self, "Import Error", f"Failed to load parameters: {e}")
 
     def export_yaml(self):
         file_path, _ = QFileDialog.getSaveFileName(

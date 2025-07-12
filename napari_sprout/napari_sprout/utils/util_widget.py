@@ -498,6 +498,22 @@ class MainSeedParamWidget(QGroupBox):
             "seed_method": self.seed_method_combo.currentText() if self.seed_method_combo else None,
         }
 
+    def set_params(self, params):
+        """Set parameters for the widget from a dictionary."""
+        if "seed_method" in params:
+            index = self.seed_method_combo.findText(params["seed_method"], Qt.MatchFixedString)
+            if index >= 0:
+                self.seed_method_combo.setCurrentIndex(index)
+        
+        if "erosion_steps" in params:
+            self.erosion_spin.setValue(params["erosion_steps"])
+
+        if "num_threads" in params:
+            self.thread_spin.setValue(params["num_threads"])
+
+        if "segments" in params:
+            self.segments_spin.setValue(params["segments"])
+
     def _get_footprints(self):
         """Get footprints from the footprint table."""
         footprints = []
@@ -911,6 +927,29 @@ class SeedOptionalParamGroupBox(QGroupBox):
         layout.addRow("Convex hull limit", hull_layout)
 
         self.setLayout(layout)
+    
+    def set_params(self, params):
+        """Set advanced parameters for the widget from a dictionary."""
+        if 'sort' in params:
+            self.sort_checkbox.setChecked(params['sort'])
+        if 'min_size' in params:
+            self.min_size_spin.setValue(params['min_size'])
+        if 'no_split_max_iter' in params:
+            self.no_split_spin.setValue(params['no_split_max_iter'])
+        if 'min_split_ratio' in params:
+            self.min_split_ratio_spin.setValue(params['min_split_ratio'])
+        if 'min_split_total_ratio' in params:
+            self.min_split_total_ratio_spin.setValue(params['min_split_total_ratio'])
+
+        if 'split_size_limit' in params and params['split_size_limit'] is not None:
+            lower, upper = params['split_size_limit']
+            self.size_lower_line.setText(str(lower) if lower is not None else "")
+            self.size_upper_line.setText(str(upper) if upper is not None else "")
+
+        if 'split_convex_hull_limit' in params and params['split_convex_hull_limit'] is not None:
+            lower, upper = params['split_convex_hull_limit']
+            self.hull_lower_line.setText(str(lower) if lower is not None else "")
+            self.hull_upper_line.setText(str(upper) if upper is not None else "")
 
     def get_params(self):
         def parse_optional_float(text):
