@@ -135,9 +135,9 @@ class SeedWorker(QThread):
                                         
                     sort=self.sort,
                     no_split_max_iter=self.no_split_max_iter,
+                    min_size=self.min_size,
                     min_split_ratio=self.min_split_ratio,
                     min_split_total_ratio=self.min_split_total_ratio,
-                    min_size=self.min_size,
                     save_every_iter=self.save_every_iter,
                     init_segments=self.init_segments,
                     last_segments=self.last_segments,
@@ -759,11 +759,34 @@ class SeedGenerationWidget(QWidget):
         )
         if file_path:
             try:
+                # Get parameters from child widgets
                 main_params = self.main_param_widget.get_params()
                 advanced_params = self.advanced_params_box.get_params()
-                print("TODO export yaml with main and advanced params")
-                print("[Exported YAML]:", main_params, advanced_params)
+                
+                # Combine all parameters into a single flat dictionary
+                all_params = {}
+                all_params.update(main_params)
+                all_params.update(advanced_params)
+
+                # Get and parse threshold lists from the main widget
+                lower_threshold_str = self.lower_thresholds_list.text()
+                if lower_threshold_str:
+                    all_params['thresholds'] = [float(x.strip()) for x in lower_threshold_str.split(',') if x.strip()]
+
+                if self.use_upper_list.isChecked():
+                    upper_threshold_str = self.upper_thresholds_list.text()
+                    if upper_threshold_str:
+                        all_params['upper_thresholds'] = [float(x.strip()) for x in upper_threshold_str.split(',') if x.strip()]
+
+                # Add output parameters
+                all_params["output_folder"] = self.output_folder_line.text()
+                all_params["save_every_iter"] = self.save_every_iter_checkbox.isChecked()
+
+                # Write to YAML file
                 with open(file_path, "w") as f:
-                    yaml.dump({"a":"test"}, f, sort_keys=False)
+                    yaml.dump(all_params, f, sort_keys=False, default_flow_style=False)
+                
+                show_info(f"Parameters successfully saved to {os.path.basename(file_path)}.")
+
             except Exception as e:
-                QMessageBox.critical(self, "Export Error", str(e))
+                QMessageBox.critical(self, "Export Error", f"Failed to save parameters: {e}")
