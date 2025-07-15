@@ -399,7 +399,7 @@ def run_make_seeds(file_path):
     if extension == '.yaml':
         with open(file_path, 'r') as file:
             config = yaml.safe_load(file)
-            optional_params = config_core.validate_input_yaml(config, config_core.input_val_make_seeds_all)
+            optional_params = config_core.validate_input_yaml(config, config_core.input_val_make_seeds)
             
 
     

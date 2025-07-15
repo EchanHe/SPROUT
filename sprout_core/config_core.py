@@ -23,6 +23,24 @@ support_footprints_2d = ['ball', 'cube' ,'disk' , 'square', 'X', 'Y']
 
 
 def valid_input_data(img, seg=None, boundary=None):
+    """
+    Validate that input image, segmentation, and boundary arrays match in shape and format.
+
+    Parameters
+    ----------
+    img : np.ndarray
+        Input 2D or 3D grayscale image.
+    seg : np.ndarray, optional
+        Optional segmentation mask. Must match shape of `img`.
+    boundary : np.ndarray, optional
+        Optional binary boundary mask. Must be same shape as `img` and either boolean or two-valued (e.g., 0 and 1).
+
+    Raises
+    ------
+    ValueError
+        If inputs are not 2D/3D, shapes do not match, or types are invalid.
+    """
+    
     # check if img only have one channel
     if img.ndim not in [2, 3]:
         raise ValueError(f"Image must be 2D or 3D, got {img.ndim}D.")
@@ -52,7 +70,30 @@ def valid_input_data(img, seg=None, boundary=None):
             raise ValueError(f"Image and boundary must have the same shape, got {img.shape} and {boundary.shape}.")
 
 def check_and_load_data(array, path, name, must_exist=True):
+    """
+    Load image data from file or return provided array, ensuring only one input source is used.
 
+    Parameters
+    ----------
+    array : np.ndarray or None
+        Directly provided image or mask array.
+    path : str or None
+        Path to the image or mask file.
+    name : str
+        Name identifier for error messages.
+    must_exist : bool, default=True
+        If True, raise error if both `array` and `path` are None.
+
+    Returns
+    -------
+    np.ndarray
+        Loaded or passed-in array.
+
+    Raises
+    ------
+    ValueError
+        If both `array` and `path` are provided or neither is available when `must_exist` is True.
+    """
     if array is not None and path is not None:
         raise ValueError(f"Both {name} and {name}_path provided; only one is allowed.")
     if array is None and path is None and must_exist:
@@ -64,6 +105,24 @@ def check_and_load_data(array, path, name, must_exist=True):
     return array
 
 def check_and_cast_boundary(boundary):
+    """
+    Cast a 2-valued or boolean array into a binary mask (True/False).
+
+    Parameters
+    ----------
+    boundary : np.ndarray or None
+        Boundary mask array with dtype of bool or 2-valued uint8.
+
+    Returns
+    -------
+    np.ndarray or None
+        Boolean mask array, or None if input was None.
+
+    Raises
+    ------
+    ValueError
+        If the boundary is not a valid binary or boolean array.
+    """
     if boundary is None:
         # print("No boundary provided, returning None.")
         return None
@@ -90,7 +149,38 @@ def check_and_cast_boundary(boundary):
 
 
 def check_and_assign_segment_list(segments, init_segments,  last_segments, erosion_steps =None, n_threhsolds=None):
+    """
+    Generate a list of segment counts per step, supporting flexible control for adaptive seed.
+    For both adaptive erosion and adaptive threshold modes.
     
+    Parameters
+    ----------
+    segments : int or list of int
+        Number of connected components to retain. Can be fixed or step-specific.
+    init_segments : int or None
+        Custom number for the first step. Ignored if `segments` is a list.
+    last_segments : int or None
+        Custom number for the last step. Ignored if `segments` is a list.
+    erosion_steps : int, optional
+        Number of erosion steps. Mutually exclusive with `n_threhsolds`.
+    n_threhsolds : int, optional
+        Number of thresholds. Mutually exclusive with `erosion_steps`.
+
+    Returns
+    -------
+    list of int
+        List of segment counts for each step.
+
+    Raises
+    ------
+    ValueError
+        If configuration is ambiguous or inconsistent.
+    ValueError
+        If length of `segments` list does not match expected length.
+        Erosion steps + 2 in adaptive erosion mode, or n_threhsolds + 1 in adaptive threshold mode.
+    TypeError
+        If `segments` is neither int nor list.
+    """    
     # Assert that only one of erosion_steps or n_threhsolds can be not None
     if (erosion_steps is not None) and (n_threhsolds is not None):
         raise ValueError("Only one of 'erosion_steps' or 'n_threhsolds' can be not None.")
@@ -113,11 +203,11 @@ def check_and_assign_segment_list(segments, init_segments,  last_segments, erosi
     elif isinstance(segments, list):
         if init_segments is not None or last_segments is not None:
             raise ValueError(
-                "When 'segments' is a list, please do not use 'init_segments', 'mid_segments', or 'last_segments' to avoid ambiguity."
+                "When 'segments' is a list, please do not use 'init_segments' or 'last_segments' to avoid ambiguity."
             )
         if len(segments) != length:
             raise ValueError(
-                f"If 'segments' is a list, its length must be erosion_steps +2 or n_threhsolds +1 = {length}"
+                f"If 'segments' is a list, its length must be erosion_steps +2 in adaptive erosion mode, or n_threhsolds +1 in adaptive threshold mode."
             )
         segments_list = segments
     else:
@@ -126,6 +216,23 @@ def check_and_assign_segment_list(segments, init_segments,  last_segments, erosi
     return segments_list
     
 def check_and_assign_base_name(base_name, img_path, default_base_name):
+    """
+    Determine a base name for output files from input name or fallback.
+
+    Parameters
+    ----------
+    base_name : str or None
+        Optional name to use.
+    img_path : str or None
+        Path to input image file.
+    default_base_name : str
+        Fallback name if none is found.
+
+    Returns
+    -------
+    str
+        Selected base name.
+    """
     if base_name is None:
         if img_path is None:
             base_name = default_base_name
@@ -134,6 +241,29 @@ def check_and_assign_base_name(base_name, img_path, default_base_name):
     return base_name
 
 def check_and_assign_threshold(threshold, upper_threshold):
+    """
+    Validate and convert a single threshold pair to integers.
+    Used in adaptive erosion mode.
+
+    Parameters
+    ----------
+    threshold : int, float, or list of int
+        Lower threshold value or list with one element.
+    upper_threshold : int, float, or list of int, optional
+        Optional upper threshold for range.
+
+    Returns
+    -------
+    tuple of int or None
+        (threshold, upper_threshold)
+
+    Raises
+    ------
+    ValueError
+        For invalid input types or threshold logic.
+    """
+    
+    
     if isinstance(threshold, list):
         assert len(threshold) == 1, "If threshold is a list, it must have only one element."
         threshold = threshold[0]
@@ -161,12 +291,28 @@ def check_and_assign_threshold(threshold, upper_threshold):
     return threshold, upper_threshold
 
 def check_and_assign_thresholds(thresholds, upper_thresholds, reverse=False):
-    """ Check and assign thresholds and upper thresholds, turn them all to int.
-    Args:
-        thresholds (int, float, list): Thresholds to be checked and assigned.
-        upper_thresholds (int, float, list, optional): Upper thresholds to be checked and assigned. Defaults to None.
-    Returns:
-        tuple: A tuple containing the processed thresholds and upper thresholds as lists.
+    """
+    Validate and standardize lists of thresholds and upper thresholds.
+
+    Parameters
+    ----------
+    thresholds : int, float, or list of int
+        Lower threshold(s).
+    upper_thresholds : int, float, list of int, or None
+        Upper threshold(s). Can be None.
+    reverse : bool, default=False
+        Whether to check that thresholds are decreasing instead of increasing.
+
+    Returns
+    -------
+    tuple of list[int], list[int or None]
+        Processed thresholds and upper thresholds.
+
+    Raises
+    ------
+    ValueError
+        If type or ordering constraints are violated.
+    TODO
     """
     if isinstance(thresholds, int):
         thresholds = [thresholds]
@@ -223,6 +369,30 @@ def check_and_assign_thresholds(thresholds, upper_thresholds, reverse=False):
     return thresholds, upper_thresholds
 
 def check_and_assign_footprint(footprints, erosion_steps , with_folder_name=False):
+    # TODO check docstring
+    # TODO add support for 2D footprints
+    """
+    Validate and construct a list of erosion footprints.
+
+    Parameters
+    ----------
+    footprints : str or list of str
+        Either a single named footprint or a list for each erosion step.
+    erosion_steps : int
+        Number of erosion steps.
+    with_folder_name : bool, default=False
+        If True, also return a folder name derived from the footprint.
+
+    Returns
+    -------
+    list of str or (list of str, str)
+        List of footprint names. If `with_folder_name`, also returns folder name.
+
+    Raises
+    ------
+    ValueError
+        If footprint is not valid or list length does not match erosion steps.
+    """
     if footprints is None:
         footprints = "ball"
     
@@ -455,12 +625,6 @@ input_val_make_seeds = {
         "required": True,
         "description": "Output directory path as a string."
     },
-    # "output_log_file": {
-    #     "type": str,
-    #     "required": True,
-    #     "description": "Output log",
-    #     "check_extension": ".json"
-    # },
     "footprints": {
         "type": str,
         "required": True,
@@ -499,13 +663,7 @@ input_val_make_seeds = {
         'default': None,
         "description": "base_name for naming output files and folders."
     }, 
-}
-
-
-
-input_val_make_seeds_all = input_val_make_seeds.copy()
-
-mesh_dict = {
+    
     "is_make_meshes": {
         "type": bool,
         "required": False,
@@ -527,17 +685,17 @@ mesh_dict = {
         "default": 1,
         "description": "Step size in Marching Cubes alogrithms, Default is 1"
     },
-}
-
-input_val_make_seeds_all.update(mesh_dict)
-# input_val_make_seeds_all['footprints']['required'] = False
-# input_val_make_seeds_all.pop("footprints")
-input_val_make_seeds_all["footprints"] =  {
-        "type": (str,list),
+    "footprints": {
+            "type": (str,list),
         "required": False,
         "default": None,
         "description": "Footprints for morphological transformation"
+    }
 }
+
+
+
+
 
 
 input_val_make_grow = {
@@ -677,9 +835,31 @@ input_val_make_grow = {
         'default': 50,
         "description": "The minimum difference to consider there is a growth in a dilation iteration"
     },    
+    
+    "is_make_meshes": {
+        "type": bool,
+        "required": False,
+        "default": False
+    },
+    "downsample_scale": {
+        "type": int,
+        "min": 1,
+        "max": 100,
+        "required": False,
+        "default":10,
+        "description": "Scale for downsampling"
+    },
+    "step_size": {
+        "type": int,
+        "min": 1,
+        "max": 10,
+        "required": False,
+        "default": 1,
+        "description": "Step size in Marching Cubes alogrithms, Default is 1"
+    }
 }
 
-input_val_make_grow.update(mesh_dict)
+
 
 input_val_make_adaptive_seed = {
 

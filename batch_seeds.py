@@ -40,7 +40,7 @@ def run_batch_seeds(file_path):
         ## Initial the config and optional parameters for each row
         yaml_config.pop("csv_path", None)
         config = config_core.merge_row_and_yaml_no_conflict(dict(row), yaml_config)
-        optional_params = config_core.validate_input_yaml(config, config_core.input_val_make_seeds_all)
+        optional_params = config_core.validate_input_yaml(config, config_core.input_val_make_seeds)
         try:           
                
             _,_ = make_seeds.make_seeds(
