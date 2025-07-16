@@ -56,6 +56,9 @@ Batch mode allows you to grow segmentations for multiple images in a single run 
 python sprout.py --grow --batch --config path/to/batch_config.yaml
 ```
 
+Templates of the configuration file and the csv file for grow can be found at: [`../template/make_grow.yaml`](../template/batch_grow.yaml) and [../template/grow_input.csv](../template/grow_input.csv]).
+
+
 ### New required YAML parameter for batch mode:
 
 | Parameter  | Required | Type  | Description                                                                      |

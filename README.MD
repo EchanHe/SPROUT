@@ -4,11 +4,10 @@ _A semi-automated, threshold-based segmentation toolkit for 2D/3D grayscale imag
 - [Introduction](#introduction)
 - [Prerequisites](#prerequisites)
 - [Usage](#usage)
-  - [Input Data Format](#input-data-format)
-  - [Seed Generation](#seed-generation)
-  - [Merged Seed Generation](#merged-seed-generation)
-  - [Seed Growth](#seed-growth)
-  - [Batch Processing Pipelines](#batch-processing-pipelines)
+   - [Input Data Format](#input-data-format)
+   - [Seed Generation](#-run-seed-generation)
+   - [Adaptive Seed Generation](#-run-adaptive-seed-generation)
+   - [Growth](#-run-growth)
 - [View & Edit (napari)](#view--edit-napari)
 - [Demo Results](#demo-results)
 - [Extras](#extra-features)
@@ -81,25 +80,28 @@ The SPROUT plugin will appear under the Plugins menu in the napari UI.
 You can use other tools, for detail please see: [Extras](#extra-features)
 
 
+## ⚙️ Usage
 
-## Usage
-
-SPROUT follows a **three-step workflow** for multi-class segmentation:  
+SPROUT follows a **two-step workflow** for multi-class segmentation:
 
 1. **Seed Generation**  
-   Identify and segment individual components within a **2D or 3D image** by mainly tuning **thresholding and erosion**. This step generates candidate seeds for further processing. Alternatively, a function called merged seeds generation can be used to generate better seeds.
+   The goal of this step is to reduce the regions of the image by breaking it into multiple distinct components (splits). There are two strategies:
+   
+   - [**Vanilla seed generation**](#-run-seed-generation): generate multiple seeds by varying configurations such as thresholds and erosion steps.
+   - [**Adaptive seed generation**](#-run-adaptive-seed-generation): automatically combine information across seeds from different configurations to produce a often better and final seed.
+2. **Growth**  
+   [This step](#-run-growth) grows a seed by expanding the reduced components back toward their full target shapes. Growth is guided by image intensity and connectivity.
 
-2. **Candidate Seed Selection**  
-   Review and choose the candidate seed for growth. This ensures that the segmentation process focuses on the desired regions.  
+**🧪 Interactive Inspection & Editing**
 
-3. **Growth**  
-   Expand the candidate seed to match the target regions, ensuring accurate segmentation of structures within the image.  
+In practice, both seed and grow results often require **visualisation, quality checking, or manual editing**, depending on your segmentation goals.
+
+To support this, SPROUT is fully integrated into the **Napari** ecosystem as a plugin, please see []. 
 
 
 
 ![workflow](./material/flowchart.png)
 
-A detailed tutorial with step-by-step instructions and screenshots is available in the [`./material/`](./material/) directory.
 
 
 ### **Input Data Format**
@@ -115,7 +117,7 @@ SPROUT processes 2D and 3D grayscale images stored in **TIFF (`.tif`, `.tiff`) f
 **Unsupported inputs:** Color images.
 
 Two low-resolution scans are available in `./data`, including a **dog skeleton** `demo_dog.tiff` and a **foraminifera chamber segmentation** `demo_foram_segmentation.tif`.  
-Additional demo data for the tutorial can be found [here](https://zenodo.org/records/14358829).
+Additional demo data can be found [here](https://zenodo.org/records/14358829).
 
 ### 🌰 Run seed generation
 
@@ -126,7 +128,6 @@ python sprout.py --seeds --config path/to/seed_config.yaml
 **in batch mode**
 ```bash
 python sprout.py --seeds --batch --config path/to/batch_seed.yaml
-
 ```
 
 For full details on YAML parameters and other configs see:
@@ -134,6 +135,25 @@ For full details on YAML parameters and other configs see:
 
 For example, see the YAML configuration files in `./template/`.
 
+### 🧠 Run Adaptive Seed Generation
+
+**on a single image**
+```bash
+python sprout.py --adaptive_seed --config path/to/adaptive_seed_config.yaml
+```
+
+**in batch mode**
+
+```bash
+python sprout.py --adaptive_seed --batch --config path/to/batch_adaptive_seed.yaml
+```
+
+For full details on YAML parameters and other configs see:
+
+-   [Adaptive seed configuration options](./docs/config_adaptive_seed.md)
+    
+
+For example, see the YAML configuration files in `./template/`.
 
 ### 🌱 Run Growth
 
@@ -144,14 +164,12 @@ python sprout.py --grow --config path/to/grow_config.yaml
 **in batch mode**
 ```bash
 python sprout.py --grow --batch --config path/to/batch_grow.yaml
-
 ```
 
 For full details on YAML parameters and other configs see:
 - [Growth configuration options](./docs/config_grow.md)
 
 For example, see the YAML configuration files in `./template/`.
-
 
 
 

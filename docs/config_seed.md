@@ -1,4 +1,4 @@
-# Seed Generation Config Parameters (`--seeds`)
+## 🌰 Seed Generation Config Parameters (`--seeds`)
 
 ```bash
 python sprout.py --seeds --config path/to/config.yaml
@@ -44,7 +44,7 @@ We are currently using napari to render our results, so if you only want to visu
 
 ---
 
-📌 For a complete example, see: [`configs/sample_seed.yaml`](../configs/sample_seed.yaml)
+
 
 
 ## Seed Generation Config Parameters in batch (`--seeds`)
@@ -54,6 +54,9 @@ Batch mode allows you to generate seeds for multiple images in a single run usin
 ```bash
 python sprout.py --seeds --batch --config path/to/batch_config.yaml
 ```
+
+Templates of the configuration file and the csv file for grow can be found at: [`../template/make_seeds.yaml`](../template/batch_seeds.yaml) and [../template/seeds_input.csv](../template/seeds_input.csv]).
+
 
 ### New required YAML parameter for batch mode:
 

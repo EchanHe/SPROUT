@@ -571,7 +571,7 @@ def validate_input_yaml(config, rules):
 
 
     if errors:
-        raise ValueError("\n".join(errors) + "\n\nPlease check the corresponding template .yaml file in the ./template/ folder")
+        raise ValueError("\n".join(errors) + "\n\nPlease check README.md and templates .yaml file in the ./template/ folder")
 
     print("Config file is valid!\n")
     return optional_values
@@ -1301,7 +1301,7 @@ if __name__ == "__main__":
             print("Error when valid make_adaptive_seed", e)
         
         try:
-            validate_input_yaml(new_config, input_val_make_seeds_all)
+            validate_input_yaml(new_config, input_val_make_seeds)
         except Exception as e:
             print("Error when valid make_seeds", e)  
 
