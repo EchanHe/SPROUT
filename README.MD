@@ -3,7 +3,7 @@ _A semi-automated, threshold-based segmentation toolkit for 2D/3D grayscale imag
 
 - [Introduction](#introduction)
 - [Prerequisites](#prerequisites)
-- [Usage](#usage)
+- [Usage](#️-usage)
    - [Input Data Format](#input-data-format)
    - [Seed Generation](#-run-seed-generation)
    - [Adaptive Seed Generation](#-run-adaptive-seed-generation)
