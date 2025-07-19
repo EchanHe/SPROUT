@@ -6,18 +6,18 @@ num_threads: 2
 
 # A list of thresholds for seed generation
 # Seeds will be generated based on each individual threshold
-thresholds: [140,130,120]
+# thresholds: [140,130,120]
 
 # An int for the erosion iteration for seed generation
 # The current version will save seeds every iteration until erosion_steps
-erosion_steps: 3
+# erosion_steps: 3
 
 # Integer >=1, The algorithm keeps top <segments> largest disconnected components
 segments: 30
 # Output folder for the seeds
 
 # The name of the output folder
-output_folder: "./result/demo_dog/seeds_all"
+output_folder: "./result/batch_seeds"
 
 
 

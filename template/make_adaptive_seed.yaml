@@ -1,5 +1,5 @@
 # Image path
-img_path: "./data/demo_dog.tiff"
+img_path: "./demo_data/dog_img.tif"
 
 # num of threads, it would be best to match the length of target_thresholds
 num_threads: 5
@@ -17,7 +17,7 @@ erosion_steps: 0
 segments: 30
 
 # Output Folder
-output_folder: "./result/demo_dog/seeds_merged"
+output_folder: "./result/demo_dog/adaptive_seed"
 
 #### Optional inputs ####
 

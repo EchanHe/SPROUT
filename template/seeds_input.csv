@@ -1,3 +1,3 @@
-img_path,seed_threshold,erosion_steps
-./data/demo_data/foram_seg.tif,[1],10
-./data/demo_data/dog_fore_right_resize.tiff,"[100, 110, 120, 130, 140,150,160,170,180,190,200]",0
+img_path,thresholds,erosion_steps
+./demo_data/foram_img.tif,[1],10
+./demo_data/dog_img.tif,"[100, 110, 120, 130, 140,150,160,170,180,190,200]",0

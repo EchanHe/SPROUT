@@ -1,10 +1,10 @@
 # The input img_path of input image
 
-img_path: "./data/demo_dog.tiff"
+img_path: "./demo_data/foram_img.tif"
 
 
 # The input path of input seed
-seg_path: "./result/demo_dog/seeds_merged/Merged_seed_ero_0/Merged_seed_ero_0_sorted.tif"
+seg_path: "./demo_data/foram_seed.tif"
 
 
 
@@ -12,20 +12,19 @@ seg_path: "./result/demo_dog/seeds_merged/Merged_seed_ero_0/Merged_seed_ero_0_so
 # A list of thresholds that the grow algorithm is growing on
 # Order matters, normally from high to low (available space to grow: from less to more)
 # If there is only one threshold, please also include the []
-thresholds: [200, 190, 180, 170, 160, 150, 140, 130, 120, 110, 100]
+thresholds: [255]
 
 
 # A list of dilation steps to grow on each threshold
 # Order matters, and should have the same length to thresholds
 # one element example: dilation_steps: [30]
-dilation_steps: [5,5,5,5,5,5,5,5,5,5,5]
-# dilation_steps: [30]
+dilation_steps: [30]
 
 # Can be stop or overwrite
 touch_rule: "stop"
 # The name of the output folder
 # A folder of workspace + output_folder
-output_folder: "./result/demo_dog/grow"
+output_folder: "./result/demo_foram/grow"
 
 # Number of threads
 num_threads: 4
@@ -94,9 +93,9 @@ min_growth_size: 50
 
 ## Optional parameters: saving mesh ##
 # Is saving meshes, default is False
-is_make_meshes: False
-# Scale for downsampling the meshes, Default is 10
-downsample_scale: 10
-# Step size in Marching Cubes alogrithms, Default is 1
-# The higher number makes the mesh simpler
-step_size: 1
+# is_make_meshes: False
+# # Scale for downsampling the meshes, Default is 10
+# downsample_scale: 10
+# # Step size in Marching Cubes alogrithms, Default is 1
+# # The higher number makes the mesh simpler
+# step_size: 1

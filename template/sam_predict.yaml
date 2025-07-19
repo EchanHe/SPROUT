@@ -1,0 +1,49 @@
+# Path to the input grayscale image (2D or 3D)
+img_path: "./data/demo/2d_cell.tif"
+
+# Path to the segmentation mask used to generate prompts
+seg_path: "./data/demo/2d_cell_seed.tif"
+
+# Folder to save all generated prompts, intermediate images and final outputs
+output_folder: "./result/demo_cell_sam"
+
+# The name of the final output file (default: use image name)
+# output_filename: "final_segmentation.tif"
+
+# Number of positive points to sample for each class
+n_points_per_class: 3
+
+# Whether to sample negative points from each *other* class separately
+# Default is false, in which case all other regions are merged as "negative"
+sample_neg_each_class: True
+
+# Number of negative points to sample (per class or per other class, depending on above)
+negative_points: 1
+
+# Type of prompt to use: either 'point' or 'bbox'
+# 'point' uses coordinate prompts, 'bbox' uses bounding box
+prompt_type: "point"
+
+# Whether to use per-class majority voting and save each class mask
+# If True, will generate separate masks for each class and then fuse
+# per_cls_mode: True
+
+# ========== SAM Model Selection ========== #
+
+# Which model to use: 'sam1' (original Meta SAM) or 'sam2' (Hiera-SAM)
+which_sam: "sam1"
+
+# Checkpoint for SAM1
+sam_checkpoint: "../segment-anything-main/checkpoints/sam_vit_h_4b8939.pth"
+
+# Model type for SAM1, such as 'vit_b', 'vit_l', or 'vit_h'
+sam_model_type: "vit_h"
+
+# # Checkpoint path for SAM2
+# sam2_checkpoint: "../sam2/checkpoints/sam2.1_hiera_large.pt"
+
+# # Config path for SAM2 model
+# sam2_model_cfg: "../sam2/configs/sam2.1/sam2.1"
+
+# # Optional custom checkpoints
+# custom_checkpoint: ~

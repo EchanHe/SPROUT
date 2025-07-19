@@ -3,21 +3,23 @@ csv_path: "./template/grow_input.csv"
 
 # A list of thresholds that the grow algorithm is growing on
 # Order matters, normally from high to low (available space to grow: from less to more)
-# If there is only one threshold, please also include the []
-thresholds: [200, 190, 180, 170, 160, 150, 140, 130, 120, 110, 100]
+# Csv file has the thresholds
+
+# thresholds: [200, 190, 180, 170, 160, 150, 140, 130, 120, 110, 100]
 
 
 # A list of dilation steps to grow on each threshold
 # Order matters, and should have the same length to thresholds
-# one element example: dilation_steps: [30]
-dilation_steps: [5,5,5,5,5,5,5,5,5,5,5]
-# dilation_steps: [30]
+
+# Csv file has the dilation steps
+# dilation_steps: [5,5,5,5,5,5,5,5,5,5,5]
+
 
 # Keep it "stop for now"
 touch_rule: "stop"
 # The name of the output folder
 # A folder of workspace + output_folder
-output_folder: "./result/demo_dog/grow"
+output_folder: "./result/batch_grow"
 
 # Save the grow result every n iters
 save_every_n_iters: 5
@@ -85,9 +87,9 @@ min_growth_size: 50
 
 ## Optional parameters: saving mesh ##
 # Is saving meshes, default is False
-is_make_meshes: False
-# Scale for downsampling the meshes, Default is 10
-downsample_scale: 10
-# Step size in Marching Cubes alogrithms, Default is 1
-# The higher number makes the mesh simpler
-step_size: 1
+# is_make_meshes: False
+# # Scale for downsampling the meshes, Default is 10
+# downsample_scale: 10
+# # Step size in Marching Cubes alogrithms, Default is 1
+# # The higher number makes the mesh simpler
+# step_size: 1

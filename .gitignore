@@ -3,6 +3,7 @@ PipelineGrowMesh.*
 PipelineSeedMesh.*
 PipelineSeedGrowMesh.py
 
+sprout_temp/*
 result/*
 json_configs/*
 old_codes/*

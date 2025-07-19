@@ -8,16 +8,16 @@ num_threads: 5
 # If the value is just one number, or a list of one element, seeds will merged on erosions (from no-erosion to set erosion)
 # If the value is a list, seeds will be merged on thresholds (from low to high)
 # Seeds will be generated based on each individual threshold
-thresholds: [100, 110, 120, 130, 140,150,160,170,180,190,200]
+# thresholds: [100, 110, 120, 130, 140,150,160,170,180,190,200]
 
 # Number of erosions
-erosion_steps: 0
+# erosion_steps: 0
 
 # Integer >=1, The algorithm keeps top <segments> largest disconnected components
 segments: 30
 
 # Output Folder
-output_folder: "./result/demo_dog/seeds_merged"
+output_folder: "./result/batch_adaptive_seed"
 
 #### Optional inputs ####
 
@@ -42,7 +42,7 @@ no_split_max_iter: 3
 min_size: 5
 
 # Minimum proportion to consider a split. Defaults is 0.01.
-min_split_ratio: 0.01
+min_split_prop: 0.01
 
 # Minimum proportion of (sub-segments from next step)/(current segments) to consider a split (0-1).
 # Defaults is 0.
@@ -51,8 +51,11 @@ min_split_total_ratio: 0
 # Save results at every iteration. Defaults is False.
 save_every_iter: True
 
-# Prefix for output file names. Defaults is "Merged_seed".
-name_prefix: "merged_seed"
+
+# The base name of output, default is None, will try to use the image name
+# If img_path is None, it will be "adapt_seed"
+# base_name: ~
+
 # Number of segments for the first seed, 
 # Defaults is None.
 # A small number of make the initial sepration faster
@@ -60,10 +63,11 @@ name_prefix: "merged_seed"
 init_segments: ~
 
 # How to erode your images, 
-# Default is "ball", it can be either a string, 
+# Default is None, which is using "ball"
+# it can be either a string, 
 # or a list of string that matches the number of erosions
 # Current supports 
 #'ball' and 'cube' :Erosion all directions. 
 #'ball_XY', 'ball_XZ', 'ball_YZ': Erosion on the Plane. 
 # 'X', 'Y', 'Z': Erosion on the axis.
-footprints: "ball" 
+# footprints: None

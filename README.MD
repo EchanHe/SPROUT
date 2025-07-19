@@ -112,7 +112,7 @@ SPROUT processes 2D and 3D grayscale images stored in **TIFF (`.tif`, `.tiff`) f
 
 **Unsupported inputs:** Color images.
 
-Two low-resolution scans are available in `./data`, including a **dog skeleton** `demo_dog.tiff` and a **foraminifera chamber segmentation** `demo_foram_segmentation.tif`.  
+This repo has a few small scans for testing in `./demo_data`, including a **dog skeleton** `dog_img.tif`, a **foraminifera chamber segmentation** `foram_img.tif` and a 2D cell microscopy image `2d_cell.tif`. Their corresponding seed images are also provided in the same directory.  
 Additional demo data can be found [here](https://zenodo.org/records/14358829).
 
 ### 🌰 Run seed generation
