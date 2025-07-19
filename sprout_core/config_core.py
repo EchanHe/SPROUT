@@ -1150,6 +1150,114 @@ input_val_make_junctions =  {
 }
 
 
+input_val_sam_run = {
+    "img_path": {
+        "type": str,
+        "required": True,
+        "description": "Path to input image",
+        "check_exist": True,
+        "check_extension": (".tif", ".tiff", ".png")
+    },
+    "seg_path": {
+        "type": str,
+        "required": True,
+        "description": "Path to input segmentation",
+        "check_exist": True,
+        "check_extension": (".tif", ".tiff", ".png")
+    },
+    "n_points_per_class": {
+        "type": int,
+        "min": 1,
+        "required": False,
+        "default": 3,
+        "description": "Number of positive points sampled per class"
+    },
+    "prompt_type": {
+        "type": str,
+        "required": False,
+        "default": "point",
+        "description": "Prompt type for SAM",
+        "choices": ["point", "bbox"]
+    },
+    "output_folder": {
+        "type": str,
+        "required": True,
+        "description": "Folder to save prompt and segmentation outputs"
+    },
+    "output_filename": {
+        "type": str,
+        "required": False,
+        "default": None,
+        "description": "Filename of final merged segmentation"
+    },
+    "device": {
+        "type": str,
+        "required": False,
+        "default": "cuda",
+        "description": "Device to run SAM model on (e.g., 'cuda', 'cpu')"
+    },
+    "sample_neg_each_class": {
+        "type": bool,
+        "required": False,
+        "default": False,
+        "description": "If True, sample negative points for each non-target class individually"
+    },
+    "negative_points": {
+        "type": int,
+        "min": 0,
+        "required": False,
+        "default": 1,
+        "description": "Number of negative points sampled per class"
+    },
+    "per_cls_mode": {
+        "type": bool,
+        "required": False,
+        "default": False,
+        "description": "Whether to perform per-class majority vote and fusion"
+    },
+    "which_sam": {
+        "type": str,
+        "required": False,
+        "default": "sam1",
+        "choices": ["sam1", "sam2"],
+        "description": "Select whether to use SAM1 or SAM2 model"
+    },
+    "sam_checkpoint": {
+        "type": str,
+        "required": False,
+        "default": None,
+        "description": "Path to the SAM1 checkpoint file",
+        "check_exist": True
+    },
+    "sam_model_type": {
+        "type": str,
+        "required": False,
+        "default": None,
+        "description": "SAM1 model architecture (e.g., vit_b, vit_l, vit_h)"
+    },
+    "sam2_checkpoint": {
+        "type": str,
+        "required": False,
+        "default": None, 
+        "description": "Path to the SAM2 checkpoint file",
+        "check_exist": True
+    },
+    "sam2_model_cfg": {
+        "type": str,
+        "required": False,
+        "default": None,
+        "description": "Config file for SAM2 model",
+        "check_exist": True
+    },
+    "custom_checkpoint": {
+        "type": str,
+        "required": False,
+        "default": None,
+        "description": "Path to the custom checkpoint file",
+        "check_exist": True
+    }   
+}
+
 def return_thre_value(input_config, img):
     if isinstance(input_config, (int, float)):
         return input_config
