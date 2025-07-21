@@ -145,7 +145,7 @@ def sam_predict(img_path,
     else:
         # base_temp_dir = os.path.join(tempfile.gettempdir() ,"sprout", f"{timestamp}" )
         
-        base_temp_dir = os.path.join(output_folder ,"tempfile" ,axis)
+        base_temp_dir = os.path.join(output_folder ,"tempfile" )
         output_prompt_dir = os.path.join(base_temp_dir, "prompts")
         output_img_dir = os.path.join(base_temp_dir, "imgs")
         print(f"Using temporary output folders:\n  Prompts: {output_prompt_dir}\n  Images:  {output_img_dir}")

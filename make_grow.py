@@ -128,9 +128,9 @@ def dilation_one_iter_mp(input_mask, threshold_binary,
     
     if boundary is not None:
         result[boundary] = 0
-    
-    result[threshold_binary==False] = 0  
-    
+
+    result[(non_bg_mask ==False) & (threshold_binary==False)] = 0
+
     return result
 
         

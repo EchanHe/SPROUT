@@ -277,7 +277,7 @@ def check_and_assign_threshold(threshold, upper_threshold):
     if upper_threshold is None:
         upper_threshold = None 
     elif isinstance(upper_threshold, list):
-        assert len(threshold) == 1, "If threshold is a list, it must have only one element."
+        assert len(upper_threshold) == 1, "If threshold is a list, it must have only one element."
         upper_threshold = upper_threshold[0]
     elif isinstance(upper_threshold, float):
         upper_threshold = int(upper_threshold) 
