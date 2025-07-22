@@ -33,7 +33,7 @@ def parse_args():
     parser.add_argument("--custom_checkpoint", type=str, default=None, help="Optional custom checkpoint path")
     return parser.parse_args()
 
-def run_yaml(file_path):
+def run_sam_yaml(file_path):
     _, extension = os.path.splitext(file_path)
     print(f"processing config the file {file_path}")
 
@@ -80,6 +80,10 @@ def sam_predict(img_path,
     Main function to run SAM segmentation and save results.
     """
 
+    log_dict = {
+        "img_path": img_path,
+        "seg_path": seg_path,
+        "output_folder": output_folder}
     timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
     
     all_sam_dirs = {}
@@ -189,14 +193,15 @@ def sam_predict(img_path,
             
         )
     
+    return seg_fused, log_dict
 
 # main execution
 if __name__ == "__main__":
     
-    run_yaml("./template/sam_predict.yaml")
+    run_sam_yaml("./template/sam_predict.yaml")
 
     # To prevent running the code below, simply comment it out or remove it.
-    # Alternatively, you can use sys.exit() to stop execution after run_yaml if needed.
+    # Alternatively, you can use sys.exit() to stop execution after run_sam_yaml if needed.
 
     import sys
     sys.exit()

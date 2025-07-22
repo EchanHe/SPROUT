@@ -1,0 +1,3 @@
+img_path,seg_path,
+./demo_data/foram_img.tif,./demo_data/foram_seed.tif
+./demo_data/dog_img.tif,./demo_data/dog_seed.tif

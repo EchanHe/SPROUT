@@ -167,6 +167,21 @@ For full details on YAML parameters and other configs see:
 
 For example, see the YAML configuration files in `./template/`.
 
+### 🧠 Run Foundation Model Prediction
+
+**on a single image or a folder of images**
+```bash
+python sprout.py --sam --config path/to/config.yaml
+```
+
+**in batch mode**
+```bash
+python sprout.py --sam --batch --config path/to/batch_config.yaml
+```
+For full details on YAML parameters and other configs see:
+- [Foundation Model configuration options](./docs/config_sam.md)
+
+For example, see the YAML configuration files in `./template/`.
 
 ### ⚡ Parallelization Support
 

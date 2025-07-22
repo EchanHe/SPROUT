@@ -55,7 +55,7 @@ Batch mode allows you to generate seeds for multiple images in a single run usin
 python sprout.py --seeds --batch --config path/to/batch_config.yaml
 ```
 
-Templates of the configuration file and the csv file for grow can be found at: [`../template/make_seeds.yaml`](../template/batch_seeds.yaml) and [../template/seeds_input.csv](../template/seeds_input.csv]).
+Templates of the configuration file and the csv file for grow can be found at: [`../template/batch_seeds.yaml`](../template/batch_seeds.yaml) and [../template/seeds_input.csv](../template/seeds_input.csv]).
 
 
 ### New required YAML parameter for batch mode:

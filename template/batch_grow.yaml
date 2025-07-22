@@ -1,3 +1,6 @@
+# This csv must have the following columns:
+# img_path, seg_path
+# Other columns are optional
 csv_path: "./template/grow_input.csv"
 
 

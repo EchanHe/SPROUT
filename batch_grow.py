@@ -8,13 +8,6 @@ import pandas as pd
 import sprout_core.config_core as config_core
 import sprout_core.sprout_core as sprout_core
 
-
-def load_config_yaml(config, parent_key=''):
-    for key, value in config.items():
-        if isinstance(value, dict):
-            load_config_yaml(value, parent_key='')
-        else:
-            globals()[parent_key + key] = value
             
 
 
