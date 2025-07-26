@@ -579,27 +579,29 @@ class SeedGenerationWidget(QWidget):
             #         return_for_napari=True
             #     )
             # elif selected_method == "Adaptive (Erosion)_ignore":
-            #     seeds_dict, _, _ = make_adaptive_seed_ero(
-            #         img=self.current_image,
-            #         boundary=boundary,
-            #         threshold=lower,
-            #         upper_threshold=upper,
-            #         erosion_steps=erosion,
-            #         segments=segments,
-            #         output_folder=output_folder,
-            #         num_threads=4,
-            #         footprints=None,
-            #         sort=True,
-            #         no_split_max_iter=3,
-            #         min_size=5,
-            #         min_split_ratio=0.01,
-            #         min_split_total_ratio=0,
-            #         save_every_iter=True,
-            #         init_segments=None,
-            #         split_size_limit=(None, None),
-            #         split_convex_hull_limit=(None, None),
-            #         return_for_napari=True
-            #     )
+            # seeds_dict, _, _ = make_adaptive_seed_ero(
+            #     img=self.current_image,
+            #     boundary=boundary,
+            #     threshold=main_params['thresholds'],
+            #     upper_threshold=main_params['upper_thresholds'],
+            #     erosion_steps=main_params['erosion_steps'],
+            #     num_threads= main_params['num_threads'],
+                
+            #     segments=main_params['segments'],
+            #     output_folder=output_folder,
+
+            #     footprints=None,
+            #     sort=True,
+            #     no_split_max_iter=3,
+            #     min_size=5,
+            #     min_split_ratio=0.01,
+            #     min_split_total_ratio=0,
+            #     save_every_iter=True,
+            #     init_segments=None,
+            #     split_size_limit=(None, None),
+            #     split_convex_hull_limit=(None, None),
+            #     return_for_napari=True
+            # )
             # elif selected_method == "Adaptive (Thresholds)_ignore":
             #     seeds_dict, _, _ = make_adaptive_seed_thre(
             #         img=self.current_image,

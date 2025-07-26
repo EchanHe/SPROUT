@@ -39,6 +39,7 @@ Example applications and method details are provided in:
      Pandas: 2.2.1
      Scikit-image: 0.22.0
      Tifffile: 2024.2.12
+     imagecodecs: 2025.3.30
      Pyyaml: 6.0.1
      Trimesh: 4.3.1
      Matplotlib: 3.8.3
@@ -55,7 +56,7 @@ Example applications and method details are provided in:
         ```
      3. **Install dependencies**:
         ```bash
-        pip install numpy==1.26.4 pandas==2.2.1 scikit-image==0.22.0 tifffile==2024.2.12 pyyaml==6.0.1 trimesh==4.3.1 matplotlib==3.8.3 open3d==0.18.0
+        pip install numpy==1.26.4 pandas==2.2.1 scikit-image==0.22.0 tifffile==2024.2.12 pyyaml==6.0.1 trimesh==4.3.1 matplotlib==3.8.3 open3d==0.18.0 imagecodecs==2025.3.30
         ```
 
 ### 🧪 Recommended Visualization Tools

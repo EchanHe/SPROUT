@@ -54,6 +54,7 @@ def run_sam_yaml(file_path):
         prompt_type=optional_params['prompt_type'],
         sample_neg_each_class=optional_params['sample_neg_each_class'],
         negative_points=optional_params['negative_points'],
+        sample_method=optional_params['sample_method'],
         per_cls_mode=optional_params['per_cls_mode'],
         which_sam=optional_params['which_sam'],
         sam_checkpoint=optional_params['sam_checkpoint'],
@@ -69,6 +70,7 @@ def sam_predict(img_path,
                 output_filename= None,
                 sample_neg_each_class=False,
                 negative_points=1,
+                sample_method='random',
                 per_cls_mode=True,
                 which_sam='sam1',
                 sam_checkpoint="../segment-anything-main/checkpoints/sam_vit_h_4b8939.pth",
@@ -117,7 +119,8 @@ def sam_predict(img_path,
                 slice_range=None,
                 prompt_type=prompt_type,  # 'point' or 'bbox'
                 sample_neg_each_class=sample_neg_each_class,
-                negative_points=negative_points
+                negative_points=negative_points,
+                sample_method=sample_method
             )
             
             

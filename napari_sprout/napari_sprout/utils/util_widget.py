@@ -215,14 +215,15 @@ class ThresholdWidget(QGroupBox):
 
     def set_range_by_dtype(self, dtype):
         """Automatically set range by image dtype."""
-        if np.issubdtype(dtype, np.integer):
-            max_val = np.iinfo(dtype).max
-        elif np.issubdtype(dtype, np.floating):
-            max_val = 1.0
-        else:
-            max_val = 255
+        # if np.issubdtype(dtype, np.integer):
+        #     max_val = np.iinfo(dtype).max
+        # elif np.issubdtype(dtype, np.floating):
+        #     max_val = 1.0
+        # else:
+        #     max_val = 255
+        min_val, max_val = get_max_min_value_by_dtype(dtype)
 
-        self.set_range(0, max_val)
+        self.set_range(min_val, max_val)
 
 
     def run_preview_in_thread(self, image, callback=None):
@@ -276,6 +277,22 @@ class ThresholdWidget(QGroupBox):
         
         return binary
 
+
+def get_max_min_value_by_dtype(dtype):
+    if dtype == np.uint8:
+        return 0, 255
+    elif dtype == np.uint16:
+        return 0, 65535
+    elif dtype == np.uint32:
+        return 0, 4294967295
+    elif dtype == np.int8:
+        return -128, 127
+    elif dtype == np.int16:
+        return -32768, 32767
+    elif dtype == np.int32:
+        return -2147483648, 2147483647
+    else:
+        raise ValueError(f"Unsupported image dtype: {dtype}")
 
 def apply_threshold_preview(
     image: np.ndarray,
@@ -584,8 +601,9 @@ class MainSeedParamWidget(QGroupBox):
 
         # set default values based on previous row or image dtype
         if row == 0:
-            upper_value = self._get_img_dtype_max(current_image.dtype)
-            lower_value = 0
+            # upper_value = self._get_img_dtype_max(current_image.dtype)
+            # lower_value = 0
+            lower_value, upper_value = get_max_min_value_by_dtype(current_image.dtype)
         else:
             lower_widget = self.threshold_table.cellWidget(row - 1, 0)
             lower_value = lower_widget.value()
@@ -593,10 +611,10 @@ class MainSeedParamWidget(QGroupBox):
             upper_value = upper_widget.value()
 
         # set the range for the spinboxes
-        lower_min = 0
+        lower_min , upper_max = get_max_min_value_by_dtype(current_image.dtype)
         lower_max = upper_value
         upper_min = lower_value
-        upper_max = self._get_img_dtype_max(current_image.dtype)
+        # upper_max = self._get_img_dtype_max(current_image.dtype)
 
         # Lower threshold
         lower_spin = QSpinBox()
@@ -627,12 +645,12 @@ class MainSeedParamWidget(QGroupBox):
             max_value = 255
         elif image_dtype == np.uint16:
             max_value = 65535
-        elif image_dtype == np.uint32:
+        elif image_dtype == np.uint32 or image_dtype == np.int64:
             max_value = 4294967295
         elif image_dtype == np.float32 or image_dtype == np.float64:
             max_value = 1.0
         else:
-            max_value = 255
+            raise ValueError(f"Unsupported image dtype: {image_dtype}")
         return max_value
     
     def clean_table(self):
@@ -773,8 +791,9 @@ class MainGrowParamWidget(QGroupBox):
 
         # set default values based on previous row or image dtype
         if row == 0:
-            upper_value = self._get_img_dtype_max(current_image.dtype)
-            lower_value = 0
+            # upper_value = self._get_img_dtype_max(current_image.dtype)
+            # lower_value = 0
+            lower_value, upper_value = get_max_min_value_by_dtype(current_image.dtype)
         else:
             lower_widget = self.threshold_table.cellWidget(row - 1, 0)
             lower_value = lower_widget.value()
@@ -784,10 +803,11 @@ class MainGrowParamWidget(QGroupBox):
             dilate = dilate_widget.value()
 
         # set the range for the spinboxes
-        lower_min = 0
+        # lower_min = 0
         lower_max = upper_value
         upper_min = lower_value
-        upper_max = self._get_img_dtype_max(current_image.dtype)
+        lower_min, upper_max = get_max_min_value_by_dtype(current_image.dtype)
+        # upper_max = self._get_img_dtype_max(current_image.dtype)
 
         # Lower threshold
         lower_spin = QSpinBox()
@@ -818,17 +838,18 @@ class MainGrowParamWidget(QGroupBox):
 
     def _get_img_dtype_max(self, image_dtype):
         """Set the range of the threshold spinboxes based on the image dtype."""
-        if image_dtype == np.uint8:
+        if image_dtype == np.uint8 or image_dtype == np.int8:
             max_value = 255
-        elif image_dtype == np.uint16:
+        elif image_dtype == np.uint16 or image_dtype == np.int16:
             max_value = 65535
-        elif image_dtype == np.uint32:
+        elif image_dtype == np.uint32 or image_dtype == np.int32:
             max_value = 4294967295
         elif image_dtype == np.float32 or image_dtype == np.float64:
             max_value = 1.0
         else:
-            max_value = 255
+            raise ValueError(f"Unsupported image dtype: {image_dtype}")
         return max_value
+    
     
     def clean_table(self):
         """Clear all rows in the threshold table."""

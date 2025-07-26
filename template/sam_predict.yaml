@@ -20,6 +20,14 @@ sample_neg_each_class: True
 # Number of negative points to sample (per class or per other class, depending on above)
 negative_points: 1
 
+# Method to sample points: 'kmeans', 'center_edge', 'skeleton', or 'random'
+# 'kmeans' uses KMeans clustering to find representative points,
+# 'center_edge' samples points from the center and edges of the mask,
+# 'skeleton' samples points along the skeleton of the mask,
+# 'random' samples points randomly from the mask.
+# Default is random sampling.
+# sample_method: "random"
+
 # Type of prompt to use: either 'point' or 'bbox'
 # 'point' uses coordinate prompts, 'bbox' uses bounding box
 prompt_type: "point"

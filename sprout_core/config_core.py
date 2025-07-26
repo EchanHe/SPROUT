@@ -1209,6 +1209,12 @@ input_val_sam_run = {
         "default": 1,
         "description": "Number of negative points sampled per class"
     },
+    "sample_method": {
+        "type": str,
+        "required": False,
+        "default": "random",
+        "description": "Method to sample points: 'kmeans', 'center_edge', 'skeleton', or 'random'"
+    },
     "per_cls_mode": {
         "type": bool,
         "required": False,

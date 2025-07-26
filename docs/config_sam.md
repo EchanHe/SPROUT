@@ -26,6 +26,7 @@ This mode uses **foundation models** (e.g., Segment Anything Model, SAM, SAM2) t
 | `output_filename`       | ❌        | `str`  | Name of final segmentation output file. Defaults to base name of image.                    |
 | `sample_neg_each_class` | ❌        | `bool` | Whether to sample negative points **from each other class separately** (default: `False`). |
 | `per_cls_mode`          | ❌        | `bool` | If `True`, generate individual mask per class and then fuse by majority voting.            |
+| `sample_method`      | ❌        | `str` | Method to sample points: `'kmeans'`, `'center_edge'`, `'skeleton'`, or `'random'`.   Default is `random`.  |
 | `workspace`             | ❌        | `str`  | Optional root path prefix. If set, all paths are interpreted as relative to this.          |
 
 ### SAM Config Parameters

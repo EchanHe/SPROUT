@@ -11,6 +11,10 @@ import tifffile
 from datetime import datetime
 from skimage.measure import regionprops,label
 import tempfile
+from sklearn.cluster import KMeans
+from scipy.ndimage import distance_transform_edt
+from skimage.morphology import skeletonize
+
 import sprout_core.config_core as config_core
 
 
@@ -643,6 +647,36 @@ def save_as_8bit_png(img_slice, output_path):
     Image.fromarray(img_8bit).save(output_path)
 
 
+def sample_points(mask, n=3, method='kmeans'):
+    coords = np.column_stack(np.where(mask > 0))
+    if len(coords) <= n:
+        return coords
+
+    if method == 'kmeans':
+        kmeans = KMeans(n_clusters=n, random_state=0).fit(coords)
+        return np.round(kmeans.cluster_centers_).astype(int)
+
+    elif method == 'center_edge':
+        dist = distance_transform_edt(mask)
+        center = np.unravel_index(np.argmax(dist), dist.shape)
+        edge_coords = np.column_stack(np.where((dist > 0) & (dist < 3)))
+        if len(edge_coords) >= (n - 1):
+            edge_samples = edge_coords[np.random.choice(len(edge_coords), n - 1, replace=False)]
+        else:
+            edge_samples = edge_coords
+        return np.vstack(([center], edge_samples))
+
+    elif method == 'skeleton':
+        from skimage.morphology import skeletonize
+        skel = skeletonize(mask)
+        coords = np.column_stack(np.where(skel))
+        return coords[np.random.choice(len(coords), min(n, len(coords)), replace=False)]
+
+    elif method == 'random':
+        return coords[np.random.choice(len(coords), n, replace=False)]
+    else:
+        raise ValueError(f"Unknown sampling method: {method}. Supported methods: 'kmeans', 'center_edge', 'skeleton', 'random'.")
+
 
 
 def extract_slices_and_prompts(
@@ -659,7 +693,8 @@ def extract_slices_and_prompts(
     prompt_type='point', # 'point' or 'bbox'
     per_slice_2d_input = False,
     sample_neg_each_class=False,
-    negative_points=None
+    negative_points=None,
+    sample_method='random'  # 'kmeans', 'center_edge', 'skeleton', 'random'
 ):
     assert prompt_type in ['point', 'bbox'], "prompt_type must be 'point' or 'bbox'"
 
@@ -727,11 +762,12 @@ def extract_slices_and_prompts(
                 # if len(coords) == 0:
                 #     print(f"      No pixels found for class {cls}, skipping.")
                 #     continue
-                
-                # Sample n positive points   
-                sampled = coords[np.random.choice(len(coords), min(n_points_per_class, len(coords)), replace=False)]
+
+                # Sample n positive points
+                sampled = sample_points(mask, n=n_points_per_class, method=sample_method)
                 for pt in sampled:
                     prompts.append({"point": pt[::-1].tolist(), "label": 1, "name": f"class_{cls}"})
+                    
 
                 if sample_neg_each_class:
                     # Sample negative points separately for each *other* class
