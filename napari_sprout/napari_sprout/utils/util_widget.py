@@ -494,15 +494,16 @@ class MainSeedParamWidget(QGroupBox):
         footprints = self._get_footprints()
         # assert footprints is len 1 or len == erosion_steps
 
-
-            
-        if len(footprints) == 1:
+        # Handle footprints: if empty, set to None (uses preset footprints)
+        # If provided, must be 1 (repeated) or match erosion_steps count
+        if len(footprints) == 0:
+            footprints = None
+        elif len(footprints) == 1:
             footprints = footprints * self.erosion_spin.value()
         elif len(footprints) != self.erosion_spin.value():
             raise ValueError(
                 f"Please add {self.erosion_spin.value()} footprints, got {len(footprints)}"
             )
-
 
         return {
             "num_threads": self.thread_spin.value(),
