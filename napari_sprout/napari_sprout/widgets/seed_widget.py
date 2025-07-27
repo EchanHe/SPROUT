@@ -765,11 +765,14 @@ class SeedGenerationWidget(QWidget):
                     self.upper_thresholds_list.setText(upper_threshold_str)
 
                 if 'erosion_steps' in params:
-                    self.erosion_spin.setValue(params['erosion_steps'])
+                    self.erosion_steps = params['erosion_steps']
+                    self.main_param_widget.erosion_spin.setValue(self.erosion_steps)
                 if 'num_threads' in params:
-                    self.thread_spin.setValue(params['num_threads'])
+                    self.num_threads = params['num_threads']
+                    self.main_param_widget.thread_spin.setValue(self.num_threads)
                 if 'segments' in params:
-                    self.segments_spin.setValue(params['segments'])
+                    self.segments = params['segments']
+                    self.main_param_widget.segments_spin.setValue(self.segments)
                 show_info(f"Parameters successfully loaded from {os.path.basename(file_path)}.")
 
             except Exception as e:
