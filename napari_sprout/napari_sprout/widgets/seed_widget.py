@@ -745,11 +745,31 @@ class SeedGenerationWidget(QWidget):
                 if 'thresholds' in params:
                     threshold_str = ", ".join(map(str, params.get('thresholds', [])))
                     self.lower_thresholds_list.setText(threshold_str)
-                
+                    
+                    # Populate the thresholds table with the list from YAML
+                    thresholds_list = params['thresholds']
+                    upper_thresholds_list = params.get('upper_thresholds', None)
+                    self.main_param_widget.populate_thresholds_from_list(thresholds_list, upper_thresholds_list)
+                    
+                    # Also set the threshold widget for preview functionality
+                    if thresholds_list:
+                        lower_threshold = thresholds_list[0]
+                        if upper_thresholds_list and upper_thresholds_list:
+                            upper_threshold = upper_thresholds_list[0]
+                        else:
+                            upper_threshold = 255 if lower_threshold <= 255 else lower_threshold + 100
+                        self.threshold_widget.set_thresholds(lower_threshold, upper_threshold)
+            
                 if 'upper_thresholds' in params:
                     upper_threshold_str = ", ".join(map(str, params.get('upper_thresholds', [])))
                     self.upper_thresholds_list.setText(upper_threshold_str)
 
+                if 'erosion_steps' in params:
+                    self.erosion_spin.setValue(params['erosion_steps'])
+                if 'num_threads' in params:
+                    self.thread_spin.setValue(params['num_threads'])
+                if 'segments' in params:
+                    self.segments_spin.setValue(params['segments'])
                 show_info(f"Parameters successfully loaded from {os.path.basename(file_path)}.")
 
             except Exception as e:

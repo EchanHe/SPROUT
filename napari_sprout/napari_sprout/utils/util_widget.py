@@ -329,7 +329,6 @@ class MainSeedParamWidget(QGroupBox):
         self.image_combo = image_combo  # ComboBox for selecting image layer
         # self.show_touch_rule = show_touch_rule
         
-        
         layout = QVBoxLayout()
 
         # Top rowlayout 
@@ -637,7 +636,6 @@ class MainSeedParamWidget(QGroupBox):
         current_row = self.threshold_table.currentRow()
         if current_row >= 0:
             self.threshold_table.removeRow(current_row)
-    
 
     def _get_img_dtype_max(self, image_dtype):
         """Set the range of the threshold spinboxes based on the image dtype."""
@@ -660,7 +658,55 @@ class MainSeedParamWidget(QGroupBox):
         self.footprint_table.setRowCount(0)
         self._add_footprint_row()
 
-
+    def populate_thresholds_from_list(self, thresholds_list, upper_thresholds_list=None):
+        """Populate the thresholds table with a list of thresholds from YAML import.
+        
+        Parameters
+        ----------
+        thresholds_list : list
+            List of lower threshold values
+        upper_thresholds_list : list, optional
+            List of upper threshold values. If None, will use 255 or threshold+100
+        """
+        if not thresholds_list:
+            return
+            
+        # Clear existing rows
+        self.threshold_table.setRowCount(0)
+        
+        # Check if we have an image to get dtype info
+        current_image = None
+        if self.image_combo and self.image_combo.currentText():
+            current_image = self.viewer.layers[self.image_combo.currentText()].data
+        
+        for i, lower_threshold in enumerate(thresholds_list):
+            row = self.threshold_table.rowCount()
+            self.threshold_table.insertRow(row)
+            
+            # Determine upper threshold
+            if upper_thresholds_list and i < len(upper_thresholds_list):
+                upper_threshold = upper_thresholds_list[i]
+            else:
+                # Use 255 or threshold+100 if threshold > 255
+                upper_threshold = 255 if lower_threshold <= 255 else lower_threshold + 100
+            
+            # Set range based on image dtype if available
+            if current_image is not None:
+                lower_min, upper_max = get_max_min_value_by_dtype(current_image.dtype)
+            else:
+                lower_min, upper_max = 0, 65535  # Default range
+            
+            # Lower threshold spinbox
+            lower_spin = QSpinBox()
+            lower_spin.setRange(lower_min, upper_threshold)
+            lower_spin.setValue(int(lower_threshold))
+            self.threshold_table.setCellWidget(row, 0, lower_spin)
+            
+            # Upper threshold spinbox
+            upper_spin = QSpinBox()
+            upper_spin.setRange(int(lower_threshold), upper_max)
+            upper_spin.setValue(int(upper_threshold))
+            self.threshold_table.setCellWidget(row, 1, upper_spin)
 
 
 class MainGrowParamWidget(QGroupBox):
