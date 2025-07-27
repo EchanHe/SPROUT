@@ -8,6 +8,7 @@ _A semi-automated, threshold-based segmentation toolkit for 2D/3D grayscale imag
    - [Seed Generation](#-run-seed-generation)
    - [Adaptive Seed Generation](#-run-adaptive-seed-generation)
    - [Growth](#-run-growth)
+   - [Foundation Model Segmentation](#-sproutsam-run-foundation-model-prediction)
 - [View & Edit (napari)](#view--edit-napari)
 - [Demo Results](#demo-results)
 - [Extras](#extra-features)
@@ -58,6 +59,40 @@ Example applications and method details are provided in:
         ```bash
         pip install numpy==1.26.4 pandas==2.2.1 scikit-image==0.22.0 tifffile==2024.2.12 pyyaml==6.0.1 trimesh==4.3.1 matplotlib==3.8.3 open3d==0.18.0 imagecodecs==2025.3.30
         ```
+
+### Optional: Enable **SproutSAM** (Prompt-based Segmentation with SAM/SAM2)
+
+[**SproutSAM**](#-sproutsam-run-foundation-model-prediction) is an optional module that enables prompt-based segmentation using foundation models like [SAM](https://github.com/facebookresearch/segment-anything) and [SAM2](https://github.com/facebookresearch/sam2). If you wish to use **SproutSAM**, please install the following additional dependencies:
+
+#### Core Dependencies
+
+```bash
+pip install torch torchvision torchaudio
+pip install opencv-python-headless
+```
+
+⚠️ For optimal performance, we recommend using GPU-enabled PyTorch. You can find the correct installation command based on your system here:  
+[https://pytorch.org/get-started/locally/](https://pytorch.org/get-started/locally/)
+
+#### 📦 Install Segment Anything Models
+
+You also need to install the SAM and/or SAM2 libraries:
+
+-   **[SAM (Segment Anything Model)](https://github.com/facebookresearch/segment-anything)**
+    
+    ```bash
+    git clone https://github.com/facebookresearch/segment-anything.git
+    cd segment-anything
+    pip install -e .
+    ```
+
+-   **[SAM2 (Segment Anything v2)](https://github.com/facebookresearch/sam2)**
+
+    ```bash
+    git clone https://github.com/facebookresearch/sam2.git
+    cd sam2
+    pip install -e .
+    ```
 
 ### 🧪 Recommended Visualization Tools
 
@@ -168,7 +203,7 @@ For full details on YAML parameters and other configs see:
 
 For example, see the YAML configuration files in `./template/`.
 
-### 🧠 Run Foundation Model Prediction
+### 🧠 SproutSAM: Run Foundation Model Prediction
 
 **on a single image or a folder of images**
 ```bash

@@ -3,8 +3,7 @@ import yaml
 from make_seeds import run_make_seeds
 from make_grow import run_make_grow
 from make_adaptive_seed import run_make_adaptive_seed
-from sam_predict import run_sam_yaml
-from batch_sam import run_batch_sam
+
 
 from batch_grow import run_batch_grow
 from batch_seeds import run_batch_adaptive_seed, run_batch_seeds
@@ -90,6 +89,8 @@ def main():
         else:
             run_make_adaptive_seed(args.config)
     elif args.sam:
+        from sam_predict import run_sam_yaml
+        from batch_sam import run_batch_sam
         if not args.config:
             print("[ERROR] --config is required when using --sam")
             parser.print_help()

@@ -775,24 +775,39 @@ def extract_slices_and_prompts(
                         if neg_cls == cls:
                             continue
                         neg_mask = (seg_slice == neg_cls)
-                        neg_coords = np.column_stack(np.where(neg_mask))
-                        if len(neg_coords) > 0:
-                            sampled_neg = neg_coords[np.random.choice(len(neg_coords), min(negative_points, len(neg_coords)), replace=False)]
+                        if np.any(neg_mask):
+                            sampled_neg = sample_points(neg_mask, n=negative_points, method=sample_method)
                             for pt in sampled_neg:
                                 prompts.append({"point": pt[::-1].tolist(), "label": 0, "name": f"class_{cls}"})
                         else:
                             print(f"      No negative points found for class {cls} vs {neg_cls}.")
+                        
+                        ### deprecated code for sampling negative points,
+                        # neg_coords = np.column_stack(np.where(neg_mask))
+                        # if len(neg_coords) > 0:
+                        #     sampled_neg = neg_coords[np.random.choice(len(neg_coords), min(negative_points, len(neg_coords)), replace=False)]
+                        #     for pt in sampled_neg:
+                        #         prompts.append({"point": pt[::-1].tolist(), "label": 0, "name": f"class_{cls}"})
+                        # else:
+                        #     print(f"      No negative points found for class {cls} vs {neg_cls}.")
                 else:
                     # Sample from all other non-zero, non-cls regions
                     # sample n negative points
                     other_mask = (seg_slice != cls) & (seg_slice > 0)
                     other_coords = np.column_stack(np.where(other_mask > 0))
-                    if len(other_coords) > 0:
-                        sampled_neg = other_coords[np.random.choice(len(other_coords), min(negative_points, len(other_coords)), replace=False)]
+                    if np.any(other_mask):
+                        sampled_neg = sample_points(other_mask, n=negative_points, method=sample_method)
                         for pt in sampled_neg:
                             prompts.append({"point": pt[::-1].tolist(), "label": 0, "name": f"class_{cls}"})
                     else:
                         print(f"      No negative points found for class {cls}.")
+                        
+                    # if len(other_coords) > 0:
+                    #     sampled_neg = other_coords[np.random.choice(len(other_coords), min(negative_points, len(other_coords)), replace=False)]
+                    #     for pt in sampled_neg:
+                    #         prompts.append({"point": pt[::-1].tolist(), "label": 0, "name": f"class_{cls}"})
+                    # else:
+                    #     print(f"      No negative points found for class {cls}.")
 
             elif prompt_type == 'bbox':
                 labeled = label(mask)
