@@ -55,12 +55,15 @@ def run_sam_yaml(file_path):
         sample_neg_each_class=optional_params['sample_neg_each_class'],
         negative_points=optional_params['negative_points'],
         sample_method=optional_params['sample_method'],
+        
         per_cls_mode=optional_params['per_cls_mode'],
         which_sam=optional_params['which_sam'],
         sam_checkpoint=optional_params['sam_checkpoint'],
         sam_model_type=optional_params['sam_model_type'],
         sam2_checkpoint=optional_params['sam2_checkpoint'],
-        sam2_model_cfg=optional_params['sam2_model_cfg'])
+        sam2_model_cfg=optional_params['sam2_model_cfg'],
+        custom_checkpoint=optional_params['custom_checkpoint']
+        )
 
 def sam_predict(img_path,
                 seg_path,
@@ -76,7 +79,8 @@ def sam_predict(img_path,
                 sam_checkpoint="../segment-anything-main/checkpoints/sam_vit_h_4b8939.pth",
                 sam_model_type="vit_h",
                 sam2_checkpoint="../sam2/checkpoints/sam2.1_hiera_large.pt",
-                sam2_model_cfg="../sam2/configs/sam2.1/sam2.1"
+                sam2_model_cfg="../sam2/configs/sam2.1/sam2.1",
+                custom_checkpoint=None
 ):
     """
     Main function to run SAM segmentation and save results.
@@ -135,7 +139,8 @@ def sam_predict(img_path,
                         sam_checkpoint = sam_checkpoint,
                         sam_model_type = sam_model_type, 
                         sam2_checkpoint = sam2_checkpoint,
-                        sam2_model_cfg = sam2_model_cfg)
+                        sam2_model_cfg = sam2_model_cfg,
+                        custom_checkpoint=custom_checkpoint)
             
             all_sam_dirs[axis] = sam_dir
 

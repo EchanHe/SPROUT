@@ -46,7 +46,8 @@ def run_batch_sam(file_path):
                 sam_model_type=optional_params['sam_model_type'],
                 sam2_checkpoint=optional_params['sam2_checkpoint'],
                 sam2_model_cfg=optional_params['sam2_model_cfg'],
-                sample_method= optional_params['sample_method'])
+                sample_method= optional_params['sample_method'],
+                custom_checkpoint=optional_params['custom_checkpoint'])
             df.loc[index,'output_folder'] = log_dict['output_folder']
             
         except Exception as e:
