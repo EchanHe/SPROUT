@@ -127,7 +127,7 @@ def save_overlay(image, mask, save_dir, image_name, prompt_name=None,
     h, w = image.shape[:2]
     scale = max(h, w) / 512  # 512 is a reference size, adjust as needed
     thickness = max(1, int(2 * scale))
-    radius = max(3, int(8 * scale))
+    radius = max(3, int(2 * scale))
 
     # Draw points
     if points is not None and labels is not None:

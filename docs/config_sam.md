@@ -15,7 +15,7 @@ This mode uses **foundation models** (e.g., Segment Anything Model, SAM, SAM2) t
 | `seg_path`           | ✅        | `str` | Path to the seed/segmentation mask used to generate prompts.                          |
 | `output_folder`      | ✅        | `str` | Root directory to save all outputs, including prompts, masks, and final segmentation. |
 | `n_points_per_class` | ✅        | `int` | Number of **positive points** to sample from each class.                              |
-| `negative_points`    | ✅        | `int` | Number of **negative points** to sample for each class.                               |
+| `negative_points`    | ❌        | `int` | Number of **negative points** to sample for each class. Default is None, and will use the same number as positive points. |
 | `prompt_type`        | ✅        | `str` | Type of prompt to use. Supported: `"point"` or `"bbox"`.                              |
 | `which_sam`          | ✅        | `str` | Model family: `"sam1"` (original Meta SAM) or `"sam2"` (e.g., Hiera-SAM).             |
 

@@ -17,7 +17,9 @@ n_points_per_class: 3
 sample_neg_each_class: True
 
 # Number of negative points to sample (per class or per other class, depending on above)
-negative_points: 1
+# Default is None, which use the same number as positive points
+# If set, will sample this many negative points for each class or each other class
+negative_points: ~
 
 
 # Method to sample points: 'kmeans', 'center_edge', 'skeleton', or 'random'

@@ -72,7 +72,7 @@ def sam_predict(img_path,
                 output_folder="./sam_fused_output",
                 output_filename= None,
                 sample_neg_each_class=False,
-                negative_points=1,
+                negative_points=None,
                 sample_method='random',
                 per_cls_mode=True,
                 which_sam='sam1',
@@ -98,8 +98,9 @@ def sam_predict(img_path,
     seg = tifffile.imread(seg_path)
     
     if output_filename is None:
-        output_filename = "sam_prediction"+os.path.splitext(os.path.basename(img_path))[0] + ".tif"
-    
+        output_filename = "sam_prediction_"+os.path.splitext(os.path.basename(img_path))[0] + ".tif"
+
+    output_folder=os.path.join(output_folder,os.path.splitext(os.path.basename(img_path))[0] )
     if img.ndim == 3:
     
         for axis in ['X', 'Y', 'Z']:
@@ -110,7 +111,7 @@ def sam_predict(img_path,
             output_prompt_dir = os.path.join(base_temp_dir, "prompts")
             output_img_dir = os.path.join(base_temp_dir, "imgs")
             print(f"Using temporary output folders:\n  Prompts: {output_prompt_dir}\n  Images:  {output_img_dir}")
-
+            
             
 
             outputs = sam_core.extract_slices_and_prompts(
@@ -129,13 +130,14 @@ def sam_predict(img_path,
             
             
             sam_dir = os.path.join(base_temp_dir, "sam")
+            sam_overlay_dir = os.path.join(base_temp_dir, "sam_overlay")
             sam_core.init_and_run(outputs["images_dir"], 
                         which_sam = which_sam,
                         device=None,
                         prompt_dir=outputs["prompts_dir"], 
                         multimask_output=False,
                         save_dir=sam_dir, 
-                        overlay_dir=None,
+                        overlay_dir=sam_overlay_dir,
                         sam_checkpoint = sam_checkpoint,
                         sam_model_type = sam_model_type, 
                         sam2_checkpoint = sam2_checkpoint,

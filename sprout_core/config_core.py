@@ -727,7 +727,6 @@ input_val_make_grow = {
         "type": (int,list),
         "subtype": int,
         "min": 0,
-        "max": 1000,
         "required": True,
         "description": "Number of iterations, must be a non-negative integer."
     },
@@ -1206,7 +1205,7 @@ input_val_sam_run = {
         "type": int,
         "min": 0,
         "required": False,
-        "default": 1,
+        "default": None,
         "description": "Number of negative points sampled per class"
     },
     "sample_method": {
