@@ -822,7 +822,7 @@ def make_adaptive_seed_thre(
                 break
         
         if save_every_iter and idx_threshold != len(thresholds)-2:
-            output_img_name = f'INTER_adaptive_thre_{threshold}_{upper_threshold}_ero_{ero_iter}.tif'
+            output_img_name = f'INTER_adaptive_thre_{threshold}_{upper_threshold}_ero_{erosion_steps}.tif'
             combine_seed,_ = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort,
                                                   top_n=segments_list[-1])
             

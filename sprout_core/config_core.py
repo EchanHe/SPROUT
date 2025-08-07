@@ -1217,7 +1217,7 @@ input_val_sam_run = {
     "per_cls_mode": {
         "type": bool,
         "required": False,
-        "default": False,
+        "default": True,
         "description": "Whether to perform per-class majority vote and fusion"
     },
     "which_sam": {
