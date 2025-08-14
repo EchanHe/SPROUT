@@ -1,5 +1,5 @@
 # SPROUT
-_A semi-automated, threshold-based segmentation toolkit for 2D/3D grayscale images_
+_A User-friendly, Scalable Toolkit for Multi-class Segmentation of Volumetric Images_
 
 - [Introduction](#introduction)
 - [Prerequisites](#prerequisites)
@@ -16,13 +16,10 @@ _A semi-automated, threshold-based segmentation toolkit for 2D/3D grayscale imag
 ## Introduction
 
 **SPROUT: Semi-automated Parcellation of Region Outputs Using Thresholding and Transformation**  
-SPROUT is a tool for parcellating segments from **3D scans** (e.g., micro-CT, MRI, and other imaging data) using semi-automated seed generation and growth. It can be applied to a diverse range of datasets, from **skulls and entire skeletons** (e.g., isolating individual bones) to **organs and man-made structures** (e.g., concrete blocks). 
-
-New in February 2025: SPROUT now supports 2D greyscale images.
-
-Example applications and method details are provided in:  
-**Y. He, M. Camaiti, L.E. Roberts, J.M. Mulqueeney, M. Didziokas, A. Goswami. 2024.**  
-[*Introducing SPROUT (Semi-automated Parcellation of Region Outputs Using Thresholding and Transformation): an adaptable computer vision tool to generate 3D and 2D segmentations.*](https://www.biorxiv.org/content/10.1101/2024.11.22.624847v1.abstract)  
+SPROUT is an interpretable workflow for semi-automated, multi-class segmentation of volumetric images (e.g., CT, MRI). It requires no training data and is designed for researchers facing challenging segmentation tasks, such as structures with fine details or weak boundaries, where data for deep learning is scarce. 
+  
+**Y. He, M. Camaiti, L.E. Roberts, J.M. Mulqueeney, E. Ioannou, M. Didziokas, A. Goswami. 2024.**  
+[*SPROUT: A User-friendly, Scalable Toolkit for Multi-class Segmentation of Volumetric Images*](https://www.biorxiv.org/content/10.1101/2024.11.22.624847v2.abstract)  
 
 
 ## Prerequisites
@@ -116,13 +113,17 @@ The SPROUT plugin will appear under the Plugins menu in the napari UI.
 
 SPROUT follows a **two-step workflow** for multi-class segmentation:
 
+
+![workflow](./material/flowchart.png)
+
 1. **Seed Generation**  
    The goal of this step is to reduce the regions of the image by breaking it into multiple distinct components (splits). There are two strategies:
    
    - [**Vanilla seed generation**](#-run-seed-generation): generate multiple seeds by varying configurations such as thresholds and erosion steps.
    - [**Adaptive seed generation**](#-run-adaptive-seed-generation): automatically combine information across seeds from different configurations to produce a often better and final seed.
-2. **Growth**  
-   [This step](#-run-growth) grows a seed by expanding the reduced components back toward their full target shapes. Growth is guided by image intensity and connectivity.
+2. **Seed Growth**  
+   - [**Threshold-based growth**](#-run-growth): grows a seed by expanding the reduced components back toward their full target shapes. Growth is guided by image intensity and connectivity.
+   - [**SproutSAM**](#-sproutsam-run-foundation-model-prediction): seeds are converted into prompts for a segmentation foundation model such as SAM, which then predicts the segmentation. These slice-wise predictions are then fused into a final 3D output.
 
 **🧪 Interactive Inspection & Editing**
 
@@ -132,7 +133,6 @@ To support this, SPROUT is fully integrated into the **Napari** ecosystem as a p
 
 
 
-![workflow](./material/flowchart.png)
 
 
 
@@ -148,7 +148,7 @@ SPROUT processes 2D and 3D grayscale images stored in **TIFF (`.tif`, `.tiff`) f
 
 **Unsupported inputs:** Color images.
 
-This repo has a few small scans for testing in `./demo_data`, including a **dog skeleton** `dog_img.tif`, a **foraminifera chamber segmentation** `foram_img.tif` and a 2D cell microscopy image `2d_cell.tif`. Their corresponding seed images are also provided in the same directory.  
+This repo has a few small scans for testing in `./demo_data`, including a **dog skeleton** `dog_img.tif`, a **foraminifera chamber segmentation** `foram_img.tif` and a 2D cell microscopy image `2d_cell.tif`. Their corresponding seed images are also provided in the same directory. 
 Additional demo data can be found [here](https://zenodo.org/records/14358829).
 
 ### 🌰 Run seed generation
@@ -239,20 +239,18 @@ You can also visualize, inspect, and edit seeds or results using 3D image proces
 
 ## Demo Results
 
-SPROUT has been successfully applied to a variety of datasets, including:
-- **Micro-CT full skeleton**
-- **Micro-CT skull**
-- **MRI heart**
-- **Micro-CT concrete**
-- **Binary segmentation of Forams**
+Batch processing results of segmenting dog bones in CT scans with varying anatomy and postures.
+![Result1](./material/dog.png)
 
-The image below illustrates the outcomes from left to right:
-1. **Volumetric Representations**: Visualizations of the original image stacks.
-2. **Merged Seeds**: Results after applying SPROUT's segmentation and merging processes.
-3. **Grow Results**: Results after growing on the candidate seeds
+
+Batch processing results of segmenting foram binary segmentation (supports segmentation masks as input too) with variable numbers of chambers
+![Result2](./material/foram_v3_no_3.png)
+
+Gallery of other results
 
 ![Result1](./material/result_1.png)
 
+_Note: All results underwent manual post-processing primarily to verify and correct segmentation errors._
 
 
 ----------
