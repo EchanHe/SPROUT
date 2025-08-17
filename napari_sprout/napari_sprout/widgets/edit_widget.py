@@ -838,6 +838,7 @@ class QtLabelSelector(QWidget):
     #     target_layer.data = result
     #     QMessageBox.information(self, "Done", f"{op_name} operation completed.")
 
+    
 
     def run_morphology_operation(self):
         label_layer = self.last_bound_layer
@@ -862,28 +863,26 @@ class QtLabelSelector(QWidget):
             QMessageBox.warning(self, "Error", "Only 2D or 3D data is supported.")
             return
 
-        # Duplicate if needed
-        target_layer = label_layer
-        if self.duplicate_checkbox.isChecked():
-            new_name = f"{label_layer.name}_morph"
-            target_layer = self.viewer.add_labels(data.copy(), name=new_name)
-            print(f"Operating on duplicated layer: {new_name}")
-            if self.on_click not in target_layer.mouse_drag_callbacks:
-                target_layer.mouse_drag_callbacks.append(self.on_click)
-            self.last_bound_layer = target_layer
-            data = target_layer.data.copy()
-
-        print(f"Running {op_name} on layer: {target_layer.name}")
+        print(f"Running {op_name} on layer: {label_layer.name}")
         self.original_data_backup = data.copy()
 
         # callback to run the long task in background
         def on_done(result):
-            if target_layer not in self.viewer.layers:
-                print("Layer was removed before update.")
-                return
-            target_layer.data = result
-            # QMessageBox.information(self, "Done", f"{op_name} operation completed.")
-            show_info(f"{op_name} operation completed in layer {target_layer.name}.")
+            if self.duplicate_checkbox.isChecked():
+                new_name = f"{label_layer.name}_morph"
+                new_layer = self.viewer.add_labels(result, name=new_name)
+                print(f"Created new layer: {new_name}")
+                if self.on_click not in new_layer.mouse_drag_callbacks:
+                    new_layer.mouse_drag_callbacks.append(self.on_click)
+                self.last_bound_layer = new_layer
+            else:
+                if label_layer not in self.viewer.layers:
+                    print("Original layer was removed before update.")
+                    return
+                label_layer.data = result
+                self.last_bound_layer = label_layer
+
+            show_info(f"{op_name} operation completed.")
 
         # background task to perform morphology
         self.run_in_background(
@@ -907,12 +906,18 @@ class QtLabelSelector(QWidget):
 
         result = np.zeros_like(data)
 
+        
+        
         if target_label is not None:
             mask = (data == target_label)
             if not np.any(mask):
                 return result
             transformed = morph_func(mask, selem)
             result[transformed] = target_label
+
+            preserve_mask = (data != 0) & (data != target_label)
+            result[preserve_mask] = data[preserve_mask]
+
         else:
             unique_labels = np.unique(data)
             for lbl in unique_labels:
