@@ -19,7 +19,7 @@ if str(sprout_path) not in sys.path:
     sys.path.insert(0, str(sprout_path))
 
 from sprout_core.config_core import support_footprints, support_footprints_2d
-from sprout_core.sprout_core import get_ccomps_with_size_order
+from sprout_core.sprout_core import get_ccomps_with_size_order,erosion_binary_img_on_sub
 
 
 
@@ -56,19 +56,27 @@ class PreviewWorkerSignals(QObject):
     error = Signal(str)
 
 class PreviewWorker(QRunnable):
-    def __init__(self, image, lower, upper, use_cc=False, cc_n=100):
+    def __init__(self, image, lower, upper, use_cc=False, cc_n=100, erosion_steps=0):
         super().__init__()
         self.image = image
         self.lower = lower
         self.upper = upper
         self.use_cc = use_cc
         self.cc_n = cc_n
+        self.erosion_steps = erosion_steps
         self.signals = PreviewWorkerSignals()
 
     @Slot()
     def run(self):
         try:
             binary = (self.image >= self.lower) & (self.image <= self.upper)
+            
+            if self.erosion_steps > 0:
+                for _ in range(self.erosion_steps):
+                    # Apply erosion on the binary image
+                    # Assuming erosion_binary_img_on_sub is a function that applies erosion
+                    binary = erosion_binary_img_on_sub(binary)
+
             if self.use_cc:
                 binary, _ = get_ccomps_with_size_order(binary, self.cc_n)
 
@@ -140,7 +148,7 @@ class ThresholdWidget(QGroupBox):
 
         # Connected components (optional)
         if self.add_connected_components:
-            self.use_connected_components_checkbox = QCheckBox("Use Connected Components")
+            self.use_connected_components_checkbox = QCheckBox("Connected Components")
             self.connected_components_spin = QSpinBox()
             self.connected_components_spin.setRange(1, 1000)
             self.connected_components_spin.setValue(100)
@@ -151,11 +159,34 @@ class ThresholdWidget(QGroupBox):
             )
 
             cc_layout = QHBoxLayout()
+            
+            self.use_connected_components_checkbox.setMaximumWidth(150)
             cc_layout.addWidget(self.use_connected_components_checkbox)
-            cc_layout.addWidget(QLabel("Max Components:"))
+           
+            label = QLabel("N:")
+            label.setMaximumWidth(20)
+            cc_layout.addWidget(label)
+            self.connected_components_spin.setMaximumWidth(60)
             cc_layout.addWidget(self.connected_components_spin)
+            
+            self.erosion_spin = QSpinBox()
+           
+            self.erosion_spin.setRange(0, 100)
+            self.erosion_spin.setValue(0)
+            self.erosion_spin.setMaximumWidth(60)
+            
+            erosion_label = QLabel("Erosions")
+            erosion_label.setMaximumWidth(80)
+
+            cc_layout.addWidget(erosion_label)
+            cc_layout.addWidget(self.erosion_spin)
+            
+
             layout.addRow(cc_layout)
 
+            # layout.addRow("Erosion (ball)", self.erosion_spin)
+
+        
         # Preview button
         if show_preview_button:
             self.preview_btn = QPushButton("Preview Threshold")
@@ -238,7 +269,9 @@ class ThresholdWidget(QGroupBox):
             use_cc = True
             cc_n = self.connected_components_spin.value()
 
-        worker = PreviewWorker(image, lower, upper, use_cc, cc_n)
+        ero_step = self.erosion_spin.value() if hasattr(self, 'erosion_spin') else 0
+
+        worker = PreviewWorker(image, lower, upper, use_cc, cc_n, ero_step)
 
         if callback:
             worker.signals.finished.connect(callback)
@@ -920,7 +953,7 @@ class SeedOptionalParamGroupBox(QGroupBox):
         # min_size (int)
         self.min_size_spin = QSpinBox()
         self.min_size_spin.setRange(1, 10000)
-        self.min_size_spin.setValue(5)
+        self.min_size_spin.setValue(1)
         layout.addRow("Min segment size", self.min_size_spin)
 
 
@@ -933,7 +966,7 @@ class SeedOptionalParamGroupBox(QGroupBox):
         self.min_split_ratio_spin.setDecimals(3)
         self.min_split_ratio_spin.setRange(0.0, 1.0)
         self.min_split_ratio_spin.setSingleStep(0.01)
-        self.min_split_ratio_spin.setValue(0.01)
+        self.min_split_ratio_spin.setValue(0.0)
         self.min_split_ratio_spin.setToolTip("Min split ratio")
 
         self.min_split_total_ratio_spin = QDoubleSpinBox()

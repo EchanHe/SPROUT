@@ -5,6 +5,7 @@ _A User-friendly, Scalable Toolkit for Multi-class Segmentation of Volumetric Im
 - [Prerequisites](#prerequisites)
 - [Usage](#️-usage)
    - [Input Data Format](#input-data-format)
+   - [Quickstart with Demo Data](#quickstart-with-demo-data)
    - [Seed Generation](#-run-seed-generation)
    - [Adaptive Seed Generation](#-run-adaptive-seed-generation)
    - [Growth](#-run-growth)
@@ -15,12 +16,13 @@ _A User-friendly, Scalable Toolkit for Multi-class Segmentation of Volumetric Im
 
 ## Introduction
 
-**SPROUT: Semi-automated Parcellation of Region Outputs Using Thresholding and Transformation**  
+**SPROUT (Semi-automated Parcellation of Region Outputs Using Thresholding and Transformation)**  
 SPROUT is an interpretable workflow for semi-automated, multi-class segmentation of volumetric images (e.g., CT, MRI). It requires no training data and is designed for researchers facing challenging segmentation tasks, such as structures with fine details or weak boundaries, where data for deep learning is scarce. 
   
 **Y. He, M. Camaiti, L.E. Roberts, J.M. Mulqueeney, E. Ioannou, M. Didziokas, A. Goswami. 2024.**  
 [*SPROUT: A User-friendly, Scalable Toolkit for Multi-class Segmentation of Volumetric Images*](https://www.biorxiv.org/content/10.1101/2024.11.22.624847v2.abstract)  
 
+👉 If you want to **jump straight in**, see: [Quickstart with Demo Data](#quickstart-with-demo-data).
 
 ## Prerequisites
 
@@ -133,9 +135,6 @@ To support this, SPROUT is fully integrated into the **Napari** ecosystem as a p
 
 
 
-
-
-
 ### **Input Data Format**
 SPROUT processes 2D and 3D grayscale images stored in **TIFF (`.tif`, `.tiff`) format**. 
 
@@ -148,8 +147,15 @@ SPROUT processes 2D and 3D grayscale images stored in **TIFF (`.tif`, `.tiff`) f
 
 **Unsupported inputs:** Color images.
 
-This repo has a few small scans for testing in `./demo_data`, including a **dog skeleton** `dog_img.tif`, a **foraminifera chamber segmentation** `foram_img.tif` and a 2D cell microscopy image `2d_cell.tif`. Their corresponding seed images are also provided in the same directory. 
-Additional demo data can be found [here](https://zenodo.org/records/14358829).
+### Quickstart with Demo Data
+
+See [Demo Data and Basic Usage](docs/demo_data_tutorial.md) for a quick start.
+
+See [Scenarios](docs/scenarios.md) for advance usage in a Q&A style.   
+
+`./demo_data` includes a **dog skeleton** `dog_img.tif`, a **foraminifera chamber segmentation** `foram_img.tif` and a **2D cell microscopy image** `2d_cell.tif`. Their corresponding seed images are also provided in the same directory. 
+
+Additional demo data can be found [here](https://zenodo.org/records/16857648).
 
 ### 🌰 Run seed generation
 

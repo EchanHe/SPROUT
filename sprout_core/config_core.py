@@ -946,18 +946,18 @@ input_val_make_adaptive_seed = {
     },
     "min_size": {
         "type": int,
-        "min": 0,
+        "min": 1,
         "required": False,
-        "default": 5,
-        "description": "Minimum size for segments. Defaults is 5."
+        "default": 1,
+        "description": "Minimum size for segments. Defaults is 1."
     },
     "min_split_ratio": {
         "type": (int,float),
         "min": 0,
         "max": 1,
         "required": False,
-        "default": 0.01,
-        "description": "Minimum proportion to consider a split. Defaults is 0.01."
+        "default": 0,
+        "description": "Minimum proportion to consider a split. Defaults is 0."
     },
     "min_split_total_ratio": {
         "type": (int,float),

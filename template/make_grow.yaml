@@ -1,10 +1,16 @@
 # The input img_path of input image
+img_path: "./demo_data/dog_img.tif"
 
-img_path: "./demo_data/foram_img.tif"
+
+## uncomment for foram
+# img_path: "./demo_data/foram_img.tif"
 
 
 # The input path of input seed
-seg_path: "./demo_data/foram_seed.tif"
+seg_path: "./demo_data/dog_seed.tif"
+
+## uncomment for foram
+# seg_path: "./demo_data/foram_seed.tif"
 
 
 
@@ -12,19 +18,24 @@ seg_path: "./demo_data/foram_seed.tif"
 # A list of thresholds that the grow algorithm is growing on
 # Order matters, normally from high to low (available space to grow: from less to more)
 # If there is only one threshold, please also include the []
-thresholds: [255]
+thresholds: [220, 200, 180, 160, 140, 120]
+
+## uncomment for foram
+# thresholds: [255]
 
 
 # A list of dilation steps to grow on each threshold
 # Order matters, and should have the same length to thresholds
-# one element example: dilation_steps: [30]
-dilation_steps: [30]
+# one element example: dilation_steps: [10]
+dilation_steps: [20, 20, 20, 20, 5, 1]
+## uncomment for foram
+# dilation_steps: [10]
 
 # Can be stop or overwrite
 touch_rule: "stop"
 # The name of the output folder
 # A folder of workspace + output_folder
-output_folder: "./result/demo_foram/grow"
+output_folder: "./result/demo_grow"
 
 # Number of threads
 num_threads: 4
