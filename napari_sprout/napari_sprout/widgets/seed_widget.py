@@ -198,6 +198,8 @@ class SeedGenerationWidget(QWidget):
 
         
         # --- Parameters for Original and Adaptive (Thresholds) methods ---
+        
+        ## for list params, currently not used
         self.list_params_group = QGroupBox("Threshold List Parameters")
         self.list_params_group.setFocusPolicy(Qt.NoFocus) # Allow children to get focus
         list_params_layout = QFormLayout()
@@ -230,7 +232,8 @@ class SeedGenerationWidget(QWidget):
         list_params_layout.addRow("Upper Thresholds (comma-separated):", self.upper_thresholds_list)
         self.list_params_group.setLayout(list_params_layout)
         # layout.addWidget(self.list_params_group)
-
+        ###
+        
         
         self.threshold_widget = ThresholdWidget(add_connected_components=True)
         self.threshold_widget.preview_requested.connect(self.preview_threshold)
@@ -711,11 +714,29 @@ class SeedGenerationWidget(QWidget):
                 main_params_to_set = {}
                 advanced_params_to_set = {}
 
+                # input parameters
+                if 'input_image' in params:
+                    input_image_name = params['input_image']
+                    if input_image_name in [self.image_combo.itemText(i) for i in range(self.image_combo.count())]:
+                        self.image_combo.setCurrentText(input_image_name)
+                    else:
+                        show_error(f"Input image '{input_image_name}' not found in current layers.")
+                if 'boundary_image' in params:
+                    boundary_name = params['boundary_image']
+                    if boundary_name in [self.boundary_combo.itemText(i) for i in range(self.boundary_combo.count())]:
+                        self.boundary_combo.setCurrentText(boundary_name)
+                    else:
+                        show_error(f"Boundary image '{boundary_name}' not found in current layers.")
+                
+                
                 # Main parameters
-                main_keys = ["seed_method", "thresholds", "upper_thresholds", "erosion_steps", "segments", "num_threads", "footprints"]
+                main_keys = ["seed_method", "thresholds",
+                             "upper_thresholds", "erosion_steps",
+                             "segments", "num_threads", "footprints"]
                 for key in main_keys:
                     if key in params:
                         main_params_to_set[key] = params[key]
+                        
                 # Handle single threshold values for erosion method
                 if 'threshold' in params and 'thresholds' not in main_params_to_set:
                     main_params_to_set['thresholds'] = [params['threshold']]
@@ -726,12 +747,15 @@ class SeedGenerationWidget(QWidget):
                     self.main_param_widget.set_params(main_params_to_set)
 
                 # Advanced parameters
-                advanced_keys = ["sort", "no_split_max_iter", "min_size", "min_split_ratio", "min_split_total_ratio", "split_size_limit", "split_convex_hull_limit"]
+                advanced_keys = ["sort", "no_split_max_iter", 
+                                 "min_size", "min_split_ratio", 
+                                 "min_split_total_ratio", "split_size_limit", 
+                                 "split_convex_hull_limit"]
                 for key in advanced_keys:
                     if key in params:
                         advanced_params_to_set[key] = params[key]
 
-                if advanced_params_to_set:
+                if params['seed_method']!="Original" and advanced_params_to_set:
                     self.advanced_params_box.set_params(advanced_params_to_set)
                     self.show_advanced_checkbox.setChecked(True)
                 
@@ -741,39 +765,34 @@ class SeedGenerationWidget(QWidget):
                 if 'save_every_iter' in params:
                     self.save_every_iter_checkbox.setChecked(params["save_every_iter"])
 
-                # Update threshold line edits, which are part of this widget
-                if 'thresholds' in params:
-                    threshold_str = ", ".join(map(str, params.get('thresholds', [])))
-                    self.lower_thresholds_list.setText(threshold_str)
-                    
-                    # Populate the thresholds table with the list from YAML
-                    thresholds_list = params['thresholds']
-                    upper_thresholds_list = params.get('upper_thresholds', None)
-                    self.main_param_widget.populate_thresholds_from_list(thresholds_list, upper_thresholds_list)
-                    
-                    # Also set the threshold widget for preview functionality
-                    if thresholds_list:
-                        lower_threshold = thresholds_list[0]
-                        if upper_thresholds_list and upper_thresholds_list:
-                            upper_threshold = upper_thresholds_list[0]
-                        else:
-                            upper_threshold = 255 if lower_threshold <= 255 else lower_threshold + 100
-                        self.threshold_widget.set_thresholds(lower_threshold, upper_threshold)
-            
-                if 'upper_thresholds' in params:
-                    upper_threshold_str = ", ".join(map(str, params.get('upper_thresholds', [])))
-                    self.upper_thresholds_list.setText(upper_threshold_str)
+                # Populate the thresholds table with the list from YAML
+                thresholds_list = params.get('thresholds', None)
+                upper_thresholds_list = params.get('upper_thresholds', None)
+                self.main_param_widget.populate_thresholds_from_list(thresholds_list, upper_thresholds_list)
+                
+                # Also set the threshold widget for preview functionality
+                if thresholds_list:
+                    lower_threshold = thresholds_list[0]
+                    if upper_thresholds_list and upper_thresholds_list:
+                        upper_threshold = upper_thresholds_list[0]
+                    else:
+                        upper_threshold = 255 if lower_threshold <= 255 else lower_threshold + 100
+                    self.threshold_widget.set_thresholds(lower_threshold, upper_threshold)
+                
 
-                if 'erosion_steps' in params:
-                    self.erosion_steps = params['erosion_steps']
-                    self.main_param_widget.erosion_spin.setValue(self.erosion_steps)
-                if 'num_threads' in params:
-                    self.num_threads = params['num_threads']
-                    self.main_param_widget.thread_spin.setValue(self.num_threads)
-                if 'segments' in params:
-                    self.segments = params['segments']
-                    self.main_param_widget.segments_spin.setValue(self.segments)
                 show_info(f"Parameters successfully loaded from {os.path.basename(file_path)}.")
+
+                # Currently not used as we use table for thresholds
+                # Update threshold line edits, which are part of this widget
+                # if 'thresholds' in params:
+                #     threshold_str = ", ".join(map(str, params.get('thresholds', [])))
+                #     self.lower_thresholds_list.setText(threshold_str)
+                    
+                # if 'upper_thresholds' in params:
+                #     upper_threshold_str = ", ".join(map(str, params.get('upper_thresholds', [])))
+                #     self.upper_thresholds_list.setText(upper_threshold_str)
+
+               
 
             except Exception as e:
                 QMessageBox.critical(self, "Import Error", f"Failed to load parameters: {e}")
@@ -788,30 +807,75 @@ class SeedGenerationWidget(QWidget):
                 main_params = self.main_param_widget.get_params()
                 advanced_params = self.advanced_params_box.get_params()
                 
+
+                
                 # Combine all parameters into a single flat dictionary
                 all_params = {}
                 all_params.update(main_params)
                 all_params.update(advanced_params)
 
-                # Get and parse threshold lists from the main widget
-                lower_threshold_str = self.lower_thresholds_list.text()
-                if lower_threshold_str:
-                    all_params['thresholds'] = [float(x.strip()) for x in lower_threshold_str.split(',') if x.strip()]
+                # get input image name
+                input_image_name = self.image_combo.currentText()
+                all_params["input_image"] = input_image_name
+                
+                # get the boundary image name
+                boundary_name = self.boundary_combo.currentText()
+                all_params["boundary_image"] = boundary_name
 
-                if self.use_upper_list.isChecked():
-                    upper_threshold_str = self.upper_thresholds_list.text()
-                    if upper_threshold_str:
-                        all_params['upper_thresholds'] = [float(x.strip()) for x in upper_threshold_str.split(',') if x.strip()]
+                # Get and parse threshold lists from the main widget
+                # deactivated as the listparam group is not used
+                # lower_threshold_str = self.lower_thresholds_list.text()
+                # if lower_threshold_str:
+                #     all_params['thresholds'] = [int(x.strip()) for x in lower_threshold_str.split(',') if x.strip()]
+
+                # if self.use_upper_list.isChecked():
+                #     upper_threshold_str = self.upper_thresholds_list.text()
+                #     if upper_threshold_str:
+                #         all_params['upper_thresholds'] = [int(x.strip()) for x in upper_threshold_str.split(',') if x.strip()]
 
                 # Add output parameters
                 all_params["output_folder"] = self.output_folder_line.text()
                 all_params["save_every_iter"] = self.save_every_iter_checkbox.isChecked()
 
-                # Write to YAML file
+                # turn tuple to list for yaml saving
+                if 'split_size_limit' in all_params and isinstance(all_params['split_size_limit'], tuple):
+                    all_params['split_size_limit'] = list(all_params['split_size_limit'])  
+                if 'split_convex_hull_limit' in all_params and isinstance(all_params['split_convex_hull_limit'], tuple):
+                    all_params['split_convex_hull_limit'] = list(all_params['split_convex_hull_limit'])
+                
+                
+
+                # Write to YAML file with lists in flow style (e.g., [1, 2, 3])
+                class FlowStyleList(list):
+                    pass
+
+                def represent_flow_style_list(dumper, data):
+                    return dumper.represent_sequence('tag:yaml.org,2002:seq', data, flow_style=True)
+
+                yaml.add_representer(FlowStyleList, represent_flow_style_list)
+
+                # Convert all list values to FlowStyleList for flow style output
+                def convert_lists(obj):
+                    if isinstance(obj, list):
+                        return FlowStyleList([convert_lists(i) for i in obj])
+                    elif isinstance(obj, dict):
+                        return {k: convert_lists(v) for k, v in obj.items()}
+                    else:
+                        return obj
+
+                all_params_flow = convert_lists(all_params)
+
                 with open(file_path, "w") as f:
-                    yaml.dump(all_params, f, sort_keys=False, default_flow_style=False)
+                    yaml.dump(all_params_flow, f, sort_keys=False, default_flow_style=False)
                 
                 show_info(f"Parameters successfully saved to {os.path.basename(file_path)}.")
+                # Reorder keys to write seed_method, input_image, boundary_image first
+                ordered_keys = ["seed_method", "input_image", "boundary_image"]
+                rest_keys = [k for k in all_params_flow.keys() if k not in ordered_keys]
+                ordered_params = {k: all_params_flow[k] for k in ordered_keys if k in all_params_flow}
+                ordered_params.update({k: all_params_flow[k] for k in rest_keys})
 
+                with open(file_path, "w") as f:
+                    yaml.dump(ordered_params, f, sort_keys=False, default_flow_style=False)
             except Exception as e:
                 QMessageBox.critical(self, "Export Error", f"Failed to save parameters: {e}")
