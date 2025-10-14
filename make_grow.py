@@ -558,7 +558,13 @@ def run_make_grow(file_path):
 if __name__ == "__main__":
     
     # Get the file path from the first command-line argument or use the default
-    file_path = sys.argv[1] if len(sys.argv) > 1 else './template/make_grow.yaml'
+    if len(sys.argv) > 1:
+        print(f"Reading config file from command-line argument: {sys.argv[1]}")
+        file_path = sys.argv[1]
+    else:
+        print("No config file specified in arguments. Using default: ./template/make_grow.yaml")
+        file_path = './template/make_grow.yaml'
+    
     
     run_make_grow(file_path)
     

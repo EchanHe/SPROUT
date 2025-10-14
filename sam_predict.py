@@ -207,9 +207,16 @@ def sam_predict(img_path,
 
 # main execution
 if __name__ == "__main__":
-    
-    run_sam_yaml("./template/sam_predict.yaml")
 
+    if len(sys.argv) > 1:
+        print(f"Reading config file from command-line argument: {sys.argv[1]}")
+        file_path = sys.argv[1]
+    else:
+        print("No config file specified in arguments. Using default: ./template/sam_predict.yaml")
+        file_path = './template/sam_predict.yaml'
+
+    run_sam_yaml(file_path)
+    
     # To prevent running the code below, simply comment it out or remove it.
     # Alternatively, you can use sys.exit() to stop execution after run_sam_yaml if needed.
 
