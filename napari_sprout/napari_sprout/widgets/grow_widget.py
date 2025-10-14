@@ -428,31 +428,166 @@ class SeedGrowthWidget(QWidget):
         self.threshold_widget.preview_btn.setEnabled(True)  # Re-enable button after processing
         # Optionally, you can connect this to a signal or update other UI elements
         
-    # TODO to implement import/export yaml for grow parameters
-    # This is a placeholder for the import/export functionality.    
     def import_yaml(self):
+        """Import grow parameters from a YAML file."""
         file_path, _ = QFileDialog.getOpenFileName(
             self, "Open YAML File", "", "YAML Files (*.yaml *.yml);;All Files (*)"
         )
         if file_path:
             try:
                 with open(file_path, "r") as f:
-                    data = yaml.safe_load(f)
-                print("[Imported YAML]:", data)
+                    params = yaml.safe_load(f)
+
+                # Map flat YAML keys to main and advanced parameter dictionaries
+                main_params_to_set = {}
+                advanced_params_to_set = {}
+
+                
+                ### For inputs
+                # Input image layer
+                if 'img_path' in params:
+                    input_image_name = params['img_path']
+                    if input_image_name in [self.image_combo.itemText(i) for i in range(self.image_combo.count())]:
+                        self.image_combo.setCurrentText(input_image_name)
+                    else:
+                        show_error(f"Input image '{input_image_name}' not found in current layers.")
+                
+                # Seeds layer
+                if 'seg_path' in params:
+                    seeds_name = params['seg_path']
+                    if seeds_name in [self.seeds_combo.itemText(i) for i in range(self.seeds_combo.count())]:
+                        self.seeds_combo.setCurrentText(seeds_name)
+                    else:
+                        show_error(f"Seeds layer '{seeds_name}' not found in current layers.")
+                
+                # Boundary layer
+                if 'boundary_path' in params and params['boundary_path'] is not None:
+                    boundary_name = params['boundary_path']
+                    if boundary_name in [self.boundary_combo.itemText(i) for i in range(self.boundary_combo.count())]:
+                        self.boundary_combo.setCurrentText(boundary_name)
+                    else:
+                        show_error(f"Boundary layer '{boundary_name}' not found in current layers.")
+                
+                # Main parameters
+                main_keys = ["thresholds", "upper_thresholds", "dilation_steps", 
+                             "num_threads", "touch_rule"]
+                for key in main_keys:
+                    if key in params:
+                        main_params_to_set[key] = params[key]
+                
+                if main_params_to_set:
+                    self.main_param_widget.set_params(main_params_to_set)
+
+                # Advanced parameters
+                advanced_keys = ["save_every_n_iters", "grow_to_end", 
+                                "is_sort", "to_grow_ids", 
+                                "min_growth_size", "no_growth_max_iter"]
+                for key in advanced_keys:
+                    if key in params:
+                        advanced_params_to_set[key] = params[key]
+
+                if advanced_params_to_set:
+                    self.advanced_params_box.set_params(advanced_params_to_set)
+                    # Show advanced parameters if any are set
+                    if any(v is not None and v != False for v in advanced_params_to_set.values()):
+                        self.show_advanced_checkbox.setChecked(True)
+                
+                # Output folder
+                if 'output_folder' in params:
+                    self.output_folder_line.setText(params["output_folder"])
+
+                # Populate the thresholds table with the lists from YAML
+                thresholds_list = params.get('thresholds', None)
+                upper_thresholds_list = params.get('upper_thresholds', None)
+                dilation_steps_list = params.get('dilation_steps', None)
+                
+                if thresholds_list:
+                    self.main_param_widget.populate_thresholds_from_list(
+                        thresholds_list, upper_thresholds_list, dilation_steps_list
+                    )
+                    
+                    # Also set the threshold widget for preview functionality
+                    lower_threshold = thresholds_list[0]
+                    if upper_thresholds_list and upper_thresholds_list:
+                        upper_threshold = upper_thresholds_list[0]
+                    else:
+                        upper_threshold = 255 if lower_threshold <= 255 else lower_threshold + 100
+                    self.threshold_widget.set_thresholds(lower_threshold, upper_threshold)
+
+                show_info(f"Parameters successfully loaded from {os.path.basename(file_path)}.")
+
             except Exception as e:
-                QMessageBox.critical(self, "Import Error", str(e))
+                QMessageBox.critical(self, "Import Error", f"Failed to load parameters: {e}")
 
     def export_yaml(self):
+        """Export grow parameters to a YAML file."""
         file_path, _ = QFileDialog.getSaveFileName(
             self, "Save YAML File", "", "YAML Files (*.yaml *.yml);;All Files (*)"
         )
         if file_path:
             try:
+                # Get parameters from child widgets
                 main_params = self.main_param_widget.get_params()
                 advanced_params = self.advanced_params_box.get_params()
-                print("TODO export yaml with main and advanced params")
-                print("[Exported YAML]:", main_params, advanced_params)
+                
+                # Combine all parameters into a single flat dictionary
+                all_params = {}
+                all_params.update(main_params)
+                all_params.update(advanced_params)
+
+                # Get input image name - use as img_path
+                if self.image_combo.currentText():
+                    all_params["img_path"] = self.image_combo.currentText()
+                else:
+                    all_params["img_path"] = None
+                
+                # Get seeds layer name - use as seg_path
+                if self.seeds_combo.currentText():
+                    all_params["seg_path"] = self.seeds_combo.currentText()
+                else:
+                    all_params["seg_path"] = None
+                
+                # Get the boundary image name - use as boundary_path
+                if self.boundary_combo.currentText() != "None":
+                    all_params["boundary_path"] = self.boundary_combo.currentText()
+                else:
+                    all_params["boundary_path"] = None
+
+                # Add output folder
+                all_params["output_folder"] = self.output_folder_line.text() or "./result/grow_output"
+
+                # Write to YAML file with lists in flow style (e.g., [1, 2, 3])
+                class FlowStyleList(list):
+                    pass
+
+                def represent_flow_style_list(dumper, data):
+                    return dumper.represent_sequence('tag:yaml.org,2002:seq', data, flow_style=True)
+
+                yaml.add_representer(FlowStyleList, represent_flow_style_list)
+
+                # Convert all list values to FlowStyleList for flow style output
+                def convert_lists(obj):
+                    if isinstance(obj, list):
+                        return FlowStyleList([convert_lists(i) for i in obj])
+                    elif isinstance(obj, dict):
+                        return {k: convert_lists(v) for k, v in obj.items()}
+                    else:
+                        return obj
+
+                all_params_flow = convert_lists(all_params)
+
+                # Reorder keys to write img_path, seg_path, boundary_path, thresholds, dilation_steps first
+                ordered_keys = ["img_path", "seg_path", "boundary_path", 
+                               "thresholds", "dilation_steps", "upper_thresholds",
+                               "touch_rule", "output_folder", "num_threads"]
+                rest_keys = [k for k in all_params_flow.keys() if k not in ordered_keys]
+                ordered_params = {k: all_params_flow[k] for k in ordered_keys if k in all_params_flow}
+                ordered_params.update({k: all_params_flow[k] for k in rest_keys})
+
                 with open(file_path, "w") as f:
-                    yaml.dump({"a":"test"}, f, sort_keys=False)
+                    yaml.dump(ordered_params, f, sort_keys=False, default_flow_style=False)
+                
+                show_info(f"Parameters successfully saved to {os.path.basename(file_path)}.")
+                
             except Exception as e:
-                QMessageBox.critical(self, "Export Error", str(e))
+                QMessageBox.critical(self, "Export Error", f"Failed to save parameters: {e}")

@@ -935,6 +935,83 @@ class MainGrowParamWidget(QGroupBox):
         """Clear all rows in the threshold table."""
         self.threshold_table.setRowCount(0)
         self._add_threshold_row_adaptive()
+    
+    def set_params(self, params):
+        """Set parameters for the widget from a dictionary."""
+        if "num_threads" in params:
+            self.thread_spin.setValue(params["num_threads"])
+        
+        if "touch_rule" in params:
+            index = self.touch_rule_combo.findText(params["touch_rule"], Qt.MatchFixedString)
+            if index >= 0:
+                self.touch_rule_combo.setCurrentIndex(index)
+    
+    def populate_thresholds_from_list(self, thresholds_list, upper_thresholds_list=None, dilation_steps_list=None):
+        """Populate the thresholds table with lists from YAML import.
+        
+        Parameters
+        ----------
+        thresholds_list : list
+            List of lower threshold values
+        upper_thresholds_list : list, optional
+            List of upper threshold values. If None, will use max value based on dtype
+        dilation_steps_list : list, optional
+            List of dilation steps. If None, will use default value of 5
+        """
+        if not thresholds_list:
+            return
+            
+        # Clear existing rows
+        self.threshold_table.setRowCount(0)
+        
+        # Check if we have an image to get dtype info
+        current_image = None
+        if self.image_combo and self.image_combo.currentText():
+            current_image = self.viewer.layers[self.image_combo.currentText()].data
+        
+        for i, lower_threshold in enumerate(thresholds_list):
+            row = self.threshold_table.rowCount()
+            self.threshold_table.insertRow(row)
+            
+            # Determine upper threshold
+            if upper_thresholds_list and i < len(upper_thresholds_list):
+                upper_threshold = upper_thresholds_list[i]
+            else:
+                # Use max value based on dtype if available
+                if current_image is not None:
+                    _, upper_threshold = get_max_min_value_by_dtype(current_image.dtype)
+                else:
+                    upper_threshold = 255 if lower_threshold <= 255 else lower_threshold + 100
+            
+            # Determine dilation steps
+            if dilation_steps_list and i < len(dilation_steps_list):
+                dilation_steps = dilation_steps_list[i]
+            else:
+                dilation_steps = 5  # Default value
+            
+            # Set range based on image dtype if available
+            if current_image is not None:
+                lower_min, upper_max = get_max_min_value_by_dtype(current_image.dtype)
+            else:
+                lower_min, upper_max = 0, 65535  # Default range
+            
+            # Lower threshold spinbox
+            lower_spin = QSpinBox()
+            lower_spin.setRange(lower_min, upper_threshold)
+            lower_spin.setValue(int(lower_threshold))
+            self.threshold_table.setCellWidget(row, 0, lower_spin)
+            
+            # Upper threshold spinbox
+            upper_spin = QSpinBox()
+            upper_spin.setRange(int(lower_threshold), upper_max)
+            upper_spin.setValue(int(upper_threshold))
+            self.threshold_table.setCellWidget(row, 1, upper_spin)
+            
+            # Dilation steps spinbox
+            dilate_spin = QSpinBox()
+            dilate_spin.setRange(1, 1000)
+            dilate_spin.setValue(int(dilation_steps))
+            self.threshold_table.setCellWidget(row, 2, dilate_spin)
 
 
 
@@ -1139,6 +1216,32 @@ class GrowOptionalParamGroupBox(QGroupBox):
 
     def _toggle_save_iters(self):
         self.save_every_n_spin.setEnabled(self.save_iter_checkbox.isChecked())
+
+    def set_params(self, params):
+        """Set advanced grow parameters for the widget from a dictionary."""
+        if 'save_every_n_iters' in params and params['save_every_n_iters'] is not None:
+            self.save_iter_checkbox.setChecked(True)
+            self.save_every_n_spin.setValue(params['save_every_n_iters'])
+        
+        if 'grow_to_end' in params:
+            self.grow_to_end_checkbox.setChecked(params['grow_to_end'])
+        
+        if 'is_sort' in params:
+            self.sort_checkbox.setChecked(params['is_sort'])
+        
+        if 'to_grow_ids' in params and params['to_grow_ids'] is not None:
+            id_str = ",".join(map(str, params['to_grow_ids']))
+            self.id_list_line.setText(id_str)
+        
+        if 'no_growth_max_iter' in params:
+            if params['no_growth_max_iter'] is None:
+                self.early_stop_checkbox.setChecked(False)
+            else:
+                self.early_stop_checkbox.setChecked(True)
+                self.no_growth_spin.setValue(params['no_growth_max_iter'])
+        
+        if 'min_growth_size' in params:
+            self.min_growth_spin.setValue(params['min_growth_size'])
 
     def get_params(self):
         to_grow_text = self.id_list_line.text().strip()
