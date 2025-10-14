@@ -442,33 +442,31 @@ class SeedGrowthWidget(QWidget):
                 main_params_to_set = {}
                 advanced_params_to_set = {}
 
+                
+                ### For inputs
                 # Input image layer
                 if 'img_path' in params:
-                    # Extract just the filename without path
-                    img_name = os.path.basename(params['img_path']).replace('.tif', '').replace('.tiff', '')
-                    # Try to find a matching layer
-                    for i in range(self.image_combo.count()):
-                        if img_name in self.image_combo.itemText(i):
-                            self.image_combo.setCurrentIndex(i)
-                            break
+                    input_image_name = params['img_path']
+                    if input_image_name in [self.image_combo.itemText(i) for i in range(self.image_combo.count())]:
+                        self.image_combo.setCurrentText(input_image_name)
+                    else:
+                        show_error(f"Input image '{input_image_name}' not found in current layers.")
                 
                 # Seeds layer
                 if 'seg_path' in params:
-                    # Extract just the filename without path
-                    seg_name = os.path.basename(params['seg_path']).replace('.tif', '').replace('.tiff', '')
-                    # Try to find a matching layer
-                    for i in range(self.seeds_combo.count()):
-                        if seg_name in self.seeds_combo.itemText(i):
-                            self.seeds_combo.setCurrentIndex(i)
-                            break
+                    seeds_name = params['seg_path']
+                    if seeds_name in [self.seeds_combo.itemText(i) for i in range(self.seeds_combo.count())]:
+                        self.seeds_combo.setCurrentText(seeds_name)
+                    else:
+                        show_error(f"Seeds layer '{seeds_name}' not found in current layers.")
                 
                 # Boundary layer
                 if 'boundary_path' in params and params['boundary_path'] is not None:
-                    boundary_name = os.path.basename(params['boundary_path']).replace('.tif', '').replace('.tiff', '')
-                    for i in range(self.boundary_combo.count()):
-                        if boundary_name in self.boundary_combo.itemText(i):
-                            self.boundary_combo.setCurrentIndex(i)
-                            break
+                    boundary_name = params['boundary_path']
+                    if boundary_name in [self.boundary_combo.itemText(i) for i in range(self.boundary_combo.count())]:
+                        self.boundary_combo.setCurrentText(boundary_name)
+                    else:
+                        show_error(f"Boundary layer '{boundary_name}' not found in current layers.")
                 
                 # Main parameters
                 main_keys = ["thresholds", "upper_thresholds", "dilation_steps", 
@@ -539,15 +537,19 @@ class SeedGrowthWidget(QWidget):
 
                 # Get input image name - use as img_path
                 if self.image_combo.currentText():
-                    all_params["img_path"] = f"./{self.image_combo.currentText()}.tif"
+                    all_params["img_path"] = self.image_combo.currentText()
+                else:
+                    all_params["img_path"] = None
                 
                 # Get seeds layer name - use as seg_path
                 if self.seeds_combo.currentText():
-                    all_params["seg_path"] = f"./{self.seeds_combo.currentText()}.tif"
+                    all_params["seg_path"] = self.seeds_combo.currentText()
+                else:
+                    all_params["seg_path"] = None
                 
                 # Get the boundary image name - use as boundary_path
                 if self.boundary_combo.currentText() != "None":
-                    all_params["boundary_path"] = f"./{self.boundary_combo.currentText()}.tif"
+                    all_params["boundary_path"] = self.boundary_combo.currentText()
                 else:
                     all_params["boundary_path"] = None
 

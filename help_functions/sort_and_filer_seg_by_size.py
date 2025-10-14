@@ -60,9 +60,9 @@ if __name__ == "__main__":
     # ])
     
     ### Input parameter
-    segmentation_path = "./result/foram_james/seeds/combine/combined.tif"
-    min_size = 5
-    output_path = "./result/foram_james/seeds/combine/combined_sorted.tif"
+    segmentation_path = "./result/haymar/image_5/image_5_fixed.tif"
+    min_size = 500
+    output_path = f"./result/haymar/image_5/image_5_fixed_{min_size}.tif"
 
     #####
 

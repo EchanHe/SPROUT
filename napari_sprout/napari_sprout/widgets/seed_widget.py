@@ -715,14 +715,14 @@ class SeedGenerationWidget(QWidget):
                 advanced_params_to_set = {}
 
                 # input parameters
-                if 'input_image' in params:
-                    input_image_name = params['input_image']
+                if 'img_path' in params:
+                    input_image_name = params['img_path']
                     if input_image_name in [self.image_combo.itemText(i) for i in range(self.image_combo.count())]:
                         self.image_combo.setCurrentText(input_image_name)
                     else:
                         show_error(f"Input image '{input_image_name}' not found in current layers.")
-                if 'boundary_image' in params:
-                    boundary_name = params['boundary_image']
+                if 'boundary_path' in params:
+                    boundary_name = params['boundary_path']
                     if boundary_name in [self.boundary_combo.itemText(i) for i in range(self.boundary_combo.count())]:
                         self.boundary_combo.setCurrentText(boundary_name)
                     else:
@@ -816,11 +816,11 @@ class SeedGenerationWidget(QWidget):
 
                 # get input image name
                 input_image_name = self.image_combo.currentText()
-                all_params["input_image"] = input_image_name
+                all_params["img_path"] = input_image_name
                 
                 # get the boundary image name
                 boundary_name = self.boundary_combo.currentText()
-                all_params["boundary_image"] = boundary_name
+                all_params["boundary_path"] = boundary_name
 
                 # Get and parse threshold lists from the main widget
                 # deactivated as the listparam group is not used
@@ -869,8 +869,8 @@ class SeedGenerationWidget(QWidget):
                     yaml.dump(all_params_flow, f, sort_keys=False, default_flow_style=False)
                 
                 show_info(f"Parameters successfully saved to {os.path.basename(file_path)}.")
-                # Reorder keys to write seed_method, input_image, boundary_image first
-                ordered_keys = ["seed_method", "input_image", "boundary_image"]
+                # Reorder keys to write seed_method, img_path, boundary_path first
+                ordered_keys = ["seed_method", "img_path", "boundary_path"]
                 rest_keys = [k for k in all_params_flow.keys() if k not in ordered_keys]
                 ordered_params = {k: all_params_flow[k] for k in ordered_keys if k in all_params_flow}
                 ordered_params.update({k: all_params_flow[k] for k in rest_keys})

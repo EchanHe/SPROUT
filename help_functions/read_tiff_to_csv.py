@@ -186,16 +186,24 @@ def align_files_to_df(img_folder=None, seg_folder=None, boundary_folder=None,
 
 if __name__ == "__main__":
     # Example usage
+    # df = align_files_to_df(
+    #     img_folder = "data/test_batch/test_get_tiff/img_1",
+    #     seg_folder= "data/test_batch/test_get_tiff/seg_fix",
+    #     match_type = "base",
+    #     seg_prefix="seg_"
+    #     )  # Prompt user for folder paths or pass them as arguments
+    # print("Aligned file paths:")
+    # print(df)
+
     df = align_files_to_df(
-        img_folder = "data/test_batch/test_get_tiff/img_1",
-        seg_folder= "data/test_batch/test_get_tiff/seg_fix",
-        match_type = "base",
-        seg_prefix="seg_"
+        img_folder = "./data/haymar/20250203 Cell segmentation/20240313 Static/2d/",
+        # seg_folder= "./data/haymar/green/2d/seeds",
+        match_type = "sorted"
         )  # Prompt user for folder paths or pass them as arguments
     print("Aligned file paths:")
     print(df)
 
-    df.to_csv("data/test_batch/test_get_tiff/input_from_script.csv", index=False)
+    df.to_csv("./data/haymar/20250203 Cell segmentation/20240313 Static/seed.csv", index=False)
 
     # Optionally save to a CSV file
     # save_csv = input("Do you want to save the result to a CSV file? (y/n): ").strip().lower()
