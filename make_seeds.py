@@ -424,7 +424,12 @@ def run_make_seeds(file_path):
 
 if __name__ == "__main__":
     # Get the file path from the first command-line argument or use the default
-    file_path = sys.argv[1] if len(sys.argv) > 1 else './make_seeds.yaml'
+    if len(sys.argv) > 1:
+        print(f"Reading config file from command-line argument: {sys.argv[1]}")
+        file_path = sys.argv[1]
+    else:
+        print("No config file specified in arguments. Using default: ./template/make_seeds.yaml")
+        file_path = './template/make_seeds.yaml'
     
     run_make_seeds(file_path)
     

@@ -42,11 +42,19 @@ no_split_max_iter: 3
 min_size: 5
 
 # Minimum proportion to consider a split. Defaults is 0.01.
-min_split_prop: 0.01
+min_split_ratio: 0.01
 
 # Minimum proportion of (sub-segments from next step)/(current segments) to consider a split (0-1).
 # Defaults is 0.
 min_split_total_ratio: 0
+
+# Limits for size of sub-segments to consider a split. Defaults is [None, None].
+# in yaml, it writes like [null, null]
+split_size_limit: [null, null]
+
+# Limits for convex hull size of sub-segments to consider a split. Defaults is [None, None].
+# in yaml, it writes like [null, null]
+split_convex_hull_limit: [null, null]
 
 # Save results at every iteration. Defaults is False.
 save_every_iter: True

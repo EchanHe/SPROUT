@@ -1392,47 +1392,4 @@ def merge_row_and_yaml_no_conflict(row: dict, yaml_config: dict) -> dict:
     merged = {**yaml_config, **row}
     return merged
 
-if __name__ == "__main__":
-    df = pd.read_csv("config/seeds_input.csv")
 
-    import yaml
-    # config = yaml.safe_load("../PipelineSeed.yaml")
-
-    with open("PipelineSeed_v2.yaml", 'r') as file:
-        config = yaml.safe_load(file)
-    
-    config.pop("csv_path", None)
-
-    for idx, row in df.iterrows():
-        new_config = merge_row_and_yaml_no_conflict(row, config)
-
-        
-        try:
-            optional = validate_input_yaml(new_config, input_val_make_adaptive_seed)
-            print(optional)
-        except Exception as e:
-            print("Error when valid make_adaptive_seed", e)
-        
-        try:
-            validate_input_yaml(new_config, input_val_make_seeds)
-        except Exception as e:
-            print("Error when valid make_seeds", e)  
-
-
-    
-
-# try:
-#     check_required_keys(yaml_path, required_keys)
-# except Exception as e:
-#     print(e)
-
-# if __name__ == "__main__":           
-#     # Load the YAML file
-#     with open('./test.yaml', 'r') as file:
-#         config = yaml.safe_load(file)
-#     load_config_yaml(config)
-#     print(string_value, type(int_value), list_value)
-    
-#     load_config_json('./make_seeds.json')
-    
-#     print(workspace, output_seed_folder)
