@@ -139,12 +139,11 @@ def run_batch_adaptive_seed(file_path):
                                     split_size_limit= optional_params["split_size_limit"],
                                     split_convex_hull_limit = optional_params["split_convex_hull_limit"],
                                     
-                                                                
-                            )
+                                    save_final_for_batch=True                                                              
+                )
             
             elif seed_merging_mode=="ERO":
                 print("Running make_seeds_merged")
-
                 
                 _ ,ori_combine_ids_map , output_dict=make_adaptive_seed.make_adaptive_seed_ero(                           
                                        
@@ -174,9 +173,9 @@ def run_batch_adaptive_seed(file_path):
                                     upper_threshold = optional_params["upper_thresholds"],
                                     split_size_limit= optional_params["split_size_limit"],
                                     split_convex_hull_limit = optional_params["split_convex_hull_limit"],
-                                    
-                                                                            
-                                        )            
+
+                                    save_final_for_batch = True
+                                )            
         except Exception as e:
             print(f"Error occurs when processing {config['img_path']}")
             df.loc[index,'error'] = str(e)

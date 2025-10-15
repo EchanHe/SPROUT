@@ -1,3 +1,4 @@
+from datetime import datetime
 import make_grow
 
 import yaml
@@ -77,8 +78,9 @@ def run_batch_grow(file_path):
         except Exception as e:
             print(f"Error occurs when growing on {config['img_path']}")
             df.loc[index,'error'] = str(e)
-    
-    df.to_csv(csv_path + "_running_results.csv", index = False)
+
+    df.to_csv(os.path.join(config['output_folder'],
+                           os.path.basename(csv_path) + f"_running_results_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"), index = False)
 
 
 

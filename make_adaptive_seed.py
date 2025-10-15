@@ -90,6 +90,7 @@ def save_seed(seed, output_folder, output_name, return_for_napari=False, seeds_d
         output_folder (str): Folder to save the seed.
         output_name (str): Name of the output file.
         return_for_napari (bool, optional): Whether to save in napari format. Defaults to False.
+        seeds_dict (dict, optional): Dictionary to store seeds for napari. Defaults to None.
     """
     output_path = os.path.join(output_folder, output_name)
     print(f"\tSaving {os.path.abspath(output_path)}")
@@ -133,7 +134,8 @@ def make_adaptive_seed_ero(
                         upper_threshold = None,
                         split_size_limit = (None,None),
                         split_convex_hull_limit = (None, None),
-                        return_for_napari = False                    
+                        return_for_napari = False,
+                        save_final_for_batch = False           
                       ):
     """
     Erosion-based merged seed generation with multi-threading.
@@ -189,6 +191,7 @@ def make_adaptive_seed_ero(
     
     base_name = config_core.check_and_assign_base_name(base_name, img_path, "adapt_seed")
 
+    root_output_folder = output_folder
     output_folder = os.path.join(output_folder , base_name)
 
     # if sub_folder is None:
@@ -425,9 +428,11 @@ def make_adaptive_seed_ero(
     output_img_name = "FINAL_adaptive_seed.tif"
     
     save_seed(combine_seed, output_folder, output_img_name, return_for_napari=return_for_napari, seeds_dict=seeds_dict)
-    
-    # imwrite(output_path, combine_seed, 
-    #     compression ='zlib')
+
+    if save_final_for_batch:
+        save_seed(combine_seed, root_output_folder, base_name + "_FINAL_adaptive_seed.tif", 
+                  return_for_napari=return_for_napari, seeds_dict=seeds_dict)
+
     
 
     
@@ -477,7 +482,8 @@ def make_adaptive_seed_thre(
                         split_size_limit = (None, None),
                         split_convex_hull_limit = (None, None),
         
-                        return_for_napari = False  
+                        return_for_napari = False,
+                        save_final_for_batch = False
                     ):
     
     """Perform adaptive seed generation and iterative splitting for image segmentation using thresholding and morphological erosion.
@@ -578,6 +584,8 @@ def make_adaptive_seed_thre(
     
 
     base_name = config_core.check_and_assign_base_name(base_name, img_path, "adapt_seed")
+    
+    root_output_folder = output_folder
     output_folder = os.path.join(output_folder , base_name)
     output_folder = os.path.abspath(output_folder)
     os.makedirs(output_folder,exist_ok=True)
@@ -835,8 +843,12 @@ def make_adaptive_seed_thre(
     # else:
     #     output_path = os.path.join(output_folder,"FINAL_" + output_name+'.tif')
     output_img_name = "FINAL_adaptive_seed.tif"
-    save_seed(combine_seed, output_folder, output_img_name, return_for_napari=return_for_napari, seeds_dict=seeds_dict)
-
+    save_seed(combine_seed, output_folder, output_img_name, 
+              return_for_napari=return_for_napari, seeds_dict=seeds_dict)
+    if save_final_for_batch:
+        save_seed(combine_seed, root_output_folder, base_name + "_FINAL_adaptive_seed.tif", 
+                  return_for_napari=return_for_napari, seeds_dict=seeds_dict)
+    
     config_core.save_config_with_output({
         "params": values_to_print},output_folder)
         

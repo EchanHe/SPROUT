@@ -585,6 +585,9 @@ class CSVAlignerGroupBox(QGroupBox):
             df.to_csv(save_path, index=False)
             self.show_info(f"CSV saved to:\n{save_path}")
             self.set_buttons_enabled(True)
+            
+            # clear the csv path to avoid overwriting
+            self.save_csv_line.setText("")
 
         def handle_error(e):
             self.show_error(f"CSV creation failed:\n{str(e)}")
@@ -810,7 +813,7 @@ class ThresholdParamWidget(QWidget):
 
         # === Threshold range inputs ===
         thresh_layout = QHBoxLayout()
-        thresh_layout.addWidget(QLabel("Threshold Range (min, max):"))
+        thresh_layout.addWidget(QLabel("Lower Threshold Range\n(Start, Stop):"))
         self.thresh_min = QLineEdit("1")
         self.thresh_min.setToolTip("Left bound of threshold factor or value")
         self.thresh_max = QLineEdit("")
@@ -821,7 +824,7 @@ class ThresholdParamWidget(QWidget):
 
        # === Upper threshold range inputs ===
         upper_layout = QHBoxLayout()
-        upper_layout.addWidget(QLabel("Upper Threshold Range (min, max):"))
+        upper_layout.addWidget(QLabel("Upper Threshold Range\n(Start, Stop):"))
         self.upper_min = QLineEdit("")
         self.upper_min.setToolTip("Left bound of upper threshold (optional)")
         self.upper_max = QLineEdit("")
@@ -832,11 +835,11 @@ class ThresholdParamWidget(QWidget):
 
         # Number of steps
         step_layout = QHBoxLayout()
-        step_layout.addWidget(QLabel("Number of Steps:"))
+        step_layout.addWidget(QLabel("Range Steps:"))
         self.num_steps = QSpinBox()
         self.num_steps.setMinimum(1)
         self.num_steps.setValue(1)
-        self.num_steps.setToolTip("Number of threshold values to generate. 1 = single value")
+        self.num_steps.setToolTip("Number of values to generate. 1 = single value")
         step_layout.addWidget(self.num_steps)
         self.layout().addLayout(step_layout)
 
@@ -894,23 +897,23 @@ class ThresholdParamWidget(QWidget):
         text = (
             "<b>Thresholding Parameters Explained:</b><br><br>"
             "<b>Threshold Mode:</b><br>"
-            "<b>・otsu_factor</b>: Use Otsu’s method to get a base threshold, then multiply it by min/max factors.<br>"
+            "<b>・otsu_factor</b>: Use Otsu’s method to get a base threshold, then multiply it by start/stop factors.<br>"
             "<b>・mean_factor</b>: Use the image mean intensity as the base threshold, then multiply by factor range.<br>"
             "<b>・actual_values</b>: Use absolute intensity values (e.g. 0–255 for 8-bit images) directly as thresholds.<br><br>"
-            "<b>Threshold Range (min, max):</b><br>"
+            "<b>Threshold Range (start, stop):</b><br>"
             "Defines the range to generate threshold values from.<br>"
             "• For <b>otsu_factor</b> or <b>mean_factor</b>: values are multipliers on the base threshold.<br>"
             "• For <b>actual_values</b>: values are direct pixel intensities.<br>"
-            "• If <b>Number of Steps = 1</b>, only the left (min) value is used.<br><br>"
             "<b>Upper Threshold Range (optional):</b><br>"
             "Used to generate a corresponding upper threshold list.<br>"
             "• Must be the same length as the threshold list.<br>"
             "• Each upper threshold must be strictly greater than the corresponding threshold.<br><br>"
             "<b>Number of Steps:</b><br>"
-            "Controls how many values are linearly generated between min and max.<br>"
-            "• If 1, only a single value (min) is used.<br><br>"
+            "Controls how many values are linearly generated between start and stop.<br>"
+            "• If 1, only a single value (start) is used.<br><br>"
+            "• If not 1, it uses np.linspace(start, stop, num_steps) to create a list of values<br><br>"
             "<b>Notes:</b><br>"
-            "• Leave 'max' empty if only one value is needed.<br>"
+            "• Leave 'stop' empty if only one value is needed.<br>"
             "• For 8-bit images, actual values must be in the range 0–255."
         )
         QMessageBox.information(self, "Threshold Parameters Help", text)
