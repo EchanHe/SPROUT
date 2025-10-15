@@ -90,9 +90,7 @@ def run_batch_adaptive_seed(file_path):
         optional_params = config_core.validate_input_yaml(config, config_core.input_val_make_adaptive_seed)
         
         
-        try:
-            sub_folder = os.path.basename(input_path)
-            
+        try:           
             if isinstance(config['thresholds'], int):
                 seed_merging_mode = "ERO"
             elif isinstance(config['thresholds'], list):

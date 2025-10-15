@@ -534,7 +534,13 @@ def validate_input_yaml(config, rules):
         if rule.get("required", False) or (not(rule.get("required", False)) and (value is not None)):
             # Check data type
             if not (isinstance(value, rule["type"])):
-                errors.append(f"Parameter '{param}' should be of type {rule['type'].__name__}, got {type(value).__name__}.")
+                # if rule["type"] is a tuple, check if value is in any of the types
+                if isinstance(rule["type"], tuple):
+                    if not any(isinstance(value, t) for t in rule["type"]):
+                        errors.append(f"Parameter '{param}' should be one of types {', '.join([t.__name__ for t in rule['type']])}, got {type(value).__name__}.")
+                        continue
+                else:
+                    errors.append(f"Parameter '{param}' should be of type {rule['type'].__name__}, got {type(value).__name__}.")
                 continue 
             
             # If list, check subtype
@@ -1387,6 +1393,11 @@ def merge_row_and_yaml_no_conflict(row: dict, yaml_config: dict) -> dict:
     duplicate_keys = set(row) & set(yaml_config)
     if duplicate_keys:
         raise ValueError(f"Conflict detected: keys present in both CSV row and YAML config: {list(duplicate_keys)}")
+    
+    # turn values of nan to None
+    for k, v in row.items():
+        if isinstance(v, float) and np.isnan(v):
+            row[k] = None
     
     # Merge with row taking precedence if needed (not used here due to check)
     merged = {**yaml_config, **row}
