@@ -5,7 +5,7 @@ import os, sys
 from datetime import datetime
 import itertools
 
-import make_mesh
+
 import glob
 
 lock = threading.Lock()
@@ -357,10 +357,15 @@ def make_seeds(**kwargs):
 
         # # Make meshes  
         if is_make_meshes: 
+            try:
+                from make_mesh import make_mesh_for_tiff
+            except ImportError as e:
+                raise ImportError("make_mesh module is not available due to import error.") from e
+
             tif_files = glob.glob(os.path.join(output_seed_sub_folder, '*.tif'))
 
             for tif_file in tif_files:
-                make_mesh.make_mesh_for_tiff(tif_file,output_seed_sub_folder,
+                make_mesh_for_tiff(tif_file,output_seed_sub_folder,
                                     num_threads=num_threads,no_zero = True,
                                     colormap = "color10",
                                     downsample_scale=downsample_scale,

@@ -2,7 +2,7 @@ import os, sys
 from qtpy.QtWidgets import (
     QGroupBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,QDoubleSpinBox,
     QSpinBox, QCheckBox, QFileDialog , QVBoxLayout , QComboBox , QTableWidget,QWidget,QSlider,
-     QHeaderView
+     QHeaderView, QSizePolicy
     
 )
 from qtpy.QtCore import Signal, Qt ,QThreadPool,QObject,QRunnable,Slot
@@ -358,6 +358,9 @@ class MainSeedParamWidget(QGroupBox):
     def __init__(self, title="Parameters", viewer=None, image_combo=None):
         super().__init__(title)
 
+        # set min height of self
+        self.setMinimumHeight(350)
+        
         self.viewer = viewer
         self.image_combo = image_combo  # ComboBox for selecting image layer
         # self.show_touch_rule = show_touch_rule
@@ -748,7 +751,9 @@ class MainGrowParamWidget(QGroupBox):
                  mode = "grow",  # "grow" or "seed"
                  colnames=None):
         super().__init__(title)
-
+        # set min height of self
+        self.setMinimumHeight(350)
+        
         self.viewer = viewer
         self.image_combo = image_combo  # ComboBox for selecting image layer
         # self.show_touch_rule = show_touch_rule
@@ -859,14 +864,15 @@ class MainGrowParamWidget(QGroupBox):
 
     def _add_threshold_row_adaptive(self, dilate=5):
         """Add a new threshold row to the table, auto-suggesting values from previous row or image dtype."""
-        row = self.threshold_table.rowCount()
-        self.threshold_table.insertRow(row)
+
 
         # not image
         if self.image_combo is None or not self.image_combo.currentText():
             show_error("Please select an image layer first")
             return
-
+        row = self.threshold_table.rowCount()
+        self.threshold_table.insertRow(row)
+        
         current_image = self.viewer.layers[self.image_combo.currentText()].data
 
         # set default values based on previous row or image dtype
@@ -1014,7 +1020,12 @@ class MainGrowParamWidget(QGroupBox):
             self.threshold_table.setCellWidget(row, 2, dilate_spin)
 
 
-
+def set_compact(widget, minw=None, maxw=None):
+    widget.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
+    if minw is not None:
+        widget.setMinimumWidth(minw)
+    if maxw is not None:
+        widget.setMaximumWidth(maxw)
 
 
 class SeedOptionalParamGroupBox(QGroupBox):
@@ -1053,19 +1064,24 @@ class SeedOptionalParamGroupBox(QGroupBox):
         self.min_split_total_ratio_spin.setValue(0.0)
         self.min_split_total_ratio_spin.setToolTip("Min total split ratio")
 
-        # add to row layout
-        no_split_row_layout = QHBoxLayout()
-        no_split_row_layout.addWidget(QLabel("No-split Iter:"))
-        no_split_row_layout.addWidget(self.no_split_spin)
-        # no_split_row_layout.addSpacing(8)
-        no_split_row_layout.addWidget(QLabel("Min Ratio:"))
-        no_split_row_layout.addWidget(self.min_split_ratio_spin)
-        # no_split_row_layout.addSpacing(8)
-        no_split_row_layout.addWidget(QLabel("Total Ratio:"))
-        no_split_row_layout.addWidget(self.min_split_total_ratio_spin)
+
+
 
         # add to the split parameters row
-        layout.addRow("Split Parameters", no_split_row_layout)
+        layout.addRow("No split iterations", self.no_split_spin)
+        
+        split_ratio_row_layout = QHBoxLayout()
+        self.split_ratio_label = QLabel("Split Ratios:")
+        self.split_ratio_label.setToolTip("Minimum ratios of a sub-segment to be considered as a split")
+        split_ratio_row_layout.addWidget(self.split_ratio_label)
+        split_ratio_row_layout.addWidget(self.min_split_ratio_spin)
+        
+        self.total_ratio_label = QLabel("Total Ratio:")
+        self.total_ratio_label.setToolTip("Minimum proportion of all sub-segments to current to be considered as a split")
+        split_ratio_row_layout.addWidget(self.total_ratio_label)
+        split_ratio_row_layout.addWidget(self.min_split_total_ratio_spin)
+        
+        layout.addRow("Split Parameters", split_ratio_row_layout)
 
         # # min_split_ratio (float)
         # self.min_split_ratio_spin = QDoubleSpinBox()
@@ -1085,24 +1101,67 @@ class SeedOptionalParamGroupBox(QGroupBox):
 
 
         # split_size_limit (tuple of float or None)
-        self.size_lower_line = QLineEdit()
-        self.size_upper_line = QLineEdit()
+        self.size_lower_spin = QSpinBox()
+        self.size_lower_spin.setRange(-1, 1_000_000_000)
+        self.size_lower_spin.setValue(-1)
+        self.size_lower_spin.setToolTip("Lower limit (-1 means no limit)")
+
+        self.size_upper_spin = QSpinBox()
+        self.size_upper_spin.setRange(-1, 1_000_000_000)
+        self.size_upper_spin.setValue(-1)
+        self.size_upper_spin.setToolTip("Upper limit (-1 means no limit)")
+
+
         size_layout = QHBoxLayout()
-        size_layout.addWidget(QLabel("Lower"))
-        size_layout.addWidget(self.size_lower_line)
-        size_layout.addWidget(QLabel("Upper"))
-        size_layout.addWidget(self.size_upper_line)
-        layout.addRow("Split size limit", size_layout)
+        
+        self.size_lower_label = QLabel("Lower")
+        self.size_lower_label.setToolTip("Lower limit (-1 means no limit)")
+        size_layout.addWidget(self.size_lower_label)
+        size_layout.addWidget(self.size_lower_spin)
+        self.size_upper_label = QLabel("Upper")
+        self.size_upper_label.setToolTip("Upper limit (-1 means no limit)")
+        size_layout.addWidget(self.size_upper_label)
+        size_layout.addWidget(self.size_upper_spin)
+        layout.addRow("Split size:", size_layout)
 
         # split_convex_hull_limit (tuple of float or None)
-        self.hull_lower_line = QLineEdit()
-        self.hull_upper_line = QLineEdit()
+        self.hull_lower_spin = QSpinBox()
+        self.hull_lower_spin.setRange(-1, 1_000_000_000)
+        self.hull_lower_spin.setValue(-1)
+        self.hull_lower_spin.setToolTip("Lower limit (-1 means no limit)")
+
+        self.hull_upper_spin = QSpinBox()
+        self.hull_upper_spin.setRange(-1, 1_000_000_000)
+        self.hull_upper_spin.setValue(-1)
+        self.hull_upper_spin.setToolTip("Upper limit (-1 means no limit)")
         hull_layout = QHBoxLayout()
-        hull_layout.addWidget(QLabel("Lower"))
-        hull_layout.addWidget(self.hull_lower_line)
-        hull_layout.addWidget(QLabel("Upper"))
-        hull_layout.addWidget(self.hull_upper_line)
-        layout.addRow("Convex hull limit", hull_layout)
+        self.hull_lower_label = QLabel("Lower")
+        self.hull_lower_label.setToolTip("Lower limit (-1 means no limit)")
+        hull_layout.addWidget(self.hull_lower_label)
+        hull_layout.addWidget(self.hull_lower_spin)
+        self.hull_upper_label = QLabel("Upper")
+        self.hull_upper_label.setToolTip("Upper limit (-1 means no limit)")
+        hull_layout.addWidget(self.hull_upper_label)
+        hull_layout.addWidget(self.hull_upper_spin)
+        layout.addRow("Convex hull size", hull_layout)
+
+        for w in [
+            self.min_size_spin,
+            self.no_split_spin,
+            self.min_split_ratio_spin,
+            self.min_split_total_ratio_spin,
+            self.size_lower_spin,
+            self.size_upper_spin,
+            self.hull_lower_spin,
+            self.hull_upper_spin,
+            self.size_lower_label,
+            self.size_upper_label,
+            self.hull_lower_label,
+            self.hull_upper_label,
+            self.split_ratio_label,
+            self.total_ratio_label
+        ]:
+            set_compact(w, minw=40, maxw=80)
 
         self.setLayout(layout)
     
@@ -1121,20 +1180,31 @@ class SeedOptionalParamGroupBox(QGroupBox):
 
         if 'split_size_limit' in params and params['split_size_limit'] is not None:
             lower, upper = params['split_size_limit']
-            self.size_lower_line.setText(str(lower) if lower is not None else "")
-            self.size_upper_line.setText(str(upper) if upper is not None else "")
+            # valid lower and upper are int or None
+            if not (isinstance(lower, int) or lower is None):
+                raise ValueError("split_size_limit lower must be int or None")
+            if not (isinstance(upper, int) or upper is None):
+                raise ValueError("split_size_limit upper must be int or None")
+            self.size_lower_spin.setValue(lower if lower is not None else -1)
+            self.size_upper_spin.setValue(upper if upper is not None else -1)
 
         if 'split_convex_hull_limit' in params and params['split_convex_hull_limit'] is not None:
             lower, upper = params['split_convex_hull_limit']
-            self.hull_lower_line.setText(str(lower) if lower is not None else "")
-            self.hull_upper_line.setText(str(upper) if upper is not None else "")
+            
+            # valid lower and upper are int or None
+            if not (isinstance(lower, int) or lower is None):
+                raise ValueError("split_convex_hull_limit lower must be int or None")
+            if not (isinstance(upper, int) or upper is None):
+                raise ValueError("split_convex_hull_limit upper must be int or None")
+            self.hull_lower_spin.setValue(lower if lower is not None else -1)
+            self.hull_upper_spin.setValue(upper if upper is not None else -1)
+
+
 
     def get_params(self):
-        def parse_optional_float(text):
-            try:
-                return float(text)
-            except ValueError:
-                return None
+        def parse_optional_spin(spinbox):
+            val = spinbox.value()
+            return None if val == -1 else val
 
         return {
             "sort": self.sort_checkbox.isChecked(),
@@ -1143,12 +1213,12 @@ class SeedOptionalParamGroupBox(QGroupBox):
             "min_split_ratio": self.min_split_ratio_spin.value(),
             "min_split_total_ratio": self.min_split_total_ratio_spin.value(),
             "split_size_limit": (
-                parse_optional_float(self.size_lower_line.text()),
-                parse_optional_float(self.size_upper_line.text())
+                parse_optional_spin(self.size_lower_spin),
+                parse_optional_spin(self.size_upper_spin)
             ),
             "split_convex_hull_limit": (
-                parse_optional_float(self.hull_lower_line.text()),
-                parse_optional_float(self.hull_upper_line.text())
+                parse_optional_spin(self.hull_lower_spin),
+                parse_optional_spin(self.hull_upper_spin)
             )
         }
 
@@ -1273,269 +1343,3 @@ class GrowOptionalParamGroupBox(QGroupBox):
             "no_growth_max_iter": no_growth_max_iter
         }
         
-
-## Deprecated classes, kept for reference
-
-class MainParamWidget(QGroupBox):
-    def __init__(self, title="Parameters", viewer=None, image_combo=None,
-                 mode = "grow",  # "grow" or "seed"
-                 colnames=None):
-        super().__init__(title)
-
-        self.viewer = viewer
-        self.image_combo = image_combo  # ComboBox for selecting image layer
-        # self.show_touch_rule = show_touch_rule
-        
-        self.mode = mode  # "grow" or "seed"
-        
-        layout = QVBoxLayout()
-
-        # Top rowlayout 
-        top_row_layout = QHBoxLayout()
-
-        # Threads
-        top_row_layout.addWidget(QLabel("Threads:"))
-        self.thread_spin = QSpinBox()
-        self.thread_spin.setMinimum(1)
-        self.thread_spin.setMaximum(os.cpu_count())
-        self.thread_spin.setValue(min(4, os.cpu_count() - 1))
-        self.thread_spin.setFixedWidth(80)
-        top_row_layout.addWidget(self.thread_spin)
-
-        # Add some space between the two sections
-        top_row_layout.addSpacing(20)
-
-        # Touch Rule (if shown)
-        if self.mode == "grow":
-            top_row_layout.addWidget(QLabel("Touch Rule:"))
-            self.touch_rule_combo = QComboBox()
-            self.touch_rule_combo.addItems(["stop", "overwrite"])
-            self.touch_rule_combo.setFixedWidth(100)
-            top_row_layout.addWidget(self.touch_rule_combo)
-        else:
-            self.touch_rule_combo = None
-
-        if self.mode == "seed":
-            top_row_layout.addWidget(QLabel("Segments:"))
-            self.segments_spin = QSpinBox()
-            self.segments_spin.setRange(1, 1000)
-            self.segments_spin.setValue(10)
-            self.segments_spin.setMaximumWidth(80)
-            top_row_layout.addWidget(self.segments_spin)
-        else:
-            self.segments_spin = None
-            
-
-        top_row_layout.addStretch()
-        layout.addLayout(top_row_layout)
-
-        # ▶️ Threshold Table
-        self.threshold_table = QTableWidget()
-        self.threshold_table.setColumnCount(4)
-        
-        
-        
-        if colnames is not None:
-            self.threshold_table.setHorizontalHeaderLabels(colnames)
-        else:
-            self.threshold_table.setHorizontalHeaderLabels(
-                ["Lower Threshold", "Upper Threshold", "Steps", "Footprint"]
-            )
-
-
-        
-        header = self.threshold_table.horizontalHeader()
-        header.setSectionResizeMode(QHeaderView.Stretch)    
-        
-        self.threshold_table.setMaximumHeight(200)
-        layout.addWidget(self.threshold_table)
-
-        # ▶️ Add/Remove Buttons
-        btn_layout = QHBoxLayout()
-        self.add_threshold_btn = QPushButton("Add Threshold")
-        self.remove_threshold_btn = QPushButton("Remove Selected")
-        btn_layout.addWidget(self.add_threshold_btn)
-        btn_layout.addWidget(self.remove_threshold_btn)
-        btn_layout.addStretch()
-        layout.addLayout(btn_layout)
-
-        self.setLayout(layout)
-        
-        self.add_threshold_btn.clicked.connect(self._add_threshold_row_adaptive)
-        self.remove_threshold_btn.clicked.connect(self._remove_threshold_row)
-
-    def get_params(self):
-        # return parameters as a dictionary
-        
-        thresholds, upper_thresholds, steps , footprints = self._get_threshold_params()
-        
-        if self.mode == "grow":
-            return {
-                "threads": self.thread_spin.value(),
-                "touch_rule": self.touch_rule_combo.currentText() if self.touch_rule_combo else None,
-                "thresholds": thresholds,
-                "upper_thresholds": upper_thresholds,
-                "dilation_steps": steps,
-                'footprints': footprints
-            }
-        elif self.mode == "seed":
-            return {
-                "threads": self.thread_spin.value(),
-                "segments": self.segments_spin.value(),
-                "thresholds": thresholds,
-                "upper_thresholds": upper_thresholds,
-                "erosion_steps": steps,
-                "footprints": footprints
-            }
-
-    def _get_threshold_params(self):
-        """Get threshold parameters from table."""
-        thresholds = []
-        upper_thresholds = []
-        dilate_iters = []
-        footprints = []
-        
-        for row in range(self.threshold_table.rowCount()):
-            # Lower threshold
-            lower_widget = self.threshold_table.cellWidget(row, 0)
-            thresholds.append(lower_widget.value())
-            
-            # Upper threshold
-            upper_widget = self.threshold_table.cellWidget(row, 1)
-            upper_thresholds.append(upper_widget.value())
-
-            
-            # Dilate iterations
-            dilate_widget = self.threshold_table.cellWidget(row, 2)
-            dilate_iters.append(dilate_widget.value())
-            
-
-            footprint_widget = self.threshold_table.cellWidget(row, 3)
-            footprints.append(footprint_widget.currentText())
-        
-        return thresholds, upper_thresholds, dilate_iters , footprints
-
-    def _add_threshold_row_adaptive(self, dilate=5):
-        """Add a new threshold row to the table, auto-suggesting values from previous row or image dtype."""
-        row = self.threshold_table.rowCount()
-        self.threshold_table.insertRow(row)
-
-        # not image
-        if self.image_combo is None or not self.image_combo.currentText():
-            show_error("Please select an image layer first")
-            return
-
-        current_image = self.viewer.layers[self.image_combo.currentText()].data
-
-        # set default values based on previous row or image dtype
-        if row == 0:
-            upper_value = self._get_img_dtype_max(current_image.dtype)
-            lower_value = 0
-        else:
-            lower_widget = self.threshold_table.cellWidget(row - 1, 0)
-            lower_value = lower_widget.value()
-            upper_widget = self.threshold_table.cellWidget(row - 1, 1)
-            upper_value = upper_widget.value()
-            dilate_widget = self.threshold_table.cellWidget(row - 1, 2)
-            dilate = dilate_widget.value()
-
-        # set the range for the spinboxes
-        lower_min = 0
-        lower_max = upper_value
-        upper_min = lower_value
-        upper_max = self._get_img_dtype_max(current_image.dtype)
-
-        # Lower threshold
-        lower_spin = QSpinBox()
-        lower_spin.setRange(lower_min, lower_max)
-        lower_spin.setValue(lower_value)
-        self.threshold_table.setCellWidget(row, 0, lower_spin)
-
-        # Upper threshold
-        upper_spin = QSpinBox()
-        upper_spin.setRange(upper_min, upper_max)
-        upper_spin.setValue(upper_value)
-        self.threshold_table.setCellWidget(row, 1, upper_spin)
-
-        # Dilate iterations
-        dilate_spin = QSpinBox()
-        dilate_spin.setRange(1, 1000)
-        dilate_spin.setValue(dilate)
-        self.threshold_table.setCellWidget(row, 2, dilate_spin)
-        
-        # Footprint
-        footprint_combo = QComboBox()
-        # footprint_combo.addItems("ball")
-        
-        if current_image.ndim == 2 or current_image.shape[0] == 1:
-            footprint_combo.addItems(support_footprints_2d)
-        elif current_image.ndim == 3:
-            footprint_combo.addItems(support_footprints)
-        
-        self.threshold_table.setCellWidget(row, 3, footprint_combo)
-        
-        
-
-    def _remove_threshold_row(self):
-        """Remove selected threshold row."""
-        current_row = self.threshold_table.currentRow()
-        if current_row >= 0:
-            self.threshold_table.removeRow(current_row)
-
-    def _get_img_dtype_max(self, image_dtype):
-        """Set the range of the threshold spinboxes based on the image dtype."""
-        if image_dtype == np.uint8:
-            max_value = 255
-        elif image_dtype == np.uint16:
-            max_value = 65535
-        elif image_dtype == np.uint32:
-            max_value = 4294967295
-        elif image_dtype == np.float32 or image_dtype == np.float64:
-            max_value = 1.0
-        else:
-            max_value = 255
-        return max_value
-    
-    def clean_table(self):
-        """Clear all rows in the threshold table."""
-        self.threshold_table.setRowCount(0)
-        self._add_threshold_row_adaptive()
-
-    def _add_threshold_row(self, lower=100, upper=None, dilate=5):
-        """depracated: use _add_threshold_row_adaptive instead
-        Add a new threshold row to the table."""
-        row = self.threshold_table.rowCount()
-        self.threshold_table.insertRow(row)
-        
-        # Lower threshold
-        lower_spin = QDoubleSpinBox()
-        lower_spin.setRange(0, 65535)
-        lower_spin.setValue(lower)
-        self.threshold_table.setCellWidget(row, 0, lower_spin)
-        
-        # Upper threshold
-        upper_widget = QWidget()
-        upper_layout = QHBoxLayout()
-        upper_layout.setContentsMargins(0, 0, 0, 0)
-        
-        use_upper = QCheckBox()
-        upper_spin = QDoubleSpinBox()
-        upper_spin.setRange(0, 65535)
-        upper_spin.setValue(upper if upper else 65535)
-        upper_spin.setEnabled(upper is not None)
-        
-        # use_upper.setChecked(upper is not None)
-        # use_upper.toggled.connect(upper_spin.setEnabled)
-        
-        # upper_layout.addWidget(use_upper)
-        upper_layout.addWidget(upper_spin)
-        upper_widget.setLayout(upper_layout)
-        
-        self.threshold_table.setCellWidget(row, 1, upper_widget)
-        
-        # Dilate iterations
-        dilate_spin = QSpinBox()
-        dilate_spin.setRange(1, 1000)
-        dilate_spin.setValue(dilate)
-        self.threshold_table.setCellWidget(row, 2, dilate_spin)
-    

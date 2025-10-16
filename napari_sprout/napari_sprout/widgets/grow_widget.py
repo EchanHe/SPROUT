@@ -4,7 +4,7 @@ from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QSpinBox, QDoubleSpinBox, QComboBox, QGroupBox, QCheckBox,
     QTableWidget, QTableWidgetItem, QFormLayout, QProgressBar,
-    QHeaderView, QFileDialog, QMessageBox
+    QHeaderView, QFileDialog, QMessageBox,QScrollArea
 )
 from qtpy.QtCore import Qt, Signal, QThread
 import numpy as np
@@ -219,9 +219,18 @@ class SeedGrowthWidget(QWidget):
         # Status
         self.status_label = QLabel("Ready to grow seeds")
         layout.addWidget(self.status_label)
+
+        main_scroll_container = QWidget()
+        main_scroll_container.setLayout(layout)
+
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(main_scroll_container)
         
-        layout.addStretch()
-        self.setLayout(layout)
+        final_layout = QVBoxLayout()
+        final_layout.addWidget(scroll)
+        self.setLayout(final_layout)
         
         # Add default threshold
         # self._add_threshold_row(100, None, 5)

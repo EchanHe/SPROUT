@@ -4,7 +4,7 @@ from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QSpinBox, QDoubleSpinBox, QComboBox, QGroupBox, QCheckBox,
     QSlider, QFormLayout, QMessageBox, QLineEdit, QFileDialog,
-    QScrollArea
+    QScrollArea, QSizePolicy
 )
 from qtpy.QtCore import Qt, Signal, QThread
 import numpy as np
@@ -152,6 +152,21 @@ class SeedWorker(QThread):
         except Exception as e:
             self.error.emit(str(e))
 
+
+def set_min_size_policy_recursive(widget, min_width=40, max_width=300):
+    for w in widget.findChildren((QPushButton, QLineEdit)):
+        w.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
+        w.setMinimumWidth(min_width)
+        w.setMaximumWidth(max_width)
+
+def set_compact(widget, minw=None, maxw=None):
+    widget.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
+    if minw is not None:
+        widget.setMinimumWidth(minw)
+    if maxw is not None:
+        widget.setMaximumWidth(maxw)
+
+
 class SeedGenerationWidget(QWidget):
     """Widget for interactive seed generation."""
     
@@ -242,6 +257,8 @@ class SeedGenerationWidget(QWidget):
         # --- Main parameters widget ---
         self.main_param_widget = MainSeedParamWidget(title="Parameters",
                                                  image_combo=self.image_combo,viewer=self.viewer)
+
+
         layout.addWidget(self.main_param_widget)
 
 
@@ -344,6 +361,7 @@ class SeedGenerationWidget(QWidget):
         main_scroll_container = QWidget()
         main_scroll_container.setLayout(layout)
 
+
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setWidget(main_scroll_container)
@@ -352,6 +370,13 @@ class SeedGenerationWidget(QWidget):
         final_layout.addWidget(scroll)
         self.setLayout(final_layout)
         
+        
+        for w in [
+            self.generate_btn, self.stop_btn,
+            self.import_btn, self.export_btn
+
+        ]:
+            set_compact(w, minw=100)        
         # layout.addStretch()
         # self.setLayout(layout)
 

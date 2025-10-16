@@ -13,7 +13,6 @@ import threading
 import sprout_core.sprout_core as sprout_core 
 import sprout_core.config_core as config_core 
 import sprout_core.vis_lib as vis_lib
-import make_mesh
 
 from multiprocessing import cpu_count
 # Maximum threads for multiprocessing
@@ -486,10 +485,15 @@ def grow_mp(**kwargs):
 
     # Make meshes  
     if is_make_meshes:  
+        try:
+            from make_mesh import make_mesh_for_tiff
+        except ImportError as e:
+            raise ImportError("make_mesh module is not available due to import error.") from e
+        
         tif_files = glob.glob(os.path.join(output_folder, '*.tif'))
 
         for tif_file in tif_files:
-            make_mesh.make_mesh_for_tiff(tif_file,output_folder,
+            make_mesh_for_tiff(tif_file,output_folder,
                                 num_threads=num_threads,no_zero = True,
                                 colormap = "color10",
                                 downsample_scale=downsample_scale,
