@@ -105,9 +105,13 @@ pip install napari
 cd ./napari_sprout
 pip install -e .
 ```
-You can launch napari by running napari in the command line.
-The SPROUT plugin will appear under the Plugins menu in the napari UI.
+#### Launching napari
 
+- Start napari by running `napari` in a terminal or command prompt.
+- Open the SPROUT plugin from the napari menu: Plugins → SPROUT.
+- Quickstart: [napari quickstart guide](./docs/napari_quickstart.md)
+- Full napari docs: [https://napari.org/](https://napari.org/)
+- More on using napari-sprout: see [View & Edit (napari)](#view--edit-napari)
 
 
 
@@ -116,7 +120,7 @@ The SPROUT plugin will appear under the Plugins menu in the napari UI.
 SPROUT follows a **two-step workflow** for multi-class segmentation:
 
 
-![workflow](./material/flowchart.png)
+![workflow](./docs/material/flowchart.png)
 
 1. **Seed Generation**  
    The goal of this step is to reduce the regions of the image by breaking it into multiple distinct components (splits). There are two strategies:
@@ -280,15 +284,15 @@ You can also visualize, inspect, and edit seeds or results using 3D image proces
 ## Demo Results
 
 Batch processing results of segmenting dog bones in CT scans with varying anatomy and postures.
-![Result1](./material/dog.png)
+![Result1](./docs/material/dog.png)
 
 
 Batch processing results of segmenting foram binary segmentation (supports segmentation masks as input too) with variable numbers of chambers
-![Result2](./material/foram_v3_no_3.png)
+![Result2](./docs/material/foram_v3_no_3.png)
 
 Gallery of other results
 
-![Result1](./material/result_1.png)
+![Result1](./docs/material/result_1.png)
 
 _Note: All results underwent manual post-processing primarily to verify and correct segmentation errors._
 
