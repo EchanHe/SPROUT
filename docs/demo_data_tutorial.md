@@ -4,6 +4,8 @@ We demonstrate how to use **seed generation**, **adaptive seed generation**, **g
 
 For more advanced scenarios and parameter tuning, see [scenarios.md](scenarios.md).
 
+For the napari quickstart, see [napari Quickstart Guide](napari_quickstart.md).
+
 ## Specs
 Windows 11, equipped with an 11th Gen Intel(R) Core(TM) i7-11800H CPU @ 2.30 GHz, 48 GB RAM.
 

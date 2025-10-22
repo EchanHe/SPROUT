@@ -1,5 +1,12 @@
 # SPROUT
-_A User-friendly, Scalable Toolkit for Multi-class Segmentation of Volumetric Images_
+
+## TL;DR 
+SPROUT is a lightweight segmentation toolkit for fine-grained and multi-part segmentation of grayscale 2D/3D images.
+
+👉 Quickstart: [Quickstart with Demo Data](./docs/demo_data_tutorial.md)
+
+Video demo — Getting started with GUI-supported SPROUT using napari:  
+[![Watch the video](https://img.youtube.com/vi/6rA7wW6f0SU/0.jpg)](https://www.youtube.com/watch?v=6rA7wW6f0SU)
 
 - [Introduction](#introduction)
 - [Prerequisites](#prerequisites)
@@ -22,7 +29,6 @@ SPROUT is an interpretable workflow for semi-automated, multi-class segmentation
 **Y. He, M. Camaiti, L.E. Roberts, J.M. Mulqueeney, E. Ioannou, M. Didziokas, A. Goswami. 2024.**  
 [*SPROUT: A User-friendly, Scalable Toolkit for Multi-class Segmentation of Volumetric Images*](https://www.biorxiv.org/content/10.1101/2024.11.22.624847v2.abstract)  
 
-👉 If you want to **jump straight in**, see: [Quickstart with Demo Data](#quickstart-with-demo-data).
 
 ## Prerequisites
 
