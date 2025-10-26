@@ -2,7 +2,7 @@
 import os
 import json
 import cv2
-import torch
+
 import numpy as np
 from PIL import Image
 from tqdm import tqdm
@@ -17,7 +17,11 @@ from skimage.morphology import skeletonize
 
 import sprout_core.config_core as config_core
 
-
+try:
+    import torch
+except ImportError:
+    print("[ERROR] `torch` is not installed. Please install it to run SAM inference.")
+    torch = None
 
 try:
     from sam2.build_sam import build_sam2
@@ -678,6 +682,57 @@ def sample_points(mask, n=3, method='kmeans'):
         raise ValueError(f"Unknown sampling method: {method}. Supported methods: 'kmeans', 'center_edge', 'skeleton', 'random'.")
 
 
+def load_single_json_as_points(json_path):
+    """Read a JSON file and return point coordinates, labels, and names."""
+    with open(json_path, "r") as f:
+        prompts = json.load(f)
+    coords = []
+    labels = []
+    names = []
+    for p in prompts:
+        coords.append(p["point"])
+        labels.append(p["label"])
+        names.append(p["name"])
+    return coords, labels, names
+
+def load_prompts_as_points_layers(prompts_dir, axis="Z"):
+    """
+    Iterate over all JSON files in prompts_dir, read points, and pad to 3D coordinates
+    according to axis and slice_idx.
+    Returns dict: {class_name: {"coords": ndarray, "labels": ndarray, "names": ndarray}}
+    """
+    class_points = defaultdict(lambda: {"coords": [], "labels": [], "names": []})
+    axis = axis.upper()
+    for fname in sorted(os.listdir(prompts_dir)):
+        if not fname.endswith('.json'):
+            continue
+        # extract slice index
+        if fname.startswith('name_'):
+            slice_idx = int(fname.split('_')[1].split('.')[0])
+        else:
+            continue
+        file_path = os.path.join(prompts_dir, fname)
+        coords_2d, labels, names = load_single_json_as_points(file_path)
+        for (y, x), label, name in zip(coords_2d, labels, names):
+            # assemble 3D coordinate based on axis
+            if axis == "Z":
+                coord = [slice_idx, x, y]
+            elif axis == "Y":
+                coord = [x, slice_idx, y]
+            elif axis == "X":
+                coord = [x, y, slice_idx]
+            else:
+                raise ValueError(f"Unknown axis: {axis}")
+            class_points[name]["coords"].append(coord)
+            class_points[name]["labels"].append(label)
+            class_points[name]["names"].append(name)
+    # convert to ndarray
+    for name in class_points:
+        class_points[name]["coords"] = np.array(class_points[name]["coords"])
+        class_points[name]["labels"] = np.array(class_points[name]["labels"])
+        class_points[name]["names"] = np.array(class_points[name]["names"])
+    return class_points
+
 
 def extract_slices_and_prompts(
     
@@ -696,6 +751,56 @@ def extract_slices_and_prompts(
     negative_points=None,
     sample_method='random'  # 'kmeans', 'center_edge', 'skeleton', 'random'
 ):
+    """
+    Extract prompts (points or bounding boxes) from 2D slices of a 3D image/segmentation pair for SAM-based segmentation.
+
+    Parameters
+    ----------
+    img_path : str or None
+        Path to the input image (optional if `img` is provided).
+    seg_path : str or None
+        Path to the segmentation/label image (optional if `seg` is provided).
+    img : np.ndarray or None
+        Input image data (optional if `img_path` is provided).
+    seg : np.ndarray or None
+        Segmentation/label data (optional if `seg_path` is provided).
+    output_prompt_dir : str or None
+        Directory to save generated prompt JSON files. If None, a temporary folder will be used.
+    output_img_dir : str or None
+        Directory to save image slice. If None, a temporary folder will be used.
+    axis : str
+        Axis along which to slice the 3D data ('X', 'Y', or 'Z'). Ignored if per_slice_2d_input is True.
+    n_points_per_class : int
+        Number of positive points to sample per class in each slice.
+    slice_range : tuple or None
+        If specified, only process slices in the given (start, end) range.
+    prompt_type : str
+        Type of prompts to generate: 'point' (default) or 'bbox'.
+    per_slice_2d_input : bool
+        If True, treat the input as a stack/list of 2D slices. 
+        If True and image is 3D, slice on Z axis
+        If False, slice along `axis` in 3D.
+    sample_neg_each_class : bool
+        If True, sample negative points separately for each class. If False, negatives are from all other classes.
+    negative_points : int or None
+        Number of negative points to sample per class (default: same as n_points_per_class).
+    sample_method : str
+        Sampling method for points ('random', 'kmeans', 'center_edge', 'skeleton').
+
+    Returns
+    -------
+    dict
+        Dictionary with keys:
+            'prompts_dir': path to the directory containing prompt JSON files.
+            'images_dir': path to the directory containing 8-bit PNG image slices.
+
+    Notes
+    -----
+    - The function saves prompt information (points or bounding boxes) for each slice as a separate JSON file.
+    - Prompts are saved in [x, y] order for each 2D slice.
+    - Designed as a pre-processing step for SAM 2D/3D segmentation pipelines.
+    """    
+    
     assert prompt_type in ['point', 'bbox'], "prompt_type must be 'point' or 'bbox'"
 
     img = config_core.check_and_load_data(img, img_path, "img")

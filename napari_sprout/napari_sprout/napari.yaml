@@ -5,7 +5,9 @@ contributions:
     - id: napari-sprout.make_widget
       python_name: napari_sprout._widget:make_sprout_widget
       title: Create SPROUT Widget
-  # commands:
+    - id: napari-sprout.sam_widget
+      python_name: napari_sprout._widget:make_sprout_widget_sam
+      title: SPROUT SAM
     - id: napari-sprout.load_widget
       python_name: napari_sprout._widget:load_images_widget
       title: Load files for sprout
@@ -26,6 +28,8 @@ contributions:
   widgets:
     - command: napari-sprout.make_widget
       display_name: SPROUT_main
+    - command: napari-sprout.sam_widget
+      display_name: SPROUT_SAM
   # widgets:
     - command: napari-sprout.load_widget
       display_name: SPROUT_load
