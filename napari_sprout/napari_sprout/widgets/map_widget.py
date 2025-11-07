@@ -35,37 +35,42 @@ class LabelMapperWidget(QWidget):
         self.layer_label.setToolTip("Currently active label layer in the viewer. Labels will be assigned based on this layer.")
         self.layout().addWidget(self.layer_label)
 
-        # --- Scheme Controls ---
-        # self.layout().addWidget(QLabel("Scheme Controls:"))
-        scheme_controls = QHBoxLayout()
-
+        # --- Scheme Controls (more compact layout) ---
+        # Top row: Load / Save
+        scheme_controls_top = QHBoxLayout()
         self.load_scheme_btn = QPushButton("Load Scheme")
         self.save_scheme_btn = QPushButton("Save Scheme")
-        self.add_class_btn = QPushButton("Add Class")
-        self.remove_class_btn = QPushButton("Remove Class")
-        self.class_input = QLineEdit()
-        self.class_input.setPlaceholderText("Class name")
-
-        # Set tooltips for scheme controls
         self.load_scheme_btn.setToolTip("Load a class scheme from a JSON file. The scheme defines available semantic classes.")
         self.save_scheme_btn.setToolTip("Save the current class scheme to a JSON file.")
+        scheme_controls_top.addWidget(self.load_scheme_btn)
+        scheme_controls_top.addWidget(self.save_scheme_btn)
+        self.layout().addLayout(scheme_controls_top)
+
+        # Second row: class input + add/remove/clear
+        scheme_controls = QHBoxLayout()
+        self.class_input = QLineEdit()
+        self.class_input.setPlaceholderText("Class name")
+        self.add_class_btn = QPushButton("Add Class")
+        self.remove_class_btn = QPushButton("Remove Class")
+        # Clear all classes button
+        self.clear_classes_btn = QPushButton("Remove All Classes")
+
+        # Set tooltips for scheme controls
         self.add_class_btn.setToolTip("Add a new semantic class to the scheme.")
         self.remove_class_btn.setToolTip("Remove the specified class name from the scheme.")
         self.class_input.setToolTip("Type the name of the class to add or remove.")
+        self.clear_classes_btn.setToolTip("Remove all classes from the scheme and clear any associated mappings.")
 
-
-        scheme_controls.addWidget(self.load_scheme_btn)
-        scheme_controls.addWidget(self.save_scheme_btn)
         scheme_controls.addWidget(self.class_input)
         scheme_controls.addWidget(self.add_class_btn)
         scheme_controls.addWidget(self.remove_class_btn)
+        scheme_controls.addWidget(self.clear_classes_btn)
         self.layout().addLayout(scheme_controls)
 
+        # Scheme list
         self.scheme_list = QListWidget()
         self.scheme_list.setToolTip("Shows all classes in the current scheme and the labels assigned to each.")
         self.layout().addWidget(self.scheme_list)
-
-
 
         # --- Operation Mode ---
         mode_layout = QHBoxLayout()
@@ -89,7 +94,7 @@ class LabelMapperWidget(QWidget):
         self.class_dropdown = QComboBox()
         self.undo_btn = QPushButton("Undo")
         
-        self.clear_current_btn = QPushButton("Reset This Class")
+        self.clear_current_btn = QPushButton("Reset This Mapping")
         self.clear_all_btn = QPushButton("Reset All")
 
         self.class_dropdown.setToolTip("Select the class to which labels will be assigned.")
@@ -131,6 +136,7 @@ class LabelMapperWidget(QWidget):
         self.save_scheme_btn.clicked.connect(self.save_scheme)
         self.add_class_btn.clicked.connect(self.add_class)
         self.remove_class_btn.clicked.connect(self.remove_class)
+        self.clear_classes_btn.clicked.connect(self.clear_all_classes)  # new connection
         
         # For class mapping
         self.undo_btn.clicked.connect(self.undo)
@@ -148,6 +154,9 @@ class LabelMapperWidget(QWidget):
     def update_active_label_layer_binding(self, event):
         layer = event.value
 
+        layer_changed = (self.label_layer != layer)
+        if layer_changed and self.label2class:
+            self.clear_all_mappings()
         # unbind from the last layer if it exists
         if self.label_layer and self.on_click in self.label_layer.mouse_drag_callbacks:
             self.label_layer.mouse_drag_callbacks.remove(self.on_click)
@@ -188,8 +197,13 @@ class LabelMapperWidget(QWidget):
     def remove_class(self):
         name = self.class_input.text().strip()
         if name in self.scheme:
+            # remove class and also drop any mappings for that class
             self.scheme.remove(name)
+            labels_to_remove = [k for k, v in self.label2class.items() if v == name]
+            for lbl in labels_to_remove:
+                del self.label2class[lbl]
             self.update_scheme_ui()
+            self.update_mapping_summary()
             self.class_input.clear()
         else:
             QMessageBox.information(self, "Info", f"Class '{name}' not found in the scheme.")
@@ -234,7 +248,16 @@ class LabelMapperWidget(QWidget):
         if label is None or label == 0:
             return
 
+        # Not add mapping if no current class is selected / current class is empty
+        current_cls = self.class_dropdown.currentText()
+        if not current_cls:
+            # ignore the click — no class selected to map to
+        
+            print("No current class selected; Ctrl+click ignored.")
+            return
+
         self.assign_label(label)
+
 
     def on_keypress(self, event):
         if event.key == 'D':
@@ -288,6 +311,31 @@ class LabelMapperWidget(QWidget):
         self.update_mapping_summary()
         self.update_scheme_ui()
         print("Cleared all mappings.")
+
+
+    def clear_all_classes(self):
+        """Clear the entire scheme (all classes) and any associated mappings."""
+        if not self.scheme:
+            QMessageBox.information(self, "Info", "No classes to clear.")
+            return
+
+        resp = QMessageBox.question(
+            self,
+            "Confirm Clear All Classes",
+            "This will remove all classes from the scheme and clear any associated mappings. Continue?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        if resp != QMessageBox.Yes:
+            return
+
+        self.scheme.clear()
+        self.label2class.clear()
+        self.undo_stack.clear()
+        # Ensure dropdown and lists are updated
+        self.update_mapping_summary()
+        self.update_scheme_ui()
+        print("Cleared all classes and mappings.")
 
     def apply_mapping_to_segmentation(self):
         if self.label_layer is None:

@@ -5,8 +5,10 @@ SPROUT is a lightweight segmentation toolkit for fine-grained and multi-part seg
 
 👉 Quickstart: [Quickstart with Demo Data](./docs/demo_data_tutorial.md)
 
-Video demo — Getting started with GUI-supported SPROUT using napari:  
-[![Watch the video](https://img.youtube.com/vi/6rA7wW6f0SU/0.jpg)](https://www.youtube.com/watch?v=6rA7wW6f0SU)
+Video demo — Getting started with GUI-supported SPROUT using napari:
+<a href="https://www.youtube.com/watch?v=6rA7wW6f0SU">
+  <img src="https://img.youtube.com/vi/6rA7wW6f0SU/0.jpg" width="360">
+</a>
 
 - [Introduction](#introduction)
 - [Prerequisites](#prerequisites)
@@ -244,6 +246,11 @@ For example, see the YAML configuration files in `./template/`.
 
 
 ## View & Edit (napari)
+
+🎥 **Tutorial Video — Editing Segmentation Results in napari-SPROUT**  
+<a href="https://www.youtube.com/watch?v=H9pLkmy6WwA">
+  <img src="https://img.youtube.com/vi/H9pLkmy6WwA/0.jpg" width="360">
+</a>
 
 SPROUT also provides a **napari plugin** (`napari-sprout`): **`Plugins → SPROUT`**
 
