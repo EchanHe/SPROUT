@@ -12,6 +12,8 @@ Video demo — Getting started with GUI-supported SPROUT using napari:
 
 - [Introduction](#introduction)
 - [Prerequisites](#prerequisites)
+   - [Install SproutSAM](#sproutsam)
+   - [Install Napari & napari-sprout (Visualization and Editing)](#napari--napari-sprout-visualization-and-editing)
 - [Usage](#️-usage)
    - [Input Data Format](#input-data-format)
    - [Quickstart with Demo Data](#quickstart-with-demo-data)
@@ -66,8 +68,9 @@ SPROUT is an interpretable workflow for semi-automated, multi-class segmentation
         ```bash
         pip install numpy==1.26.4 pandas==2.2.1 scikit-image==0.22.0 tifffile==2024.2.12 pyyaml==6.0.1 trimesh==4.3.1 matplotlib==3.8.3 open3d==0.18.0 imagecodecs==2025.3.30
         ```
+        This shows pip installation; alternatively, you can use conda.
 
-### Optional: Enable **SproutSAM** (Prompt-based Segmentation with SAM/SAM2)
+### **SproutSAM**
 
 [**SproutSAM**](#-sproutsam-run-foundation-model-prediction) is an optional module that enables prompt-based segmentation using foundation models like [SAM](https://github.com/facebookresearch/segment-anything) and [SAM2](https://github.com/facebookresearch/sam2). If you wish to use **SproutSAM**, please install the following additional dependencies:
 
@@ -101,25 +104,68 @@ You also need to install the SAM and/or SAM2 libraries:
     pip install -e .
     ```
 
-### 🧪 Recommended Visualization Tools
+### Napari & napari-sprout (Visualization and Editing)
 
-**💡 Strongly recommended: [napari](https://napari.org/)**  
-SPROUT comes with a napari plugin for interactive 2D/3D visualization and editing of seeds, segmentation results, and more.
+**[Napari](https://napari.org/)** is an open-source image viewer designed for 2D and 3D visualisation and interactive manipulation.
 
-To install napari and the SPROUT plugin (`napari-sprout`):
+We developed `napari-sprout`, the SPROUT plugin for Napari, which enables users to interactively visualise, edit, and refine seeds, segmentation results, and other image-derived layers.
+
+`napari-sprout` has been tested with **`napari==0.6.1`**.
+
+To install Napari, you can use either **pip** or **conda**:
 
 ```bash
-pip install napari
+pip install napari==0.6.1
+```
+or
+```bash
+conda install -c conda-forge napari=0.6.1 pyqt
+```
+
+After installation, you can launch Napari from the command line:
+
+```bash
+napari
+```
+
+If you encounter the following error message:
+
+```
+napari requires either PyQt5 (default), PyQt6 or PySide2 to be installed in the environment.
+```
+
+it means a **Qt GUI** is missing.  
+You can fix this by installing one of the following:
+
+-   With **pip**:
+    
+    ```bash
+    pip install "napari[all]"
+    # or a specific Qt backend:
+    pip install "napari[pyqt5]"
+    pip install "napari[pyqt6]"
+    pip install "napari[pyside2]"
+    ```
+    
+-   With **conda**:
+    
+    ```bash
+    conda install -c conda-forge pyqt
+    # or
+    conda install -c conda-forge pyside2
+    ```
+
+
+#### Install The SPROUT plugin (`napari-sprout`):
+After installing napari, you can proceed to install the SPROUT plugin.
+```bash
 cd ./napari_sprout
 pip install -e .
 ```
-#### Launching napari
 
-- Start napari by running `napari` in a terminal or command prompt.
-- Open the SPROUT plugin from the napari menu: Plugins → SPROUT.
-- Quickstart: [napari quickstart guide](./docs/napari_quickstart.md)
-- Full napari docs: [https://napari.org/](https://napari.org/)
 - More on using napari-sprout: see [View & Edit (napari)](#view--edit-napari)
+- Full napari docs: [https://napari.org/](https://napari.org/)
+
 
 
 
@@ -252,9 +298,12 @@ For example, see the YAML configuration files in `./template/`.
   <img src="https://img.youtube.com/vi/H9pLkmy6WwA/0.jpg" width="360">
 </a>
 
-SPROUT also provides a **napari plugin** (`napari-sprout`): **`Plugins → SPROUT`**
+To launch **napari-sprout**:
 
-From here, you can launch a set of tools to load, view, and edit your data.  
+1. Start napari by running `napari` in a terminal or command prompt.
+2. Open the `napari-sprout` plugin from the napari menu: Plugins → SPROUT.
+
+From here, you can use a set of tools to load, view, and edit your data.  
 
 -   **SPROUT_main**  
     GUI for running **seed generation**, **adaptive seed generation**, and **growth**.  
