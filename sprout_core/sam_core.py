@@ -4,30 +4,52 @@ import json
 import cv2
 
 import numpy as np
-from PIL import Image
-from tqdm import tqdm
+
+
 import re
 import tifffile
 from datetime import datetime
 from skimage.measure import regionprops,label
 import tempfile
-from sklearn.cluster import KMeans
+
 from scipy.ndimage import distance_transform_edt
-from skimage.morphology import skeletonize
+
 
 import sprout_core.config_core as config_core
+
+
+try:
+    from tqdm import tqdm  
+except ImportError:
+    print("[WARNING] `tqdm` is not installed. Progress bars will not be displayed.")
+    def tqdm(iterable, **kwargs):
+        return iterable
+
+try:
+    from PIL import Image
+except ImportError:
+    print("[ERROR] `PIL` is not installed. Please install it to run SPROUTSAM.")
+    Image = None
+
+try:
+    from sklearn.cluster import KMeans
+except ImportError:
+    print("[ERROR] `sklearn` is not installed. Please install it to run SPROUTSAM.")
+    KMeans = None
+
+
 
 try:
     import torch
 except ImportError:
-    print("[ERROR] `torch` is not installed. Please install it to run SAM inference.")
+    print("[ERROR] `torch` is not installed. Please install it to run SPROUTSAM.")
     torch = None
 
 try:
     from sam2.build_sam import build_sam2
     from sam2.sam2_image_predictor import SAM2ImagePredictor
 except ImportError:
-    print("[ERROR] `sam2` is not installed. Please install it before running SAM2 inference.")
+    print("[ERROR] `sam2` is not installed. Please install it before running SPROUTSAM with SAM2.")
     build_sam2 = None
     SAM2ImagePredictor = None
 
