@@ -9,6 +9,8 @@ json_configs/*
 old_codes/*
 test_codes/*
 .vscode/*
+not_for_commit/*
+
 
 ./slide/*
 

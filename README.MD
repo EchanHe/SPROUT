@@ -10,6 +10,10 @@ Video demo — Getting started with GUI-supported SPROUT using napari:
   <img src="https://img.youtube.com/vi/6rA7wW6f0SU/0.jpg" width="360">
 </a>
 
+Click [here](https://www.youtube.com/watch?v=4DHI1gs1lzc&list=PL8tsvVKJ9n6FjYYplo-IAwKBLxDh578aj) for the playlist of all SPROUT videos (mainly focus on GUI-based SPROUT in napari). See [Usage](#️-usage) section for command-line usage.
+
+---
+
 - [Introduction](#introduction)
 - [Prerequisites](#prerequisites)
    - [Install SproutSAM](#sproutsam)
