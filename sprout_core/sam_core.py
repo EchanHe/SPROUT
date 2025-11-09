@@ -1,7 +1,7 @@
 
 import os
 import json
-import cv2
+
 
 import numpy as np
 
@@ -17,6 +17,11 @@ from scipy.ndimage import distance_transform_edt
 
 import sprout_core.config_core as config_core
 
+try:
+    import cv2
+except ImportError:
+    print("[ERROR] `cv2` is not installed. Please install it to run SPROUTSAM.")
+    cv2 = None
 
 try:
     from tqdm import tqdm  
