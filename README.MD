@@ -230,6 +230,8 @@ python sprout.py --seeds --config path/to/seed_config.yaml
 python sprout.py --seeds --batch --config path/to/batch_seed.yaml
 ```
 
+A video explain batch mode: [link](https://www.youtube.com/watch?v=5o-PJ34Yirc)
+
 For full details on YAML parameters and other configs see:
 - [Seed configuration options](./docs/config_seed.md)
 
