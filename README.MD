@@ -16,8 +16,6 @@ Click [here](https://www.youtube.com/watch?v=4DHI1gs1lzc&list=PL8tsvVKJ9n6FjYYpl
 
 - [Introduction](#introduction)
 - [Prerequisites](#prerequisites)
-   - [Install SproutSAM](#sproutsam)
-   - [Install Napari & napari-sprout (Visualization and Editing)](#napari--napari-sprout-visualization-and-editing)
 - [Usage](#️-usage)
    - [Input Data Format](#input-data-format)
    - [Quickstart with Demo Data](#quickstart-with-demo-data)
@@ -40,13 +38,16 @@ SPROUT is an interpretable workflow for semi-automated, multi-class segmentation
 
 ## Prerequisites
 
-1. **Python and Environment Setup**
-   - **Install Python**: If Python is not already installed, we recommend downloading the [Anaconda distribution](https://www.anaconda.com/products/distribution). After providing your email, follow the download link and select the version suitable for your operating system.
-   - **Set up Python Environment**:
-     - For Windows users with Anaconda, open the **Anaconda Prompt** from the Start menu.
-     - For other installations, open a terminal with Python access.
+### Python and Environment Setup
 
-2. **Create and Configure Python Environment**
+    **Install Python and environment manager**: To manage Python environments, we recommend using a lightweight and open alternative to Anaconda, such as:
+
+    - **Miniforge**: minimal `conda` installer with `conda-forge` as default  
+    https://conda-forge.org/download/
+
+    After installing your preferred environment manager, you can create the environment using the prompt/terminal 
+
+### Create and Configure Python Environment
    - SPROUT supports **Python 3.10**. Required libraries and versions are:
      ```
      NumPy: 1.26.4
@@ -74,7 +75,7 @@ SPROUT is an interpretable workflow for semi-automated, multi-class segmentation
         ```
         This shows pip installation; alternatively, you can use conda.
 
-### **SproutSAM**
+### Install **SproutSAM** related Dependencies (Optional)
 
 [**SproutSAM**](#-sproutsam-run-foundation-model-prediction) is an optional module that enables prompt-based segmentation using foundation models like [SAM](https://github.com/facebookresearch/segment-anything) and [SAM2](https://github.com/facebookresearch/sam2). If you wish to use **SproutSAM**, please install the following additional dependencies:
 
@@ -108,7 +109,7 @@ You also need to install the SAM and/or SAM2 libraries:
     pip install -e .
     ```
 
-### Napari & napari-sprout (Visualization and Editing)
+### Install napari & napari-sprout (Visualization and Editing)
 
 **[Napari](https://napari.org/)** is an open-source image viewer designed for 2D and 3D visualisation and interactive manipulation.
 
