@@ -171,9 +171,14 @@ class QtLabelSelector(QWidget):
 
 
         label_split_group = QGroupBox("Label Split")
+
         label_split_group.setToolTip("Split a selected label class into connected components.")
         label_split_layout = QFormLayout()
-        
+
+        self.split_all_checkbox = QCheckBox("Split all non-background labels")
+        self.split_all_checkbox.setChecked(False)
+        self.split_all_checkbox.setToolTip("If checked, split all labels > 0 instead of only the target class.")
+        label_split_layout.addRow(self.split_all_checkbox)        
         
         self.split_class_spin = QSpinBox()
         self.split_class_spin.setMinimum(0)
@@ -184,7 +189,7 @@ class QtLabelSelector(QWidget):
         
         self.sort_checkbox = QCheckBox("Sort by size (reassign IDs by size)")
         self.sort_checkbox.setChecked(True)
-        
+        self.sort_checkbox.setToolTip("If checked, reassign IDs based on component size.")
         label_split_layout.addRow(self.sort_checkbox)
         # layout.addWidget(self.sort_checkbox)
 
@@ -523,17 +528,6 @@ class QtLabelSelector(QWidget):
 
         data = label_layer.data.copy()
 
-        # Early check
-        mask = (data == target_class)
-        if not np.any(mask):
-            QMessageBox.information(self, "Info", f"Class {target_class} not found.")
-            return
-
-        cc = cc_label(mask, connectivity=2)
-        if cc.max() <= 1:
-            QMessageBox.information(self, "Info", "No split needed.")
-            return
-
         # Duplicate if needed
         target_layer = label_layer
         if self.duplicate_checkbox.isChecked():
@@ -547,33 +541,76 @@ class QtLabelSelector(QWidget):
         print(f"Running split_class on layer: {target_layer.name}")
         
         self.original_data_backup = data.copy()
-
+        ##
+        
         def on_done(result):
             if target_layer not in self.viewer.layers:
                 print("Layer was removed before update.")
                 return
             target_layer.data = result
-            # QMessageBox.information(self, "Success", f"Split class {target_class} completed.")
-            show_info(f"Split class {target_class} completed in layer {target_layer.name}.")
+            if self.split_all_checkbox.isChecked():
+                msg = f"Split all non-background labels completed in layer {target_layer.name}."
+            else:
+                msg = f"Split class {target_class} completed in layer {target_layer.name}."
+            show_info(msg)
             self.clear_selection()
 
+        if self.split_all_checkbox.isChecked():
+            worker_func = self._do_split_all_classes
+            worker_args = [data, keep_top_n, sort_by_size]
+            print("Split mode: all non-background labels")
+        else:
+            # Early check if split is needed
+            mask = (data == target_class)
+            if not np.any(mask):
+                QMessageBox.information(self, "Info", f"Class {target_class} not found.")
+                return
+
+            cc = cc_label(mask, connectivity=2)
+            if cc.max() <= 1:
+                QMessageBox.information(self, "Info", "No split needed.")
+                return
+            worker_func = self._do_split_class
+            worker_args = [data, target_class, keep_top_n, sort_by_size]
+            print(f"Split mode: single class {target_class}")
+
         self.run_in_background(
-            self._do_split_class,
-            [data, target_class, keep_top_n, sort_by_size],
+            worker_func,
+            worker_args,
             on_done,
-            buttons_to_disable= self.all_edit_buttons
+            buttons_to_disable=self.all_edit_buttons
         )
 
+        # self.run_in_background(
+        #     self._do_split_class,
+        #     [data, target_class, keep_top_n, sort_by_size],
+        #     on_done,
+        #     buttons_to_disable= self.all_edit_buttons
+        # )
 
-    def _do_split_class(self, data: np.ndarray, target_class: int, keep_top_n: int, sort_by_size: bool) -> np.ndarray:
-        mask = (data == target_class)
+
+    def _split_single_class(
+        self,
+        data: np.ndarray,
+        target_class: int,
+        keep_top_n: int,
+        sort_by_size: bool,
+        start_label_base: int,
+    ):
+        """Process a single target_class on data and return (result, new_label_base).
+
+        - data: original label image
+        - start_label_base: starting offset for numbering new components (usually pass current result.max())
+        """
+        result = data.copy()
+        mask = (result == target_class)
         if not np.any(mask):
-            return data  # No change
+            return result, start_label_base
 
         cc = cc_label(mask, connectivity=2)
         num_components = cc.max()
         if num_components <= 1:
-            return data  # No split needed
+            return result, start_label_base
 
         if keep_top_n > 0:
             sizes = [(cc == i).sum() for i in range(1, num_components + 1)]
@@ -582,14 +619,48 @@ class QtLabelSelector(QWidget):
             cc = np.where(np.isin(cc, list(keep_ids)), cc, 0)
             num_components = cc.max()
 
-        result = data.copy()
         result[mask] = 0
-        new_label_base = result.max()
+        base = start_label_base
         for i in range(1, num_components + 1):
-            result[cc == i] = new_label_base + i
+            result[cc == i] = base + i
 
         if sort_by_size:
             result, _ = sort_labels_by_size(result)
+            base = result.max()
+        else:
+            base = base + num_components
+
+        return result, base
+    
+    def _do_split_class(self, data: np.ndarray, target_class: int, keep_top_n: int, sort_by_size: bool) -> np.ndarray:
+        result, _ = self._split_single_class(
+            data=data,
+            target_class=target_class,
+            keep_top_n=keep_top_n,
+            sort_by_size=sort_by_size,
+            start_label_base=data.max()
+        )
+        return result
+
+    def _do_split_all_classes(self, data: np.ndarray, keep_top_n: int, sort_by_size: bool) -> np.ndarray:
+        result = data.copy()
+        labels = np.unique(result)
+        labels = labels[labels != 0]
+
+        if labels.size == 0:
+            return result
+
+        # Starting base: current max label
+        label_base = result.max()
+
+        for lbl in labels:
+            result, label_base = self._split_single_class(
+                data=result,
+                target_class=lbl,
+                keep_top_n=keep_top_n,
+                sort_by_size=sort_by_size,
+                start_label_base=label_base
+            )
 
         return result
 
