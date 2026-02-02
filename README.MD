@@ -38,6 +38,12 @@ SPROUT is an interpretable workflow for semi-automated, multi-class segmentation
 
 ## Prerequisites
 
+### Clone the Code
+```bash
+git clone https://github.com/EchanHe/SPROUT.git
+cd SPROUT
+```
+
 ### Python and Environment Setup
 
     **Install Python and environment manager**: To manage Python environments, we recommend using a lightweight and open alternative to Anaconda, such as:

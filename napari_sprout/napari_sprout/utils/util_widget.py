@@ -153,7 +153,7 @@ class ThresholdWidget(QGroupBox):
         if self.add_connected_components:
             self.use_connected_components_checkbox = QCheckBox("Connected Components")
             self.connected_components_spin = QSpinBox()
-            self.connected_components_spin.setRange(1, 1000)
+            self.connected_components_spin.setRange(1, 100000)
             self.connected_components_spin.setValue(100)
             self.connected_components_spin.setEnabled(False)
 
@@ -405,7 +405,7 @@ class MainSeedParamWidget(QGroupBox):
 
         second_row_layout.addWidget(QLabel("Segments:"))
         self.segments_spin = QSpinBox()
-        self.segments_spin.setRange(1, 1000)
+        self.segments_spin.setRange(1, 100000)
         self.segments_spin.setValue(10)
         self.segments_spin.setFixedWidth(40)
         second_row_layout.addWidget(self.segments_spin)
@@ -1043,7 +1043,7 @@ class SeedOptionalParamGroupBox(QGroupBox):
 
         # min_size (int)
         self.min_size_spin = QSpinBox()
-        self.min_size_spin.setRange(1, 10000)
+        self.min_size_spin.setRange(1, 100000)
         self.min_size_spin.setValue(1)
         layout.addRow("Min segment size", self.min_size_spin)
 
