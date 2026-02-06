@@ -7,7 +7,7 @@ import tempfile
 from datetime import datetime
 from tqdm import tqdm
 
-import sprout_core.sam_core as sam_core
+import sprout_core.sprout_prompt_core as sprout_prompt_core
 import sprout_core.config_core as config_core
 import tifffile
 import argparse
@@ -114,7 +114,7 @@ def sam_predict(img_path,
             
             
 
-            outputs = sam_core.extract_slices_and_prompts(
+            outputs = sprout_prompt_core.extract_slices_and_prompts(
                 img = img,
                 seg = seg,
                 output_prompt_dir=output_prompt_dir,
@@ -131,7 +131,7 @@ def sam_predict(img_path,
             
             sam_dir = os.path.join(base_temp_dir, "sam")
             sam_overlay_dir = os.path.join(base_temp_dir, "sam_overlay")
-            sam_core.init_and_run(outputs["images_dir"], 
+            sprout_prompt_core.init_and_run(outputs["images_dir"], 
                         which_sam = which_sam,
                         device=None,
                         prompt_dir=outputs["prompts_dir"], 
@@ -146,7 +146,7 @@ def sam_predict(img_path,
             
             all_sam_dirs[axis] = sam_dir
 
-        seg_fused = sam_core.combine_3d_segmentations(
+        seg_fused = sprout_prompt_core.combine_3d_segmentations(
             img = img,
             seg = seg,
             sam_dirs=all_sam_dirs,
@@ -165,7 +165,7 @@ def sam_predict(img_path,
         print(f"Using temporary output folders:\n  Prompts: {output_prompt_dir}\n  Images:  {output_img_dir}")
 
         
-        outputs = sam_core.extract_slices_and_prompts(
+        outputs = sprout_prompt_core.extract_slices_and_prompts(
             img = img,
             seg = seg,
             output_prompt_dir=output_prompt_dir,
@@ -179,7 +179,7 @@ def sam_predict(img_path,
         
         
         sam_dir = os.path.join(base_temp_dir, "sam")
-        sam_core.init_and_run(outputs["images_dir"], 
+        sprout_prompt_core.init_and_run(outputs["images_dir"], 
                     which_sam = which_sam,
                     device=None,
                     prompt_dir=outputs["prompts_dir"], 
@@ -191,7 +191,7 @@ def sam_predict(img_path,
                     sam2_checkpoint = sam2_checkpoint,
                     sam2_model_cfg = sam2_model_cfg)
     
-        seg_fused = sam_core.combine_2d_segmentations(
+        seg_fused = sprout_prompt_core.combine_2d_segmentations(
             sam_dir = sam_dir,
             output_folder=output_folder,
             output_filename=output_filename,
@@ -296,7 +296,7 @@ if __name__ == "__main__":
 
             
 
-            outputs = sam_core.extract_slices_and_prompts(
+            outputs = sprout_prompt_core.extract_slices_and_prompts(
                 img = img,
                 seg = seg,
                 output_prompt_dir=output_prompt_dir,
@@ -311,7 +311,7 @@ if __name__ == "__main__":
             
             
             sam_dir = os.path.join(base_temp_dir, "sam")
-            sam_core.init_and_run(outputs["images_dir"], 
+            sprout_prompt_core.init_and_run(outputs["images_dir"], 
                         which_sam = which_sam,
                         device=None,
                         prompt_dir=outputs["prompts_dir"], 
@@ -325,7 +325,7 @@ if __name__ == "__main__":
             
             all_sam_dirs[axis] = sam_dir
 
-        seg_fused = sam_core.combine_3d_segmentations(
+        seg_fused = sprout_prompt_core.combine_3d_segmentations(
             img = img,
             seg = seg,
             sam_dirs=all_sam_dirs,
@@ -342,7 +342,7 @@ if __name__ == "__main__":
         print(f"Using temporary output folders:\n  Prompts: {output_prompt_dir}\n  Images:  {output_img_dir}")
 
         
-        outputs = sam_core.extract_slices_and_prompts(
+        outputs = sprout_prompt_core.extract_slices_and_prompts(
             img = img,
             seg = seg,
             output_prompt_dir=output_prompt_dir,
@@ -356,7 +356,7 @@ if __name__ == "__main__":
         
         
         sam_dir = os.path.join(base_temp_dir, "sam")
-        sam_core.init_and_run(outputs["images_dir"], 
+        sprout_prompt_core.init_and_run(outputs["images_dir"], 
                     which_sam = which_sam,
                     device=None,
                     prompt_dir=outputs["prompts_dir"], 
@@ -368,7 +368,7 @@ if __name__ == "__main__":
                     sam2_checkpoint = sam2_checkpoint,
                     sam2_model_cfg = sam2_model_cfg)
     
-        seg_fused = sam_core.combine_2d_segmentations(
+        seg_fused = sprout_prompt_core.combine_2d_segmentations(
             sam_dir = sam_dir,
             output_folder=output_folder,
             output_filename=output_filename,

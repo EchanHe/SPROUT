@@ -1,7 +1,9 @@
 
 import os
 import json
-
+import glob
+import pandas as pd
+from pathlib import Path
 
 import numpy as np
 
@@ -13,7 +15,7 @@ from skimage.measure import regionprops,label
 import tempfile
 
 from scipy.ndimage import distance_transform_edt
-
+from typing import Optional, Literal
 
 import sprout_core.config_core as config_core
 
@@ -67,6 +69,377 @@ except ImportError:
 
 
 from collections import defaultdict
+
+### Sample for nninteractive input ###
+
+def _grid_sampling(coords: np.ndarray, n: int) -> np.ndarray:
+    """
+    Grid-based sampling: divide 3D space into grid cells, sample from each.
+
+    Advantages:
+    - Very uniform
+    - Fast
+    - No extra dependencies
+
+    Steps:
+    1. Compute the bounding box
+    2. Divide into n grid cells
+    3. Randomly pick one point from each cell
+    """
+    # Calculate grid dimensions (try to make cubic cells)
+    n_cells_per_dim = int(np.ceil(n ** (1/3)))
+    
+    # Get bounding box
+    mins = coords.min(axis=0)
+    maxs = coords.max(axis=0)
+    ranges = maxs - mins + 1
+    
+    # Create grid
+    grid_size = ranges / n_cells_per_dim
+    
+    # Assign each coordinate to a grid cell
+    grid_indices = ((coords - mins) / grid_size).astype(int)
+    grid_indices = np.clip(grid_indices, 0, n_cells_per_dim - 1)
+    
+    # Create unique cell identifiers
+    cell_ids = (grid_indices[:, 0] * n_cells_per_dim**2 + 
+                grid_indices[:, 1] * n_cells_per_dim + 
+                grid_indices[:, 2])
+    
+    # Sample one point from each non-empty cell
+    selected_points = []
+    unique_cells = np.unique(cell_ids)
+    
+    for cell_id in unique_cells:
+        cell_coords = coords[cell_ids == cell_id]
+        # Randomly pick one point from this cell
+        selected_points.append(cell_coords[np.random.randint(len(cell_coords))])
+        
+        if len(selected_points) >= n:
+            break
+    
+    # If not enough cells, add random points
+    while len(selected_points) < n:
+        selected_points.append(coords[np.random.randint(len(coords))])
+    
+    return np.array(selected_points[:n])
+
+def sample_points_3d(mask_3d: np.ndarray, n: int = 5, method: str = 'random') -> np.ndarray:
+    """
+    Sample n points from a 3D binary mask.
+    
+    Parameters:
+    -----------
+    mask_3d : np.ndarray
+        3D binary mask
+    n : int
+        Number of points to sample
+    method : str
+        'random', 'grid', 'kmeans', 'center_edge'
+    
+    Returns:
+    --------
+    np.ndarray
+        Array of shape (n, 3) with [z, y, x] coordinates
+    """
+    coords = np.column_stack(np.where(mask_3d > 0))  # [z, y, x]
+    
+    if len(coords) == 0:
+        return np.array([]).reshape(0, 3)
+    
+    if len(coords) <= n:
+        return coords
+    
+    if n==1:
+        # Just return one random point
+        idx = np.random.randint(len(coords))
+        return coords[idx:idx+1]
+    
+    if method == 'random':
+        indices = np.random.choice(len(coords), n, replace=False)
+        return coords[indices]
+
+    elif method == 'grid':
+        return _grid_sampling(coords, n)
+    
+    elif method == 'kmeans':
+        if KMeans is None:
+            raise ImportError("sklearn required. Install: pip install scikit-learn")
+        kmeans = KMeans(n_clusters=n, random_state=0, n_init=10).fit(coords)
+        return np.round(kmeans.cluster_centers_).astype(int)
+    
+    elif method == 'center_edge':
+        if distance_transform_edt is None:
+            raise ImportError("scipy required. Install: pip install scipy")
+        dist = distance_transform_edt(mask_3d)
+        center = np.unravel_index(np.argmax(dist), dist.shape)
+        
+        edge_coords = np.column_stack(np.where((dist > 0) & (dist < 3)))
+        if len(edge_coords) >= (n - 1):
+            indices = np.random.choice(len(edge_coords), n - 1, replace=False)
+            edge_samples = edge_coords[indices]
+        else:
+            edge_samples = edge_coords
+        
+        if len(edge_samples) > 0:
+            return np.vstack(([center], edge_samples))
+        else:
+            return np.array([center])
+    
+    else:
+        raise ValueError(f"Unknown method: {method}")
+
+
+def seed_to_point_prompts_nninteractive(
+    seed_path: str,
+    output_csv: str = None,
+    class_config: Optional[dict] = None,
+    default_n_pos: int = 5,
+    default_n_neg: int = 5,
+    default_method: Literal['random', 'kmeans', 'center_edge'] = 'random',
+    negative_from_bg: bool = True,
+    negative_from_other_classes: bool = True,
+    negative_per_other_class: bool = False,
+    seed_pattern: str = '*.tif'
+) -> pd.DataFrame:
+    """
+    Convert 3D segmentation seed(s) to point prompts DataFrame for nnInteractive.
+    
+    Parameters:
+    -----------
+    seed_path : str
+        Path to a seed file OR folder containing multiple seeds
+    output_csv : str , default=None
+        Output CSV path
+    class_config : dict, optional
+        Per-class configuration:
+        {
+            1: {'n_pos': 5, 'n_neg': 3, 'method': 'kmeans'},
+            2: {'n_pos': 10, 'n_neg': 0},  # No negative points
+            ...
+        }
+    default_n_pos : int
+        Default number of positive points per class
+    default_n_neg : int
+        Default number of negative points per class
+    default_method : str
+        Default sampling method ('random', 'kmeans', 'center_edge')
+    negative_from_bg : bool
+        Whether to sample negative points from background (label=0)
+    negative_from_other_classes : bool
+        Whether to sample negative points from other classes
+    negative_per_other_class : bool
+        If True: sample n_neg from EACH other class
+        If False: sample n_neg from ALL other classes combined
+    seed_pattern : str
+        File pattern if seed_path is a folder
+    
+    Returns:
+    --------
+    pd.DataFrame
+        Columns: image_name, class_id, x, y, z, label, point_type, sample_method
+    
+    Examples:
+    ---------
+    # Simple usage
+    df = seed_to_point_prompts(
+        seed_path="seg.tif",
+        output_csv="prompts.csv",
+        default_n_pos=5,
+        default_n_neg=5
+    )
+    
+    # Custom per-class config
+    class_config = {
+        1: {'n_pos': 10, 'n_neg': 5, 'method': 'kmeans'},
+        2: {'n_pos': 3, 'n_neg': 0, 'method': 'random'}
+    }
+    df = seed_to_point_prompts(
+        seed_path="seeds/",
+        output_csv="prompts.csv",
+        class_config=class_config
+    )
+    """
+    
+    if class_config is None:
+        class_config = {}
+    
+    # Handle single file or folder
+    if os.path.isfile(seed_path):
+        seed_files = [seed_path]
+    elif os.path.isdir(seed_path):
+        seed_files = sorted(glob.glob(os.path.join(seed_path, seed_pattern)))
+        if len(seed_files) == 0:
+            raise ValueError(f"No files found matching '{seed_pattern}' in {seed_path}")
+    else:
+        raise ValueError(f"Invalid path: {seed_path}")
+    
+    print(f"Found {len(seed_files)} seed file(s)")
+    
+    all_prompts = []
+    
+    for seed_file in seed_files:
+        print(f"\nProcessing: {Path(seed_file).name}")
+        
+        # Load seed
+        try:
+            if tifffile is not None:
+                seg = tifffile.imread(seed_file)
+            else:
+                raise ImportError("tifffile required")
+        except Exception as e:
+            print(f"[ERROR] Failed to load {seed_file}: {e}")
+            continue
+        
+        if seg.ndim != 3:
+            print(f"[WARNING] {seed_file} is not 3D, skipping")
+            continue
+        
+        image_name = Path(seed_file).stem
+        
+        # Get class IDs
+        class_ids = np.unique(seg)
+        class_ids = class_ids[class_ids != 0]  # Exclude background
+        
+        if len(class_ids) == 0:
+            print(f"[WARNING] No classes found in {seed_file}")
+            continue
+        
+        print(f"  Found {len(class_ids)} classes: {sorted(class_ids)}")
+        
+        # Process each class
+        for cls in class_ids:
+            cfg = class_config.get(int(cls), {})
+            n_pos = cfg.get('n_pos', default_n_pos)
+            n_neg = cfg.get('n_neg', default_n_neg)
+            method = cfg.get('method', default_method)
+            
+            mask = (seg == cls).astype(np.uint8)
+            
+            # Sample positive points
+            try:
+                pos_points = sample_points_3d(mask, n=n_pos, method=method)
+            except Exception as e:
+                print(f"  [WARNING] Failed to sample positive for class {cls}: {e}")
+                continue
+            
+            if len(pos_points) == 0:
+                print(f"  [WARNING] No positive points for class {cls}")
+                continue
+            
+            # Add positive points
+            for pt in pos_points:
+                all_prompts.append({
+                    'image_name': image_name,
+                    'class_id': int(cls),
+                    'x': int(pt[2]),  # [z, y, x] -> x
+                    'y': int(pt[1]),  # -> y
+                    'z': int(pt[0]),  # -> z
+                    'label': True,
+                    'point_type': 'positive',
+                    'sample_method': method
+                })
+            
+            print(f"    Class {cls}: {len(pos_points)} positive points ({method})")
+            
+            # Sample negative points
+            if n_neg > 0:
+                n_neg_total = 0
+                
+                # From background
+                if negative_from_bg:
+                    bg_mask = (seg == 0).astype(np.uint8)
+                    if np.sum(bg_mask) > 0:
+                        try:
+                            neg_points_bg = sample_points_3d(bg_mask, n=n_neg, method=method)
+                            for pt in neg_points_bg:
+                                all_prompts.append({
+                                    'image_name': image_name,
+                                    'class_id': int(cls),
+                                    'x': int(pt[2]),
+                                    'y': int(pt[1]),
+                                    'z': int(pt[0]),
+                                    'label': False,
+                                    'point_type': 'negative_bg',
+                                    'sample_method': 'random'
+                                })
+                            n_neg_total += len(neg_points_bg)
+                        except Exception as e:
+                            print(f"    [WARNING] Failed to sample negative bg: {e}")
+                if negative_from_other_classes:
+                    # From other classes
+                    if negative_per_other_class:
+                        # Sample from EACH other class
+                        for other_cls in class_ids:
+                            if other_cls == cls:
+                                continue
+                            other_mask = (seg == other_cls).astype(np.uint8)
+                            if np.sum(other_mask) > 0:
+                                try:
+                                    neg_points = sample_points_3d(other_mask, n=n_neg, method=method)
+                                    for pt in neg_points:
+                                        all_prompts.append({
+                                            'image_name': image_name,
+                                            'class_id': int(cls),
+                                            'x': int(pt[2]),
+                                            'y': int(pt[1]),
+                                            'z': int(pt[0]),
+                                            'label': False,
+                                            'point_type': f'negative_class{int(other_cls)}',
+                                            'sample_method': 'random'
+                                        })
+                                    n_neg_total += len(neg_points)
+                                except Exception as e:
+                                    print(f"    [WARNING] Failed to sample from class {other_cls}: {e}")
+                    else:
+                        # Sample from ALL other classes combined
+                        other_mask = (seg != cls) & (seg > 0)
+                        if np.sum(other_mask) > 0:
+                            try:
+                                neg_points = sample_points_3d(other_mask.astype(np.uint8), n=n_neg, method=method)
+                                for pt in neg_points:
+                                    all_prompts.append({
+                                        'image_name': image_name,
+                                        'class_id': int(cls),
+                                        'x': int(pt[2]),
+                                        'y': int(pt[1]),
+                                        'z': int(pt[0]),
+                                        'label': False,
+                                        'point_type': 'negative_other',
+                                        'sample_method': 'random'
+                                    })
+                                n_neg_total += len(neg_points)
+                            except Exception as e:
+                                print(f"    [WARNING] Failed to sample negative other: {e}")
+                
+                    if n_neg_total > 0:
+                        print(f"              {n_neg_total} negative points")
+    
+    # Create DataFrame
+    df = pd.DataFrame(all_prompts)
+    
+    if len(df) == 0:
+        print("\n[WARNING] No prompts generated!")
+        return df
+    
+    # Reorder columns
+    column_order = ['image_name', 'class_id', 'x', 'y', 'z', 'label', 'point_type', 'sample_method']
+    df = df[column_order]
+    
+    if output_csv is not None:
+        # Save CSV
+        os.makedirs(os.path.dirname(output_csv) if os.path.dirname(output_csv) else '.', exist_ok=True)
+        df.to_csv(output_csv, index=False)
+        print(f"\n✅ Saved {len(df)} prompts to {output_csv}")
+    
+    # Print summary
+    print("\n📊 Summary:")
+    print(df.groupby(['class_id', 'point_type']).size())
+    
+    return df
+
+
+
 
 
 def group_points_by_name(points, labels, names):

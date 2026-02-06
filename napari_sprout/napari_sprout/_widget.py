@@ -17,7 +17,7 @@ from .widgets.info_widget import LayerInfoWidget
 from .widgets.edit_widget import QtLabelSelector
 from .widgets.map_widget import LabelMapperWidget
 from .widgets.tools_widget import SPROUTToolWidget
-from .widgets.sproutsam_widget import SproutSamWidget
+from .widgets.prompt_widget import SproutPromptWidget
 
 class SPROUTWidget(QWidget):
     """Main SPROUT widget containing all workflow steps."""
@@ -258,8 +258,8 @@ def make_sprout_widget_tools(viewer: "napari.viewer.Viewer" = None):
     widget.show()
     return widget
 
-def make_sprout_widget_sam(viewer: "napari.viewer.Viewer" = None):
-    """Create the SPROUT SAM prompt extraction widget.
+def make_sprout_widget_prompt(viewer: "napari.viewer.Viewer" = None):
+    """Create the SPROUT PROMPT extraction widget.
 
     Parameters
     ----------
@@ -267,8 +267,8 @@ def make_sprout_widget_sam(viewer: "napari.viewer.Viewer" = None):
         The napari viewer instance. If not provided, will get current viewer.
     Returns
     -------
-    widget : SproutSamWidget
-        The SPROUT SAM prompt extraction widget instance.
+    widget : SproutPromptWidget
+        The SPROUT PROMPT extraction widget instance.
     """
     if viewer is None:
         # Get the current viewer from napari
@@ -277,7 +277,7 @@ def make_sprout_widget_sam(viewer: "napari.viewer.Viewer" = None):
         if viewer is None:
             raise RuntimeError("No napari viewer found")
 
-    widget = SproutSamWidget(viewer)
+    widget = SproutPromptWidget(viewer)
     # Ensure widget is visible
     widget.show()
     return widget

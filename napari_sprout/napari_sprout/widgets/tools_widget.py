@@ -926,8 +926,8 @@ class SPROUTToolWidget(QWidget):
         self.setLayout(QVBoxLayout())
 
         # Add size reference section first
-        self.size_reference = SizeReferenceGroupBox(viewer)
-        self.layout().addWidget(self.size_reference)
+        # self.size_reference = SizeReferenceGroupBox(viewer)
+        # self.layout().addWidget(self.size_reference)
 
         self.csv_aligner = CSVAlignerGroupBox()
         self.layout().addWidget(self.csv_aligner)

@@ -6,7 +6,7 @@ from qtpy.QtWidgets import (
 )
 from napari.layers import Image, Labels, Points
 from napari.utils.notifications import show_info
-from sprout_core.sam_core import extract_slices_and_prompts, load_prompts_as_points_layers
+from sprout_core.sprout_prompt_core import extract_slices_and_prompts, load_prompts_as_points_layers
 
 def create_output_folder_row(default_folder=None):
     layout = QHBoxLayout()
@@ -30,14 +30,13 @@ def create_output_folder_row(default_folder=None):
     layout.addWidget(browse_btn)
     return layout, folder_edit
 
-class SproutSamWidget(QWidget):
+class SproutPromptWidget(QWidget):
     def __init__(self, napari_viewer):
         super().__init__()
         self.viewer = napari_viewer
-        self.setWindowTitle("SPROUTSAM")
-
+        self.setWindowTitle("SPROUTPROMPT")
         main_layout = QVBoxLayout()
-        main_layout.addWidget(QLabel("<b>SPROUTSAM</b>"))
+        main_layout.addWidget(QLabel("<b>SPROUTPROMPT</b>"))
 
         # --- Layer selection UI ---
         form = QFormLayout()
@@ -187,4 +186,4 @@ class SproutSamWidget(QWidget):
             print(info)
 
 def napari_experimental_provide_dock_widget():
-    return SproutSamWidget
+    return SproutPromptWidget

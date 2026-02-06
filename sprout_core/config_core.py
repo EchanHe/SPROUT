@@ -1269,6 +1269,119 @@ input_val_sam_run = {
     }   
 }
 
+
+input_val_nninteractive_run = {
+    # Model configuration
+    "model_path": {
+        "type": str,
+        "required": True,
+        "description": "Path to nnInteractive model",
+        "check_exist": True
+    },
+    "device": {
+        "type": str,
+        "required": False,
+        "default": "cuda:0",
+        "description": "Device to run model on (e.g., 'cuda:0', 'cpu')"
+    },
+    "verbose": {
+        "type": bool,
+        "required": False,
+        "default": True,
+        "description": "Enable verbose logging"
+    },
+    "do_autozoom": {
+        "type": bool,
+        "required": False,
+        "default": True,
+        "description": "Enable automatic zoom adjustment"
+    },
+    
+    # Input/Output paths
+    "img_path": {
+        "type": str,
+        "required": True,
+        "description": "Path to input image",
+        "check_exist": True,
+        "check_extension": (".tif", ".tiff", ".png")
+    },
+    "seg_path": {
+        "type": str,
+        "required": True,
+        "description": "Path to input seed/segmentation mask",
+        "check_exist": True,
+        "check_extension": (".tif", ".tiff", ".png")
+    },
+    "output_folder": {
+        "type": str,
+        "required": True,
+        "description": "Folder to save prediction outputs"
+    },
+    
+    # Prompt configuration
+    "prompt_type": {
+        "type": str,
+        "required": True,
+        "description": "Type of prompt for nnInteractive",
+        "choices": ["point", "bbox"]
+    },
+    "default_n_pos": {
+        "type": int,
+        "min": 1,
+        "required": False,
+        "default": 1,
+        "description": "Default number of positive points per class"
+    },
+    "default_n_neg": {
+        "type": int,
+        "min": 0,
+        "required": False,
+        "default": 0,
+        "description": "Default number of negative points per class"
+    },
+    "default_method": {
+        "type": str,
+        "required": False,
+        "default": "random",
+        "description": "Default point sampling method",
+        "choices": ["kmeans", "grid", "center_edge", "random"]
+    },
+    "negative_from_bg": {
+        "type": bool,
+        "required": False,
+        "default": True,
+        "description": "Sample negative points from background region"
+    },
+    "negative_from_other_classes": {
+        "type": bool,
+        "required": False,
+        "default": True,
+        "description": "Sample negative points from other class regions"
+    },
+    "negative_per_other_class": {
+        "type": bool,
+        "required": False,
+        "default": False,
+        "description": "Sample negative points individually for each other class"
+    },
+    "class_config": {
+        "type": dict,
+        "required": False,
+        "default": None,
+        "description": "Per-class prompt configuration (dict with class IDs as keys)"
+    },
+    
+    # Output configuration
+    "return_per_class_masks": {
+        "type": bool,
+        "required": False,
+        "default": True,
+        "description": "Return separate masks for each class"
+    },
+
+
+}
+
 def return_thre_value(input_config, img):
     if isinstance(input_config, (int, float)):
         return input_config

@@ -49,6 +49,13 @@ def main():
     group.add_argument('--adaptive_seed', action='store_true', help="Run the adaptive seed generation function")
     group.add_argument('--grow', action='store_true', help="Run the grow function")
     group.add_argument('--sam', action='store_true', help="Run the SAM prediction function")
+    group.add_argument('--prompt', action='store_true', help="Run the PROMPT extraction function")
+    
+    # a group args only when --prompt is specified
+    # sam or nninteractive
+    prompt_group = parser.add_mutually_exclusive_group()
+    prompt_group.add_argument('--sam', action='store_true', help="Use SAM for prompt extraction")
+    prompt_group.add_argument('--nninteractive', action='store_true', help="Use nnInteractive for prompt extraction")
     
     parser.add_argument('--batch', action='store_true', help="Run in batch mode using pipeline functions")
     parser.add_argument('--config', type=str, help="Path to the YAML config file")
@@ -57,6 +64,12 @@ def main():
 
     assert args.config.endswith(".yaml"), f"Error: {args.config} does not end with '.yaml'"
     assert os.path.isfile(args.config), f"Error: File not found - {args.config}"
+    
+    # check sam or interactive only when --prompt is specified
+    if not args.prompt:
+        if args.sam or args.nninteractive:
+            print("[WARNING] --sam or --nninteractive is only valid when using --prompt. Ignoring these flags.")
+        
     
     if args.seeds:
         if not args.config:
@@ -88,18 +101,29 @@ def main():
             run_batch_adaptive_seed(args.config)
         else:
             run_make_adaptive_seed(args.config)
-    elif args.sam:
-        from sam_predict import run_sam_yaml
-        from batch_sam import run_batch_sam
-        if not args.config:
-            print("[ERROR] --config is required when using --sam")
-            parser.print_help()
-            exit(1)
-        # config = load_config(args.config)
-        if args.batch:
-            run_batch_sam(args.config)
-        else:
-            run_sam_yaml(args.config)
+    elif args.prompt:
+        if args.sam:
+            from sam_predict import run_sam_yaml
+            from batch_sam import run_batch_sam
+            if not args.config:
+                print("[ERROR] --config is required when using --prompt --sam")
+                parser.print_help()
+                exit(1)
+            # config = load_config(args.config)
+            if args.batch:
+                run_batch_sam(args.config)
+            else:
+                run_sam_yaml(args.config)
+        elif args.nninteractive:
+            if not args.config:
+                print("[ERROR] --config is required when using --prompt --sam")
+                parser.print_help()
+                exit(1)
+            if args.batch:
+                print("TODO: batch nninteractive")
+            else:
+                from sprout_core.nninteractive_predict import run_nninteractive_yaml
+                run_nninteractive_yaml(args.config)
 
     else:
         print("[ERROR] No valid action specified.")

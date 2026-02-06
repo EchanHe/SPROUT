@@ -4,40 +4,42 @@ contributions:
   commands:
     - id: napari-sprout.make_widget
       python_name: napari_sprout._widget:make_sprout_widget
-      title: Create SPROUT Widget
-    - id: napari-sprout.sam_widget
-      python_name: napari_sprout._widget:make_sprout_widget_sam
-      title: SPROUT SAM
+      title: SPROUT Main Widget                  
+    
+    - id: napari-sprout.prompt_widget
+      python_name: napari_sprout._widget:make_sprout_widget_prompt
+      title: SPROUT Prompts (SAM/nninteractive)                 
+    
     - id: napari-sprout.load_widget
       python_name: napari_sprout._widget:load_images_widget
-      title: Load files for sprout
-
+      title: SPROUT Load Images                   
+    
     - id: napari-sprout.edit_widget
       python_name: napari_sprout._widget:make_sprout_widget_edit
-      title: SPROUT Edit
+      title: SPROUT Edit Labels                   
+    
     - id: napari-sprout.info_widget
-
       python_name: napari_sprout._widget:make_sprout_widget_info
-      title: SPROUT Info
+      title: SPROUT Data Info                     
+    
     - id: napari-sprout.map_sprout
       python_name: napari_sprout._widget:make_sprout_widget_map
-      title: SPROUT Map
+      title: SPROUT Label Mapping                 
     - id: napari-sprout.tools_widget
       python_name: napari_sprout._widget:make_sprout_widget_tools
-      title: SPROUT tools
+      title: SPROUT Batch Builder                  
   widgets:
     - command: napari-sprout.make_widget
-      display_name: SPROUT_main
-    - command: napari-sprout.sam_widget
-      display_name: SPROUT_SAM
-  # widgets:
+      display_name: SPROUT
+    - command: napari-sprout.prompt_widget
+      display_name: Prompts
     - command: napari-sprout.load_widget
-      display_name: SPROUT_load
+      display_name: Load
     - command: napari-sprout.edit_widget
-      display_name: SPROUT_edit
+      display_name: Edit
     - command: napari-sprout.map_sprout
-      display_name: SPROUT_map
+      display_name: Label Mapping
     - command: napari-sprout.tools_widget
-      display_name: SPROUT_tools
+      display_name: Batch Builder
     - command: napari-sprout.info_widget
-      display_name: SPROUT_info
+      display_name: Data Info
