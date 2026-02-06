@@ -22,7 +22,7 @@ Click [here](https://www.youtube.com/watch?v=4DHI1gs1lzc&list=PL8tsvVKJ9n6FjYYpl
    - [Seed Generation](#-run-seed-generation)
    - [Adaptive Seed Generation](#-run-adaptive-seed-generation)
    - [Growth](#-run-growth)
-   - [Foundation Model Segmentation](#-sproutsam-run-foundation-model-prediction)
+   - [External Model Segmentation](#-external-model-prediction)
 - [View & Edit (napari)](#view--edit-napari)
 - [Demo Results](#demo-results)
 - [Extras](#extra-features)
@@ -81,39 +81,10 @@ cd SPROUT
         ```
         This shows pip installation; alternatively, you can use conda.
 
-### Install **SproutSAM** related Dependencies (Optional)
+**Optional External Models:**
+- For SAM integration, see [Here](docs/external_model_installation.md#sam-segment-anything-model)
+- For nnInteractive integration, see [Here](docs/external_model_installation.md#nninteractive)
 
-[**SproutSAM**](#-sproutsam-run-foundation-model-prediction) is an optional module that enables prompt-based segmentation using foundation models like [SAM](https://github.com/facebookresearch/segment-anything) and [SAM2](https://github.com/facebookresearch/sam2). If you wish to use **SproutSAM**, please install the following additional dependencies:
-
-#### Core Dependencies
-
-```bash
-pip install torch torchvision torchaudio
-pip install opencv-python-headless
-```
-
-⚠️ For optimal performance, we recommend using GPU-enabled PyTorch. You can find the correct installation command based on your system here:  
-[https://pytorch.org/get-started/locally/](https://pytorch.org/get-started/locally/)
-
-#### 📦 Install Segment Anything Models
-
-You also need to install the SAM and/or SAM2 libraries:
-
--   **[SAM (Segment Anything Model)](https://github.com/facebookresearch/segment-anything)**
-    
-    ```bash
-    git clone https://github.com/facebookresearch/segment-anything.git
-    cd segment-anything
-    pip install -e .
-    ```
-
--   **[SAM2 (Segment Anything v2)](https://github.com/facebookresearch/sam2)**
-
-    ```bash
-    git clone https://github.com/facebookresearch/sam2.git
-    cd sam2
-    pip install -e .
-    ```
 
 ### Install napari & napari-sprout (Visualization and Editing)
 
@@ -194,7 +165,7 @@ SPROUT follows a **two-step workflow** for multi-class segmentation:
    - [**Adaptive seed generation**](#-run-adaptive-seed-generation): automatically combine information across seeds from different configurations to produce a often better and final seed.
 2. **Seed Growth**  
    - [**Threshold-based growth**](#-run-growth): grows a seed by expanding the reduced components back toward their full target shapes. Growth is guided by image intensity and connectivity.
-   - [**SproutSAM**](#-sproutsam-run-foundation-model-prediction): seeds are converted into prompts for a segmentation foundation model such as SAM, which then predicts the segmentation. These slice-wise predictions are then fused into a final 3D output.
+   - [**Sprout+External**](#-external-model-prediction): seeds are converted into prompts for a segmentation foundation model such as SAM & nnInteractive, which then predicts the segmentation. These slice-wise predictions are then fused into a final 3D output.
 
 **🧪 Interactive Inspection & Editing**
 
@@ -280,17 +251,31 @@ For full details on YAML parameters and other configs see:
 
 For example, see the YAML configuration files in `./template/`.
 
-### 🧠 SproutSAM: Run Foundation Model Prediction
+### 🧠 External Model Prediction
+**Using SPROUT seeds as prompts:**
+Prompts extracted from SPROUT seeds (e.g., point coordinates, bounding boxes) can be used as inputs for external models like SAM-based methods and nnInteractive. See [Foundation Model configuration options](./docs/config_sam.md) for details.
 
 **on a single image or a folder of images**
+ - SAM-based
 ```bash
-python sprout.py --sam --config path/to/config.yaml
+python sprout.py --prompt --sam --config path/to/config.yaml
+```
+ - nnInteractive
+```bash
+python sprout.py --prompt --nninteractive --config path/to/config.yaml
 ```
 
+
 **in batch mode**
+ - SAM-based
 ```bash
-python sprout.py --sam --batch --config path/to/batch_config.yaml
+python sprout.py --prompt --sam --batch --config path/to/config.yaml
 ```
+ - nnInteractive
+```bash
+python sprout.py --prompt --nninteractive --batch --config path/to/config.yaml
+```
+
 For full details on YAML parameters and other configs see:
 - [Foundation Model configuration options](./docs/config_sam.md)
 

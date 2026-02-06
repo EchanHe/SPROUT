@@ -32,8 +32,11 @@ def main():
         For growing
             python sprout.py --grow --config path/to/config.yaml
             
-        For Foundation model prediction:
-            python sprout.py --sam --config path/to/config.yaml  
+        For Predictions using PROMPT extracted from seeds for SAM
+            python sprout.py --prompt --sam --config path/to/config.yaml  
+        
+        For Predictions using PROMPT extracted from seeds for nnInteractive
+            python sprout.py --prompt --nninteractive --config path/to/config.yaml
             
         To run in batch mode (pipeline version), add --batch:
             python sprout.py --seeds --batch --config path/to/config.yaml
@@ -48,7 +51,6 @@ def main():
     group.add_argument('--seeds', action='store_true', help="Run the seed generation function")
     group.add_argument('--adaptive_seed', action='store_true', help="Run the adaptive seed generation function")
     group.add_argument('--grow', action='store_true', help="Run the grow function")
-    group.add_argument('--sam', action='store_true', help="Run the SAM prediction function")
     group.add_argument('--prompt', action='store_true', help="Run the PROMPT extraction function")
     
     # a group args only when --prompt is specified
@@ -102,9 +104,14 @@ def main():
         else:
             run_make_adaptive_seed(args.config)
     elif args.prompt:
+        # either sam or nninteractive must be specified
+        if not (args.sam or args.nninteractive):
+            print("[ERROR] Either --sam or --nninteractive must be specified when using --prompt")
+            parser.print_help()
+            exit(1)
         if args.sam:
-            from sam_predict import run_sam_yaml
-            from batch_sam import run_batch_sam
+            from sprout_core.sam_predict import run_sam_yaml
+            from sprout_core.batch_sam import run_batch_sam
             if not args.config:
                 print("[ERROR] --config is required when using --prompt --sam")
                 parser.print_help()
@@ -115,15 +122,17 @@ def main():
             else:
                 run_sam_yaml(args.config)
         elif args.nninteractive:
+            import sprout_core.nninteractive_predict as nninteractive_predict 
+            import sprout_core.batch_nninteractive as batch_nninteractive
             if not args.config:
-                print("[ERROR] --config is required when using --prompt --sam")
+                print("[ERROR] --config is required when using --prompt --nninteractive")
                 parser.print_help()
                 exit(1)
             if args.batch:
-                print("TODO: batch nninteractive")
+                batch_nninteractive.run_batch_nninteractive(args.config)
             else:
-                from sprout_core.nninteractive_predict import run_nninteractive_yaml
-                run_nninteractive_yaml(args.config)
+                
+                nninteractive_predict.run_nninteractive_yaml(args.config)
 
     else:
         print("[ERROR] No valid action specified.")

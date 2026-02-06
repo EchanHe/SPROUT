@@ -22,7 +22,7 @@ import sprout_core.config_core as config_core
 try:
     import cv2
 except ImportError:
-    print("[ERROR] `cv2` is not installed. Please install it to run SPROUTSAM.")
+    print("[ERROR] `cv2` is not installed. Please install it to run SAM-based inference.")
     cv2 = None
 
 try:
@@ -35,13 +35,13 @@ except ImportError:
 try:
     from PIL import Image
 except ImportError:
-    print("[ERROR] `PIL` is not installed. Please install it to run SPROUTSAM.")
+    print("[ERROR] `PIL` is not installed. Please install it to run SAM-based inference.")
     Image = None
 
 try:
     from sklearn.cluster import KMeans
 except ImportError:
-    print("[ERROR] `sklearn` is not installed. Please install it to run SPROUTSAM.")
+    print("[ERROR] `sklearn` is not installed. Please install it to run SAM-based inference.")
     KMeans = None
 
 
@@ -49,14 +49,14 @@ except ImportError:
 try:
     import torch
 except ImportError:
-    print("[ERROR] `torch` is not installed. Please install it to run SPROUTSAM.")
+    print("[ERROR] `torch` is not installed. Please install it to run SAM-based inference.")
     torch = None
 
 try:
     from sam2.build_sam import build_sam2
     from sam2.sam2_image_predictor import SAM2ImagePredictor
 except ImportError:
-    print("[ERROR] `sam2` is not installed. Please install it before running SPROUTSAM with SAM2.")
+    print("[ERROR] `sam2` is not installed. Please install it before running SAM-based inference with SAM2.")
     build_sam2 = None
     SAM2ImagePredictor = None
 

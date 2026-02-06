@@ -5,10 +5,10 @@ import tifffile
 from pathlib import Path
 from typing import TypedDict, Literal, Optional, Union, Dict, Tuple
 from nnInteractive.inference.inference_session import nnInteractiveInferenceSession
-from sprout_prompt_core import seed_to_point_prompts_nninteractive
+from sprout_core.sprout_prompt_core import seed_to_point_prompts_nninteractive
 import os, sys
 import yaml
-import config_core
+import sprout_core.config_core as config_core
 
 def nninter_main_from_prompts(model_path, img_path,output_folder,
                  df_pt_path = None, scribble_mask_path = None,
@@ -191,8 +191,23 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
     """
     print("=" * 60)
     print("nnInteractive Prediction")
-    print("=" * 60)
+    # Print all parameters
+    print(f"    Model path: {model_path}")
+    print(f"    Image path: {img_path}")
+    print(f"    Segmentation path: {seg_path}")
+    print(f"    Output folder: {output_folder}")
+    print(f"    evice: {device}")
+    print(f"    Prompt type: {prompt_type}")
+    print(f"    Point config: {point_config}")
+    print(f"    Return per class masks: {return_per_class_masks}")
     
+    print("=" * 60)
+
+    log_dict = {
+        "img_path": img_path,
+        "seg_path": seg_path,
+        "output_folder": output_folder}
+  
     
     # Validate paths
     if not Path(model_path).exists():
@@ -330,9 +345,9 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
     print("=" * 60 + "\n")
     
     if return_per_class_masks:
-        return total_mask, per_class_masks
+        return total_mask, per_class_masks , log_dict
     else:
-        return total_mask
+        return total_mask, log_dict
 
 
 def nninter_predict(

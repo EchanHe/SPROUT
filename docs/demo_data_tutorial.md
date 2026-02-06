@@ -1,6 +1,6 @@
 # Demo Data and Basic Usage
 This document introduces the demo datasets and the basic usage of SPROUT.  
-We demonstrate how to use **seed generation**, **adaptive seed generation**, **growth**, and **SproutSAM**.  
+We demonstrate how to use **seed generation**, **adaptive seed generation**, **growth**, and **Sprout+SAM**.  
 
 For more advanced scenarios and parameter tuning, see [scenarios.md](scenarios.md).
 
@@ -109,7 +109,7 @@ The process finishes in around 2 minutes (4 threads).
 ## Demo Data: 2D Cell Microscopy Image
 Data: `2d_cell.tif`
 - Shape (y, x): **(2796, 2796)**
-### Example: Use SproutSAM
+### Example: Use SAM-based inference
 In this example, we use **`2d_cell_seed.tif`** as the input seed mask to generate prompts.  
 The configuration file is provided at `./template/sam_predict.yaml`.
 

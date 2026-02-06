@@ -5,7 +5,7 @@ import pandas as pd
 import sprout_core.config_core as config_core
 import sprout_core.sprout_core as sprout_core
 
-from sam_predict import sam_predict
+from sprout_core.sam_predict import sam_predict
 
 def run_batch_sam(file_path):
     _, extension = os.path.splitext(file_path)
