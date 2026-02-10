@@ -1323,7 +1323,7 @@ input_val_nninteractive_run = {
         "type": str,
         "required": True,
         "description": "Type of prompt for nnInteractive",
-        "choices": ["point", "bbox"]
+        "choices": ["point", "scribble"]
     },
     "default_n_pos": {
         "type": int,
@@ -1375,7 +1375,7 @@ input_val_nninteractive_run = {
     "return_per_class_masks": {
         "type": bool,
         "required": False,
-        "default": True,
+        "default": False,
         "description": "Return separate masks for each class"
     },
 

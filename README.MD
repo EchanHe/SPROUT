@@ -22,7 +22,7 @@ Click [here](https://www.youtube.com/watch?v=4DHI1gs1lzc&list=PL8tsvVKJ9n6FjYYpl
    - [Seed Generation](#-run-seed-generation)
    - [Adaptive Seed Generation](#-run-adaptive-seed-generation)
    - [Growth](#-run-growth)
-   - [External Model Segmentation](#-external-model-prediction)
+   - [External Model Prediction](#-external-model-prediction)
 - [View & Edit (napari)](#view--edit-napari)
 - [Demo Results](#demo-results)
 - [Extras](#extra-features)
@@ -81,7 +81,7 @@ cd SPROUT
         ```
         This shows pip installation; alternatively, you can use conda.
 
-**Optional External Models:**
+### Optional: Installation for External Models Prediction:**
 - For SAM integration, see [Here](docs/external_model_installation.md#sam-segment-anything-model)
 - For nnInteractive integration, see [Here](docs/external_model_installation.md#nninteractive)
 

@@ -1,3 +1,4 @@
+import tifffile
 import yaml
 import os,sys
 import pandas as pd
@@ -35,8 +36,8 @@ def run_batch_nninteractive(file_path):
         # Derive some parameters for nninter_main()
         
         # use filename as the outfolder's subfolder
-        output_folder = os.path.join(config['output_folder'], Path(config['img_path']).stem)
-        os.makedirs(output_folder, exist_ok=True)
+        per_file_output_folder = os.path.join(config['output_folder'], Path(config['img_path']).stem)
+        os.makedirs(per_file_output_folder, exist_ok=True)
 
         point_config = {
             'default_n_pos': optional_params['default_n_pos'],
@@ -61,14 +62,16 @@ def run_batch_nninteractive(file_path):
                 device=device,
                 prompt_type=config['prompt_type'],
                 point_config=point_config,
-                output_folder=output_folder,
+                output_folder=per_file_output_folder,
                 return_per_class_masks=optional_params['return_per_class_masks']
             )
             if len(nn_output) == 3:
-                _, _, log_dict = nn_output
+                total_mask, _, log_dict = nn_output
+                
             elif len(nn_output) == 2:
-                _, log_dict = nn_output
-            
+                total_mask, log_dict = nn_output
+            output_path = Path(config['output_folder']) / f"{Path(config['img_path']).stem}_segmentation.tif"
+            tifffile.imwrite(output_path, total_mask , compression='zlib')
             df.loc[index,'output_folder'] = log_dict['output_folder']
             
         except Exception as e:

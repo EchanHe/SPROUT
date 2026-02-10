@@ -136,13 +136,13 @@ def nninter_main_from_prompts(model_path, img_path,output_folder,
     # Save results
     print("\n      Saving results...")
     output_path = Path(output_folder) / f"{Path(img_path).stem}_segmentation.tif"
-    tifffile.imwrite(output_path, total_mask)
+    tifffile.imwrite(output_path, total_mask, compression='zlib')
     print(f"      ✓ Saved: {output_path}")
     
     if return_per_class_masks:
         for class_id, mask in per_class_masks.items():
             output_path = Path(output_folder) / f"{Path(img_path).stem}_class_{class_id}.tif"
-            tifffile.imwrite(output_path, mask.astype(np.uint8) * 255)
+            tifffile.imwrite(output_path, mask.astype(np.uint8) * 255, compression='zlib')
             print(f"      ✓ Saved class {class_id}: {mask.sum():,} pixels")
     
     # Cleanup
@@ -327,13 +327,13 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
     # Save results
     print("\n      Saving results...")
     output_path = Path(output_folder) / f"{Path(img_path).stem}_segmentation.tif"
-    tifffile.imwrite(output_path, total_mask)
+    tifffile.imwrite(output_path, total_mask , compression='zlib')
     print(f"      ✓ Saved: {output_path}")
     
     if return_per_class_masks:
         for class_id, mask in per_class_masks.items():
             output_path = Path(output_folder) / f"{Path(img_path).stem}_class_{class_id}.tif"
-            tifffile.imwrite(output_path, mask.astype(np.uint8) * 255)
+            tifffile.imwrite(output_path, mask.astype(np.uint8) * 255, compression='zlib')
             print(f"      ✓ Saved class {class_id}: {mask.sum():,} pixels")
     
     # Cleanup
@@ -494,6 +494,9 @@ def nninter_predict(
         else:
             print(f"        Class {val}: {count:,} pixels")
     
+    session.reset_interactions()
+    del session
+    torch.cuda.empty_cache()
     if return_per_class_masks:
         return total_mask, per_class_masks
     else:
