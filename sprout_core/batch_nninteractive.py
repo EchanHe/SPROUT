@@ -50,7 +50,7 @@ def run_batch_nninteractive(file_path):
         }
 
         device = optional_params['device']
-        if device == 'cuda' and not torch_cuda_is_available():
+        if device.startswith('cuda') and not torch_cuda_is_available():
             print("[WARNING] CUDA not available, switching to CPU")
             device = 'cpu'
 

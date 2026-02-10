@@ -196,7 +196,7 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
     print(f"    Image path: {img_path}")
     print(f"    Segmentation path: {seg_path}")
     print(f"    Output folder: {output_folder}")
-    print(f"    evice: {device}")
+    print(f"    Device: {device}")
     print(f"    Prompt type: {prompt_type}")
     print(f"    Point config: {point_config}")
     print(f"    Return per class masks: {return_per_class_masks}")
@@ -208,7 +208,10 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
         "seg_path": seg_path,
         "output_folder": output_folder}
   
-    
+    if torch.cuda.is_available() and ("cuda" in str(device)):
+        torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats(torch.device("cuda"))
+            
     # Validate paths
     if not Path(model_path).exists():
         raise FileNotFoundError(f"Model not found: {model_path}")
@@ -335,6 +338,25 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
             output_path = Path(output_folder) / f"{Path(img_path).stem}_class_{class_id}.tif"
             tifffile.imwrite(output_path, mask.astype(np.uint8) * 255, compression='zlib')
             print(f"      ✓ Saved class {class_id}: {mask.sum():,} pixels")
+
+    if device.type == "cuda":
+        peak_allocated = torch.cuda.max_memory_allocated(device)      # bytes
+        peak_reserved  = torch.cuda.max_memory_reserved(device)       # bytes
+        log_dict["gpu_peak_allocated_bytes"] = int(peak_allocated)
+        log_dict["gpu_peak_reserved_bytes"]  = int(peak_reserved)
+        log_dict["gpu_peak_allocated_MB"]    = round(peak_allocated / 1024**2, 2)
+        log_dict["gpu_peak_reserved_MB"]     = round(peak_reserved  / 1024**2, 2)
+
+        print(
+            f"\n[GPU] Peak allocated: {log_dict['gpu_peak_allocated_MB']} MB, "
+            f"Peak reserved: {log_dict['gpu_peak_reserved_MB']} MB"
+        )
+    else:
+        log_dict["gpu_peak_allocated_bytes"] = 0
+        log_dict["gpu_peak_reserved_bytes"]  = 0
+        log_dict["gpu_peak_allocated_MB"]    = 0.0
+        log_dict["gpu_peak_reserved_MB"]     = 0.0
+
     
     # Cleanup
     del session
@@ -343,6 +365,10 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
     print("\n" + "=" * 60)
     print("✓ Completed successfully!")
     print("=" * 60 + "\n")
+    
+    # write log_dict to yaml
+    with open(Path(output_folder) / "nninteractive_log.yaml", 'w') as f:
+        yaml.dump(log_dict, f)
     
     if return_per_class_masks:
         return total_mask, per_class_masks , log_dict
@@ -535,7 +561,7 @@ def run_nninteractive_yaml(file_path):
     
     model_path = config['model_path']
     device = optional_params['device']
-    if device == 'cuda' and not torch.cuda.is_available():
+    if device.startswith('cuda') and not torch.cuda.is_available():
         print("[WARNING] CUDA not available, switching to CPU")
         device = 'cpu'
 
