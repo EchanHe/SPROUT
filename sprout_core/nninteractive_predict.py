@@ -477,14 +477,15 @@ def nninter_predict(
             
             if len(class_df) > 0:
                 for _, row in class_df.iterrows():
+                    # Create point coordinates for session
                     point_coords = (int(row['z']), int(row['y']), int(row['x']))
                     is_positive = bool(row['label'])
                     
-                    session.add_point_interaction(
-                        coordinates=point_coords,
-                        include_interaction=is_positive,
-                        run_prediction=False
-                    )
+                session.add_point_interaction(
+                    coordinates=point_coords,
+                    include_interaction=is_positive,
+                    run_prediction=False
+                )
                 
                 n_points = len(class_df)
         
