@@ -470,7 +470,7 @@ def nninter_predict(
                     run_prediction=False
                 )
                 n_scribbles = class_scribble.sum()
-        
+                session._predict()
         # 2. Add point interactions if available for this class
         if df_pt is not None:
             class_df = df_pt[df_pt['class_id'] == class_id]
@@ -480,17 +480,18 @@ def nninter_predict(
                     # Create point coordinates for session
                     point_coords = (int(row['z']), int(row['y']), int(row['x']))
                     is_positive = bool(row['label'])
-                    
-                session.add_point_interaction(
-                    coordinates=point_coords,
-                    include_interaction=is_positive,
-                    run_prediction=False
-                )
                 
+                    session.add_point_interaction(
+                        coordinates=point_coords,
+                        include_interaction=is_positive,
+                        run_prediction=False
+                    )
+                    session._predict()
+                    
                 n_points = len(class_df)
         
         # 3. Run prediction once for all interactions
-        session._predict()
+        # session._predict()
         
         # 4. Get result
         current_mask = session.target_buffer.cpu().numpy() > 0
