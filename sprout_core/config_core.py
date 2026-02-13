@@ -1371,6 +1371,14 @@ input_val_nninteractive_run = {
         "description": "Per-class prompt configuration (dict with class IDs as keys)"
     },
     
+    # scribble configuration
+    "use_negative_scribble": {
+        "type": bool,
+        "required": False,
+        "default": False,
+        "description": "Use negative scribbles in prompts"
+    },
+    
     # Output configuration
     "return_per_class_masks": {
         "type": bool,

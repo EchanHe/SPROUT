@@ -10,6 +10,24 @@ import os, sys
 import yaml
 import sprout_core.config_core as config_core
 
+def parse_scribble_config(optional_params):
+    scribble_config = {
+        'use_negative_scribble': optional_params.get('use_negative_scribble', False)    
+    }
+    return scribble_config
+
+def parse_point_config(optional_params):
+    point_config = {
+        'default_n_pos': optional_params['default_n_pos'],
+        'default_n_neg': optional_params['default_n_neg'],
+        'default_method': optional_params['default_method'],
+        'negative_from_bg': optional_params['negative_from_bg'],
+        'negative_from_other_classes': optional_params['negative_from_other_classes'],
+        'negative_per_other_class': optional_params['negative_per_other_class'],
+        "class_config": optional_params.get('class_config', None),
+    }
+    return point_config
+
 def nninter_main_from_prompts(model_path, img_path,output_folder,
                  df_pt_path = None, scribble_mask_path = None,
                  
@@ -58,7 +76,8 @@ def nninter_main_from_prompts(model_path, img_path,output_folder,
         device=device,
         verbose=False,
         use_torch_compile=False,
-        do_autozoom=True
+        do_autozoom=True,
+        use_pinned_memory=True
     )
     
     try:
@@ -173,7 +192,8 @@ class PointPromptConfig(TypedDict, total=False):
 def nninter_main(model_path, img_path, seg_path ,output_folder,device,
                 prompt_type: Literal['point', 'scribble'] = "point",
                 point_config: Optional[PointPromptConfig] = None,
-                 return_per_class_masks: bool = False):
+                 return_per_class_masks: bool = False,
+                 scribble_config= None):
     """
     Main function for nnInteractive prediction with point prompts.
     
@@ -185,7 +205,7 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
         prompt_type: Type of prompt to use ("point" or "scribble")
         point_config: Configuration for point prompt generation
         return_per_class_masks: Whether to save individual class masks
-    
+        scribble_config: Configuration for scribble prompt generation
     Returns:
         total_mask or (total_mask, per_class_masks)
     """
@@ -200,7 +220,7 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
     print(f"    Prompt type: {prompt_type}")
     print(f"    Point config: {point_config}")
     print(f"    Return per class masks: {return_per_class_masks}")
-    
+    print(f"    Scribble config: {scribble_config}")
     print("=" * 60)
 
     log_dict = {
@@ -232,7 +252,8 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
         device=device,
         verbose=False,
         use_torch_compile=False,
-        do_autozoom=True
+        do_autozoom=True,
+        use_pinned_memory=True
     )
     
     try:
@@ -319,11 +340,11 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
     print("\n[4/4] Running prediction...")
     if return_per_class_masks:
         total_mask, per_class_masks = nninter_predict(
-            session, img, df_pt, scribble_mask, return_per_class_masks=True
+            session, img, df_pt, scribble_mask, return_per_class_masks=True, scribble_config=scribble_config
         )
     else:
         total_mask = nninter_predict(
-            session, img, df_pt, scribble_mask, return_per_class_masks=False
+            session, img, df_pt, scribble_mask, return_per_class_masks=False, scribble_config=scribble_config
         )
         per_class_masks = None
     
@@ -381,6 +402,7 @@ def nninter_predict(
     img, 
     df_pt: Optional[pd.DataFrame] = None,
     scribble_mask: Optional[np.ndarray] = None,
+    scribble_config = None,
     return_per_class_masks: bool = False
 ) -> Union[np.ndarray, Tuple[np.ndarray, Dict[int, np.ndarray]]]:
     """
@@ -395,6 +417,7 @@ def nninter_predict(
                        Values: 0=background, 1,2,3...=class IDs
                        Can be None if only using points
         return_per_class_masks: Whether to return individual masks per class
+        scribble_config: Configuration for scribble prompt generation
     
     Returns:
         total_mask: Combined segmentation with class IDs
@@ -462,6 +485,7 @@ def nninter_predict(
         if scribble_mask is not None:
             # Extract binary mask for current class
             class_scribble = (scribble_mask == class_id).astype(np.float32)
+           
             
             if class_scribble.sum() > 0:  # Only add if scribble exists
                 session.add_scribble_interaction(
@@ -469,8 +493,18 @@ def nninter_predict(
                     include_interaction=True,
                     run_prediction=False
                 )
-                n_scribbles = class_scribble.sum()
                 session._predict()
+                if scribble_config and scribble_config.get('use_negative_scribble', False):
+                    negative_scribble = (scribble_mask != class_id) & (scribble_mask != 0)
+            
+                    session.add_scribble_interaction(
+                        scribble_image=negative_scribble,
+                        include_interaction=False,
+                        run_prediction=False
+                    )
+                    session._predict()
+                n_scribbles = class_scribble.sum()
+                # session._predict()
         # 2. Add point interactions if available for this class
         if df_pt is not None:
             class_df = df_pt[df_pt['class_id'] == class_id]
@@ -480,7 +514,7 @@ def nninter_predict(
                     # Create point coordinates for session
                     point_coords = (int(row['z']), int(row['y']), int(row['x']))
                     is_positive = bool(row['label'])
-                
+                    print("using point:", point_coords, "positive" if is_positive else "negative")
                     session.add_point_interaction(
                         coordinates=point_coords,
                         include_interaction=is_positive,
@@ -567,16 +601,9 @@ def run_nninteractive_yaml(file_path):
         print("[WARNING] CUDA not available, switching to CPU")
         device = 'cpu'
 
-    point_config = {
-        'default_n_pos': optional_params['default_n_pos'],
-        'default_n_neg': optional_params['default_n_neg'],
-        'default_method': optional_params['default_method'],
-        'negative_from_bg': optional_params['negative_from_bg'],
-        'negative_from_other_classes': optional_params['negative_from_other_classes'],
-        'negative_per_other_class': optional_params['negative_per_other_class'],
-        "class_config": optional_params.get('class_config', None),
-    }
-
+    point_config = parse_point_config(optional_params)
+    
+    scribble_config = parse_scribble_config(optional_params)
     # use the output folder to save yaml
     output_folder = config['output_folder']
     Path(output_folder).mkdir(parents=True, exist_ok=True)
@@ -594,7 +621,8 @@ def run_nninteractive_yaml(file_path):
         prompt_type=config['prompt_type'],
         point_config=point_config,
         output_folder=output_folder,
-        return_per_class_masks=optional_params['return_per_class_masks']
+        return_per_class_masks=optional_params['return_per_class_masks'],
+        scribble_config=scribble_config
     )
 
 # Main execution

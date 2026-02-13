@@ -7,7 +7,7 @@ import sprout_core.config_core as config_core
 import sprout_core.sprout_core as sprout_core
 from pathlib import Path
 
-from sprout_core.nninteractive_predict import nninter_main
+from sprout_core.nninteractive_predict import nninter_main, parse_point_config, parse_scribble_config
 from torch.cuda import is_available as torch_cuda_is_available
 
 def run_batch_nninteractive(file_path):
@@ -39,15 +39,11 @@ def run_batch_nninteractive(file_path):
         per_file_output_folder = os.path.join(config['output_folder'], Path(config['img_path']).stem)
         os.makedirs(per_file_output_folder, exist_ok=True)
 
-        point_config = {
-            'default_n_pos': optional_params['default_n_pos'],
-            'default_n_neg': optional_params['default_n_neg'],
-            'default_method': optional_params['default_method'],
-            'negative_from_bg': optional_params['negative_from_bg'],
-            'negative_from_other_classes': optional_params['negative_from_other_classes'],
-            'negative_per_other_class': optional_params['negative_per_other_class'],
-            "class_config": optional_params.get('class_config', None),
-        }
+        point_config = parse_point_config(optional_params)
+        
+        scribble_config = parse_scribble_config(optional_params)
+
+
 
         device = optional_params['device']
         if device.startswith('cuda') and not torch_cuda_is_available():
@@ -62,6 +58,7 @@ def run_batch_nninteractive(file_path):
                 device=device,
                 prompt_type=config['prompt_type'],
                 point_config=point_config,
+                scribble_config=scribble_config,
                 output_folder=per_file_output_folder,
                 return_per_class_masks=optional_params['return_per_class_masks']
             )
