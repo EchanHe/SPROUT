@@ -298,7 +298,7 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
 
         pt_csv_path = Path(output_folder) / f"{Path(img_path).stem}_point_prompts.csv"
         
-        df_pt= seed_to_point_prompts_nninteractive(seg_path,
+        df_pt= seed_to_point_prompts_nninteractive(seg_path,img_path=img_path,
                                     output_csv = pt_csv_path,
                                     **default_point_config
                                     )
