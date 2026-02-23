@@ -12,18 +12,16 @@ import re
 import tifffile
 from datetime import datetime
 from skimage.measure import regionprops,label
+from skimage import io,draw
 import tempfile
+
 
 from scipy.ndimage import distance_transform_edt
 from typing import Optional, Literal
 
 import sprout_core.config_core as config_core
 
-try:
-    import cv2
-except ImportError:
-    print("[ERROR] `cv2` is not installed. Please install it to run SAM-based inference.")
-    cv2 = None
+
 
 try:
     from tqdm import tqdm  
@@ -510,7 +508,8 @@ def save_mask(mask, save_dir, image_name, prompt_name=None):
     base = os.path.splitext(image_name)[0]
     suffix = f"_{prompt_name}" if prompt_name else ""
     out_path = os.path.join(save_dir, f"{base}{suffix}.png")
-    cv2.imwrite(out_path, mask.astype(np.uint8) * 255)
+
+    io.imsave(out_path, mask.astype(np.uint8) * 255 , check_contrast=False)  # Disable contrast warning for binary masks
 
 
 def save_overlay(image, mask, save_dir, image_name, prompt_name=None,
@@ -536,21 +535,26 @@ def save_overlay(image, mask, save_dir, image_name, prompt_name=None,
     # Draw points
     if points is not None and labels is not None:
         for pt, lb in zip(points, labels):
-            color = (0, 255, 0) if lb == 1 else (255, 0, 0)  # green or red
-            cv2.circle(overlay, tuple(map(int, pt)), radius, color, thickness=-1)
+            # color = (0, 255, 0) if lb == 1 else (255, 0, 0)  # green or red
 
+            color = np.array([0, 255, 0]) if lb == 1 else np.array([255, 0, 0])
+            rr, cc = draw.disk((int(pt[1]), int(pt[0])), radius, shape=overlay.shape)
+            overlay[rr, cc] = color
     # Draw boxes
     if boxes is not None:
         for box in boxes:
             x0, y0, x1, y1 = map(int, box)
-            cv2.rectangle(overlay, (x0, y0), (x1, y1), color=(255, 255, 0), thickness=thickness)
+
+            for t in range(thickness):
+                rr, cc = draw.rectangle_perimeter(start=(y0-t, x0-t), end=(y1+t, x1+t), shape=overlay.shape)
+                overlay[rr, cc] = [255, 255, 0] # Cyan / Yellow
+
 
     base = os.path.splitext(image_name)[0]
     suffix = f"_{prompt_name}" if prompt_name else ""
     out_path = os.path.join(save_dir, f"{base}{suffix}_overlay.png")
-    # OpenCV uses BGR, but overlay is RGB (from PIL/np). Convert before saving.
-    overlay_bgr = cv2.cvtColor(overlay, cv2.COLOR_RGB2BGR)
-    cv2.imwrite(out_path, overlay_bgr)
+    io.imsave(out_path, overlay, check_contrast=False)  # Disable contrast warning for binary masks
+
 
 
 # def validate_prompts(pr)
@@ -754,7 +758,7 @@ def init_and_run(image_input,
     # Assign device if not provided, with error handling
     if device is None:
         if torch.cuda.is_available():
-            device = torch.device("cuda:0")
+            device = torch.device("cuda:1")
         else:
             print("[WARNING] CUDA is not available. Using CPU.")
             device = torch.device("cpu")
