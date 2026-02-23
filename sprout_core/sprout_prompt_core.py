@@ -190,6 +190,8 @@ def sample_points_3d(mask_3d: np.ndarray, n: int = 5, method: str = 'random') ->
 
 def seed_to_point_prompts_nninteractive(
     seed_path: str,
+    img_path: str = None,
+    exclude_zero_intensity: bool = True,
     output_csv: str = None,
     class_config: Optional[dict] = None,
     default_n_pos: int = 5,
@@ -207,6 +209,10 @@ def seed_to_point_prompts_nninteractive(
     -----------
     seed_path : str
         Path to a seed file OR folder containing multiple seeds
+    img_path : str, optional
+        Path to the original image (for reference, not used in sampling)
+    exclude_zero_intensity : bool
+        Whether to exclude zero intensity points from sampling (treat as background)
     output_csv : str , default=None
         Output CSV path
     class_config : dict, optional
@@ -258,143 +264,149 @@ def seed_to_point_prompts_nninteractive(
         class_config=class_config
     )
     """
+
+
     
     if class_config is None:
         class_config = {}
+    # Handle single file only
+    if not os.path.isfile(seed_path):
+        raise ValueError(f"seed_path must be a file, got: {seed_path}")
     
-    # Handle single file or folder
-    if os.path.isfile(seed_path):
-        seed_files = [seed_path]
-    elif os.path.isdir(seed_path):
-        seed_files = sorted(glob.glob(os.path.join(seed_path, seed_pattern)))
-        if len(seed_files) == 0:
-            raise ValueError(f"No files found matching '{seed_pattern}' in {seed_path}")
-    else:
-        raise ValueError(f"Invalid path: {seed_path}")
-    
-    print(f"Found {len(seed_files)} seed file(s)")
+
+    print(f"Processing seed file: {Path(seed_path).name}")
     
     all_prompts = []
     
-    for seed_file in seed_files:
-        print(f"\nProcessing: {Path(seed_file).name}")
+    print(f"\nProcessing: {Path(seed_path).name}")
+    
+    # Load seed
+    try:
+        if tifffile is not None:
+            seg = tifffile.imread(seed_path)
+        else:
+            raise ImportError("tifffile required")
+    except Exception as e:
+        print(f"[ERROR] Failed to load {seed_path}: {e}")
+        return
+    
+    if seg.ndim != 3:
+        print(f"[WARNING] {seed_path} is not 3D, skipping")
+        return
+
+    # for not sample coords with zero intensity in the original image, which are likely background
+    if exclude_zero_intensity:
+
+        if img_path is None:
+            raise ValueError("exclude_zero_intensity=True requires img or img_path")
+        img_loaded = tifffile.imread(img_path)
+
+        if img_loaded.ndim == 4:
+            img_vol = img_loaded[0]
+        elif img_loaded.ndim == 3:
+            img_vol = img_loaded
+        else:
+            raise ValueError(f"Unsupported img ndim={img_loaded.ndim}, expected 3D or 4D")
+
+        if img_vol.shape != seg.shape:
+            raise ValueError(f"img shape {img_vol.shape} must match seg shape {seg.shape}")
+
+        nonzero_mask = img_vol != 0
+    else:
+        nonzero_mask = None
+    
+    image_name = Path(seed_path).stem
+    
+    # Get class IDs
+    class_ids = np.unique(seg)
+    class_ids = class_ids[class_ids != 0]  # Exclude background
+    
+    if len(class_ids) == 0:
+        print(f"[WARNING] No classes found in {seed_path}")
+        return
+    
+    print(f"  Found {len(class_ids)} classes: {sorted(class_ids)}")
+    
+    # Process each class
+    for cls in class_ids:
+        cfg = class_config.get(int(cls), {})
+        n_pos = cfg.get('n_pos', default_n_pos)
+        n_neg = cfg.get('n_neg', default_n_neg)
+        method = cfg.get('method', default_method)
         
-        # Load seed
+        mask = (seg == cls).astype(np.uint8)
+        
+        # Sample positive points
         try:
-            if tifffile is not None:
-                seg = tifffile.imread(seed_file)
-            else:
-                raise ImportError("tifffile required")
+            pos_points = sample_points_3d(mask, n=n_pos, method=method)
         except Exception as e:
-            print(f"[ERROR] Failed to load {seed_file}: {e}")
+            print(f"  [WARNING] Failed to sample positive for class {cls}: {e}")
             continue
         
-        if seg.ndim != 3:
-            print(f"[WARNING] {seed_file} is not 3D, skipping")
+        if len(pos_points) == 0:
+            print(f"  [WARNING] No positive points for class {cls}")
             continue
         
-        image_name = Path(seed_file).stem
+        # Add positive points
+        for pt in pos_points:
+            all_prompts.append({
+                'image_name': image_name,
+                'class_id': int(cls),
+                'x': int(pt[2]),  # [z, y, x] -> x
+                'y': int(pt[1]),  # -> y
+                'z': int(pt[0]),  # -> z
+                'label': True,
+                'point_type': 'positive',
+                'sample_method': method
+            })
         
-        # Get class IDs
-        class_ids = np.unique(seg)
-        class_ids = class_ids[class_ids != 0]  # Exclude background
+        print(f"    Class {cls}: {len(pos_points)} positive points ({method})")
         
-        if len(class_ids) == 0:
-            print(f"[WARNING] No classes found in {seed_file}")
-            continue
-        
-        print(f"  Found {len(class_ids)} classes: {sorted(class_ids)}")
-        
-        # Process each class
-        for cls in class_ids:
-            cfg = class_config.get(int(cls), {})
-            n_pos = cfg.get('n_pos', default_n_pos)
-            n_neg = cfg.get('n_neg', default_n_neg)
-            method = cfg.get('method', default_method)
+        # Sample negative points
+        if n_neg > 0:
+            n_neg_total = 0
             
-            mask = (seg == cls).astype(np.uint8)
-            
-            # Sample positive points
-            try:
-                pos_points = sample_points_3d(mask, n=n_pos, method=method)
-            except Exception as e:
-                print(f"  [WARNING] Failed to sample positive for class {cls}: {e}")
-                continue
-            
-            if len(pos_points) == 0:
-                print(f"  [WARNING] No positive points for class {cls}")
-                continue
-            
-            # Add positive points
-            for pt in pos_points:
-                all_prompts.append({
-                    'image_name': image_name,
-                    'class_id': int(cls),
-                    'x': int(pt[2]),  # [z, y, x] -> x
-                    'y': int(pt[1]),  # -> y
-                    'z': int(pt[0]),  # -> z
-                    'label': True,
-                    'point_type': 'positive',
-                    'sample_method': method
-                })
-            
-            print(f"    Class {cls}: {len(pos_points)} positive points ({method})")
-            
-            # Sample negative points
-            if n_neg > 0:
-                n_neg_total = 0
+            # From background
+            if negative_from_bg:
+                # bg_mask = (seg == 0).astype(np.uint8)
+                bg_mask_bool = (seg == 0)
+                if nonzero_mask is not None:
+                    bg_mask_bool &= nonzero_mask  
+                bg_mask = bg_mask_bool.astype(np.uint8)
                 
-                # From background
-                if negative_from_bg:
-                    bg_mask = (seg == 0).astype(np.uint8)
-                    if np.sum(bg_mask) > 0:
-                        try:
-                            neg_points_bg = sample_points_3d(bg_mask, n=n_neg, method=method)
-                            for pt in neg_points_bg:
-                                all_prompts.append({
-                                    'image_name': image_name,
-                                    'class_id': int(cls),
-                                    'x': int(pt[2]),
-                                    'y': int(pt[1]),
-                                    'z': int(pt[0]),
-                                    'label': False,
-                                    'point_type': 'negative_bg',
-                                    'sample_method': 'random'
-                                })
-                            n_neg_total += len(neg_points_bg)
-                        except Exception as e:
-                            print(f"    [WARNING] Failed to sample negative bg: {e}")
-                if negative_from_other_classes:
-                    # From other classes
-                    if negative_per_other_class:
-                        # Sample from EACH other class
-                        for other_cls in class_ids:
-                            if other_cls == cls:
-                                continue
-                            other_mask = (seg == other_cls).astype(np.uint8)
-                            if np.sum(other_mask) > 0:
-                                try:
-                                    neg_points = sample_points_3d(other_mask, n=n_neg, method=method)
-                                    for pt in neg_points:
-                                        all_prompts.append({
-                                            'image_name': image_name,
-                                            'class_id': int(cls),
-                                            'x': int(pt[2]),
-                                            'y': int(pt[1]),
-                                            'z': int(pt[0]),
-                                            'label': False,
-                                            'point_type': f'negative_class{int(other_cls)}',
-                                            'sample_method': 'random'
-                                        })
-                                    n_neg_total += len(neg_points)
-                                except Exception as e:
-                                    print(f"    [WARNING] Failed to sample from class {other_cls}: {e}")
-                    else:
-                        # Sample from ALL other classes combined
-                        other_mask = (seg != cls) & (seg > 0)
+                if np.sum(bg_mask) > 0:
+                    try:
+                        neg_points_bg = sample_points_3d(bg_mask, n=n_neg, method=method)
+                        for pt in neg_points_bg:
+                            all_prompts.append({
+                                'image_name': image_name,
+                                'class_id': int(cls),
+                                'x': int(pt[2]),
+                                'y': int(pt[1]),
+                                'z': int(pt[0]),
+                                'label': False,
+                                'point_type': 'negative_bg',
+                                'sample_method': 'random'
+                            })
+                        n_neg_total += len(neg_points_bg)
+                    except Exception as e:
+                        print(f"    [WARNING] Failed to sample negative bg: {e}")
+            if negative_from_other_classes:
+                # From other classes
+                if negative_per_other_class:
+                    # Sample from EACH other class
+                    for other_cls in class_ids:
+                        if other_cls == cls:
+                            continue
+
+                        other_mask_bool = (seg == other_cls)
+                        if nonzero_mask is not None:
+                            other_mask_bool &= nonzero_mask  
+                        other_mask = other_mask_bool.astype(np.uint8)
+                        
                         if np.sum(other_mask) > 0:
                             try:
-                                neg_points = sample_points_3d(other_mask.astype(np.uint8), n=n_neg, method=method)
+                                neg_points = sample_points_3d(other_mask, n=n_neg, method=method)
                                 for pt in neg_points:
                                     all_prompts.append({
                                         'image_name': image_name,
@@ -403,15 +415,35 @@ def seed_to_point_prompts_nninteractive(
                                         'y': int(pt[1]),
                                         'z': int(pt[0]),
                                         'label': False,
-                                        'point_type': 'negative_other',
+                                        'point_type': f'negative_class{int(other_cls)}',
                                         'sample_method': 'random'
                                     })
                                 n_neg_total += len(neg_points)
                             except Exception as e:
-                                print(f"    [WARNING] Failed to sample negative other: {e}")
-                
-                    if n_neg_total > 0:
-                        print(f"              {n_neg_total} negative points")
+                                print(f"    [WARNING] Failed to sample from class {other_cls}: {e}")
+                else:
+                    # Sample from ALL other classes combined
+                    other_mask = (seg != cls) & (seg > 0)
+                    if np.sum(other_mask) > 0:
+                        try:
+                            neg_points = sample_points_3d(other_mask.astype(np.uint8), n=n_neg, method=method)
+                            for pt in neg_points:
+                                all_prompts.append({
+                                    'image_name': image_name,
+                                    'class_id': int(cls),
+                                    'x': int(pt[2]),
+                                    'y': int(pt[1]),
+                                    'z': int(pt[0]),
+                                    'label': False,
+                                    'point_type': 'negative_other',
+                                    'sample_method': 'random'
+                                })
+                            n_neg_total += len(neg_points)
+                        except Exception as e:
+                            print(f"    [WARNING] Failed to sample negative other: {e}")
+            
+                if n_neg_total > 0:
+                    print(f"              {n_neg_total} negative points")
     
     # Create DataFrame
     df = pd.DataFrame(all_prompts)
