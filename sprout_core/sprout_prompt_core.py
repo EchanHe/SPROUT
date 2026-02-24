@@ -790,7 +790,7 @@ def init_and_run(image_input,
     # Assign device if not provided, with error handling
     if device is None:
         if torch.cuda.is_available():
-            device = torch.device("cuda:1")
+            device = torch.device("cuda:0")
         else:
             print("[WARNING] CUDA is not available. Using CPU.")
             device = torch.device("cpu")
