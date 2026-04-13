@@ -136,6 +136,7 @@ class QtLabelSelector(QWidget):
         # Set class selection operation
         # layout.addWidget(QLabel("Replace Label"))
         
+        # ---- Label Replace Group ----
         label_replc_group = QGroupBox("Label Replace")
         label_replc_group.setToolTip("Replace all pixels of a source class label with a target class label.")
         label_replc_layout = QFormLayout()
@@ -170,8 +171,9 @@ class QtLabelSelector(QWidget):
         layout.addWidget(label_replc_group)
 
 
+        # ---- Label Split Group ----
         label_split_group = QGroupBox("Label Split")
-
+        
         label_split_group.setToolTip("Split a selected label class into connected components.")
         label_split_layout = QFormLayout()
 
@@ -430,7 +432,16 @@ class QtLabelSelector(QWidget):
 
         src = self.src_spin.value()
         dst = self.dst_spin.value()
-
+        
+        # if src == dst:return
+        if src == dst:
+            QMessageBox.information(self, "Info", "Source and target class are the same. No operation needed.")
+            return
+        
+        # check if src value exists before doing calculations
+        if not self.check_target_label(src, label_layer.data):
+            return
+        
         # Decide whether to duplicate the layer
         target_layer = label_layer
         if self.duplicate_checkbox.isChecked():
@@ -528,6 +539,10 @@ class QtLabelSelector(QWidget):
 
         data = label_layer.data.copy()
 
+        # check if target label exists before doing calculations
+        if not self.check_target_label(target_class, data):
+            return
+
         # Duplicate if needed
         target_layer = label_layer
         if self.duplicate_checkbox.isChecked():
@@ -562,9 +577,6 @@ class QtLabelSelector(QWidget):
         else:
             # Early check if split is needed
             mask = (data == target_class)
-            if not np.any(mask):
-                QMessageBox.information(self, "Info", f"Class {target_class} not found.")
-                return
 
             cc = cc_label(mask, connectivity=2)
             if cc.max() <= 1:
@@ -766,6 +778,10 @@ class QtLabelSelector(QWidget):
 
         data = label_layer.data.copy()
 
+        ## Check if target label exists before doing calculations
+        if not self.check_target_label(target_label, data):
+            return
+
         # Duplicate if needed
         target_layer = label_layer
         if self.duplicate_checkbox.isChecked():
@@ -909,7 +925,17 @@ class QtLabelSelector(QWidget):
     #     target_layer.data = result
     #     QMessageBox.information(self, "Done", f"{op_name} operation completed.")
 
-    
+    def check_target_label(self,target_label, data):
+        # if target label is None, it means process all labels > 0, so no need to check existence
+        if target_label is not None and target_label not in np.unique(data):
+            QMessageBox.warning(
+                self,
+                "Label Not Found",
+                f"Label {target_label} does not exist in the current layer.\n"
+                f"Existing labels: {sorted(np.unique(data)[np.unique(data) != 0].tolist())}"
+            )
+            return False
+        return True
 
     def run_morphology_operation(self):
         label_layer = self.last_bound_layer
@@ -925,6 +951,11 @@ class QtLabelSelector(QWidget):
 
         data = label_layer.data.copy()
         ndim = data.ndim
+
+        ## Check if target label exists before doing calculations
+        if not self.check_target_label(target_label, data):
+            return
+
 
         if ndim == 2:
             selem = disk(radius)
@@ -1067,6 +1098,10 @@ class QtLabelSelector(QWidget):
 
         data = label_layer.data.copy()
         ndim = data.ndim
+
+        # check if target label exists before doing calculations
+        if not self.check_target_label(target_label, data):
+            return
 
         # Duplicate if needed
         target_layer = label_layer

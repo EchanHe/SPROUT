@@ -358,7 +358,7 @@ def make_seeds(**kwargs):
         # # Make meshes  
         if is_make_meshes: 
             try:
-                from make_mesh import make_mesh_for_tiff
+                from sprout_core.make_mesh import make_mesh_for_tiff
             except ImportError as e:
                 raise ImportError("make_mesh module is not available due to import error.") from e
 
