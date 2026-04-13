@@ -126,15 +126,13 @@ class ThresholdWidget(QGroupBox):
         self.upper_slider.setValue(255)
 
         # link lower
-        self.lower_spin.valueChanged.connect(lambda v: self.lower_slider.setValue(int(v)))
         self.lower_slider.valueChanged.connect(lambda v: self.lower_spin.setValue(float(v)))
-        self.lower_spin.valueChanged.connect(self._enforce_order)
+        self.lower_spin.editingFinished.connect(self._enforce_order)
         self.lower_slider.valueChanged.connect(self._enforce_order)
 
         # link upper
-        self.upper_spin.valueChanged.connect(lambda v: self.upper_slider.setValue(int(v)))
         self.upper_slider.valueChanged.connect(lambda v: self.upper_spin.setValue(float(v)))
-        self.upper_spin.valueChanged.connect(self._enforce_order)
+        self.upper_spin.editingFinished.connect(self._enforce_order)
         self.upper_slider.valueChanged.connect(self._enforce_order)
 
         # Lower layout
@@ -204,7 +202,24 @@ class ThresholdWidget(QGroupBox):
         upper = self.upper_spin.value()
         sender = self.sender()
 
+        if sender == self.lower_spin:
+            self.lower_slider.blockSignals(True)
+            self.lower_slider.setValue(int(lower))
+            self.lower_slider.blockSignals(False)
+        elif sender == self.upper_spin:
+            self.upper_slider.blockSignals(True)
+            self.upper_slider.setValue(int(upper))
+            self.upper_slider.blockSignals(False)
+
         if lower > upper:
+            
+            
+            # refresh the values without triggering signals
+            self.lower_spin.blockSignals(True)
+            self.lower_slider.blockSignals(True)
+            self.upper_spin.blockSignals(True)
+            self.upper_slider.blockSignals(True)
+
             # if lower is greater than upper, set both to the same value
             if sender in (self.lower_spin, self.lower_slider):
                 new_val = lower
@@ -212,11 +227,6 @@ class ThresholdWidget(QGroupBox):
             else:
                 new_val = upper
 
-            # refresh the values without triggering signals
-            self.lower_spin.blockSignals(True)
-            self.lower_slider.blockSignals(True)
-            self.upper_spin.blockSignals(True)
-            self.upper_slider.blockSignals(True)
 
             self.lower_spin.setValue(new_val)
             self.lower_slider.setValue(int(new_val))
