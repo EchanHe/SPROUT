@@ -1,6 +1,6 @@
 import numpy as np
 from skimage.measure import label as cc_label
-from qtpy.QtWidgets import (QWidget, QVBoxLayout, QComboBox, QPushButton, QLabel,
+from qtpy.QtWidgets import (QTabWidget, QWidget, QVBoxLayout, QComboBox, QPushButton, QLabel,
                             QHBoxLayout, QCheckBox, QMessageBox,QSpinBox, QGroupBox,
                             QFormLayout, QScrollArea , QSizePolicy)
 from copy import deepcopy
@@ -86,8 +86,8 @@ class QtLabelSelector(QWidget):
         # self.layer_combo.currentTextChanged.connect(self.on_layer_combo_changed)
         
         
-        
-        
+
+                
         # layout.addWidget(self.layer_combo)
         
         # self.update_layer_list()
@@ -130,7 +130,7 @@ class QtLabelSelector(QWidget):
         # layout.addWidget(run_btn)
         label_select_layout.addRow(run_btn)
         label_select_group.setLayout(label_select_layout)
-        layout.addWidget(label_select_group)
+        # layout.addWidget(label_select_group)
 
         # layout.addWidget(create_separator(horizontal=True))
         # Set class selection operation
@@ -168,7 +168,7 @@ class QtLabelSelector(QWidget):
         # layout.addWidget(set_class_btn)
         label_replc_layout.addRow(set_class_btn)
         label_replc_group.setLayout(label_replc_layout)
-        layout.addWidget(label_replc_group)
+        # layout.addWidget(label_replc_group)
 
 
         # ---- Label Split Group ----
@@ -210,7 +210,7 @@ class QtLabelSelector(QWidget):
         split_btn.clicked.connect(self.split_class_operation)
         label_split_layout.addRow(split_btn)
         label_split_group.setLayout(label_split_layout)
-        layout.addWidget(label_split_group)
+        # layout.addWidget(label_split_group)
 
         # ---- Keep Top-N Labels Group ----
         keep_label_group = QGroupBox("Keep Top-N Labels")
@@ -231,7 +231,7 @@ class QtLabelSelector(QWidget):
         keep_layout.addRow(keep_label_btn)
 
         keep_label_group.setLayout(keep_layout)
-        layout.addWidget(keep_label_group)
+        # layout.addWidget(keep_label_group)
 
 
         # ---- Filter operations Group ----
@@ -266,7 +266,7 @@ class QtLabelSelector(QWidget):
         filter_layout.addRow(filter_btn)
 
         filter_group.setLayout(filter_layout)
-        layout.addWidget(filter_group)
+        # layout.addWidget(filter_group)
 
 
         # ---- Fill holes operation ----
@@ -299,7 +299,7 @@ class QtLabelSelector(QWidget):
         fill_layout.addRow(fill_btn)
 
         fill_group.setLayout(fill_layout)
-        layout.addWidget(fill_group)
+        # layout.addWidget(fill_group)
 
         # ---- Morphology Group ----
         
@@ -333,7 +333,7 @@ class QtLabelSelector(QWidget):
         morph_layout.addRow(morph_btn)
 
         morph_group.setLayout(morph_layout)
-        layout.addWidget(morph_group)
+        # layout.addWidget(morph_group)
 
 
         content_widget.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Preferred)
@@ -358,6 +358,36 @@ class QtLabelSelector(QWidget):
             fill_btn, morph_btn, split_btn, filter_btn,
             keep_label_btn, run_btn, set_class_btn
         ]
+
+
+        tab_widget = QTabWidget()
+
+        # ── Tab 1: Selection ──────────────────────────────
+        tab_selection = QWidget()
+        tab_selection_layout = QVBoxLayout(tab_selection)
+        tab_selection_layout.addWidget(label_select_group)
+        tab_selection_layout.addWidget(label_replc_group)
+        tab_selection_layout.addStretch()
+        tab_widget.addTab(tab_selection, "Selection")
+
+        # ── Tab 2: Split & Filter ─────────────────────────
+        tab_split = QWidget()
+        tab_split_layout = QVBoxLayout(tab_split)
+        tab_split_layout.addWidget(label_split_group)
+        tab_split_layout.addWidget(keep_label_group)
+        tab_split_layout.addWidget(filter_group)
+        tab_split_layout.addStretch()
+        tab_widget.addTab(tab_split, "Split & Filter")
+
+        # ── Tab 3: Morphology ─────────────────────────────
+        tab_morph = QWidget()
+        tab_morph_layout = QVBoxLayout(tab_morph)
+        tab_morph_layout.addWidget(fill_group)
+        tab_morph_layout.addWidget(morph_group)
+        tab_morph_layout.addStretch()
+        tab_widget.addTab(tab_morph, "Morphology")
+
+        layout.addWidget(tab_widget)
 
     def update_layer_list(self, *args):
         # deprecated method
