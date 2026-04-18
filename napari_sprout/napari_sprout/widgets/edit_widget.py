@@ -170,6 +170,37 @@ class QtLabelSelector(QWidget):
         label_replc_group.setLayout(label_replc_layout)
         # layout.addWidget(label_replc_group)
 
+        # ---- Merge Labels Group ----
+        label_merge_group = QGroupBox("Merge Labels")
+        label_merge_group.setToolTip(
+            "Merge another Labels layer into the active layer.\n"
+            "Pixels that are 0 in the active layer will be filled with values from the source layer."
+        )
+        label_merge_layout = QFormLayout()
+
+        self.merge_source_combo = QComboBox()
+        self.merge_source_combo.setToolTip("Select the Labels layer to merge INTO the active layer.")
+        label_merge_layout.addRow(QLabel("Merge Source:"), self.merge_source_combo)
+
+        self.merge_offset_checkbox = QCheckBox("Auto offset source IDs to avoid conflicts")
+        self.merge_offset_checkbox.setChecked(True)
+        self.merge_offset_checkbox.setToolTip(
+            "If checked, source label IDs will be shifted up to avoid overlapping with active layer IDs."
+        )
+        label_merge_layout.addRow(self.merge_offset_checkbox)
+
+        merge_btn = QPushButton("Run Merge")
+        merge_btn.setStyleSheet("QPushButton { font-weight: bold; background-color: #45a049; }")
+        merge_btn.setToolTip("Merge the source layer into the active label layer.")
+        merge_btn.clicked.connect(self.merge_labels_operation)
+        label_merge_layout.addRow(merge_btn)
+
+        label_merge_group.setLayout(label_merge_layout)
+        # layout.addWidget(label_merge_group)
+        
+        self.viewer.layers.events.inserted.connect(self._refresh_merge_source_combo)
+        self.viewer.layers.events.removed.connect(self._refresh_merge_source_combo)
+        
 
         # ---- Label Split Group ----
         label_split_group = QGroupBox("Label Split")
@@ -356,7 +387,8 @@ class QtLabelSelector(QWidget):
 
         self.all_edit_buttons = [
             fill_btn, morph_btn, split_btn, filter_btn,
-            keep_label_btn, run_btn, set_class_btn
+            keep_label_btn, run_btn, set_class_btn,
+            merge_btn  
         ]
 
 
@@ -367,6 +399,7 @@ class QtLabelSelector(QWidget):
         tab_selection_layout = QVBoxLayout(tab_selection)
         tab_selection_layout.addWidget(label_select_group)
         tab_selection_layout.addWidget(label_replc_group)
+        tab_selection_layout.addWidget(label_merge_group)
         tab_selection_layout.addStretch()
         tab_widget.addTab(tab_selection, "Selection")
 
@@ -723,6 +756,27 @@ class QtLabelSelector(QWidget):
             print(f"Bound to active label layer: {layer.name}")
         else:
             self.layer_label.setText("Active Label Layer: (none)")
+            
+        self._refresh_merge_source_combo()
+
+    def _refresh_merge_source_combo(self, event=None):
+        """Refresh merge source combo, excluding the current active layer."""
+        current_selection = self.merge_source_combo.currentText()
+        active_name = self.last_bound_layer.name if self.last_bound_layer else None
+
+        self.merge_source_combo.blockSignals(True)
+        self.merge_source_combo.clear()
+
+        for layer in self.viewer.layers:
+            if isinstance(layer, Labels) and layer.name != active_name:
+                self.merge_source_combo.addItem(layer.name)
+
+        # retain previous selection if possible
+        idx = self.merge_source_combo.findText(current_selection)
+        if idx >= 0:
+            self.merge_source_combo.setCurrentIndex(idx)
+
+        self.merge_source_combo.blockSignals(False)
 
     def clear_selection(self):
         self.selected_labels.clear()
@@ -843,6 +897,85 @@ class QtLabelSelector(QWidget):
         )
 
 
+    def merge_labels_operation(self):
+        label_layer = self.last_bound_layer
+        if label_layer is None:
+            QMessageBox.warning(self, "Error", "No active label layer.")
+            return
+
+        source_name = self.merge_source_combo.currentText()
+        if not source_name:
+            QMessageBox.warning(self, "Error", "No source layer selected.")
+            return
+
+        try:
+            source_layer = self.viewer.layers[source_name]
+        except KeyError:
+            QMessageBox.warning(self, "Error", f"Layer '{source_name}' not found.")
+            return
+
+        if not isinstance(source_layer, Labels):
+            QMessageBox.warning(self, "Error", f"'{source_name}' is not a Labels layer.")
+            return
+
+        target_data = label_layer.data
+        source_data = source_layer.data
+
+        if target_data.shape != source_data.shape:
+            QMessageBox.warning(
+                self, "Shape Mismatch",
+                f"Active layer shape {target_data.shape} != source layer shape {source_data.shape}.\n"
+                "Cannot merge layers with different shapes."
+            )
+            return
+
+        # Duplicate if needed
+        if self.duplicate_checkbox.isChecked():
+            new_name = f"{label_layer.name}_merged"
+            new_layer = self.viewer.add_labels(target_data.copy(), name=new_name)
+            if self.on_click not in new_layer.mouse_drag_callbacks:
+                new_layer.mouse_drag_callbacks.append(self.on_click)
+            self.last_bound_layer = new_layer
+            label_layer = new_layer
+            print(f"Operating on duplicated layer: {new_name}")
+
+        data = label_layer.data.copy()
+        self.original_data_backup = data.copy()
+
+        use_offset = self.merge_offset_checkbox.isChecked()
+
+        def on_done(result):
+            if label_layer not in self.viewer.layers:
+                print("Layer was removed before update.")
+                return
+            label_layer.data = result
+            show_info(f"Merged '{source_name}' into '{label_layer.name}'.")
+
+        self.run_in_background(
+            self._do_merge_labels,
+            [data, source_data.copy(), use_offset],
+            on_done,
+            buttons_to_disable=self.all_edit_buttons
+        )
+
+    def _do_merge_labels(
+        self, target: np.ndarray, source: np.ndarray, use_offset: bool
+    ) -> np.ndarray:
+        result = target.copy()
+
+        if use_offset:
+            # Shift source IDs above the max of target to avoid conflicts
+            max_target = int(result.max())
+            source_nonzero = source > 0
+            source_shifted = np.where(source_nonzero, source + max_target, 0)
+        else:
+            source_shifted = source
+
+        # Fill zeros in target with source values
+        empty_mask = result == 0
+        result[empty_mask] = source_shifted[empty_mask]
+
+        return result
     
     def fill_holes_in_labels(self, label_img, area_threshold=64, target_label=None, apply_in_2d=False):
         result = label_img.copy()
