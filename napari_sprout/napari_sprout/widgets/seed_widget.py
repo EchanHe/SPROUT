@@ -379,6 +379,10 @@ class SeedGenerationWidget(QWidget):
             set_compact(w, minw=100)        
         # layout.addStretch()
         # self.setLayout(layout)
+        
+        # refresh layers when layers changed in napari
+        self.viewer.layers.events.inserted.connect(lambda e: self.refresh_layers())
+        self.viewer.layers.events.removed.connect(lambda e: self.refresh_layers())
 
     def _toggle_seed_params_visibility(self, state: int):
         """Toggle visibility of advanced seed parameters."""
