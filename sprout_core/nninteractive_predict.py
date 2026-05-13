@@ -190,6 +190,7 @@ class PointPromptConfig(TypedDict, total=False):
     seed_pattern: str
 
 def nninter_main(model_path, img_path, seg_path ,output_folder,device,
+                 init_seg_path = None,
                 prompt_type: Literal['point', 'scribble'] = "point",
                 point_config: Optional[PointPromptConfig] = None,
                  return_per_class_masks: bool = False,
@@ -202,6 +203,8 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
         img_path: Path to input TIFF image
         seg_path: Path to input segmentation image (seed)
         output_folder: Folder to save output segmentation
+        device: Device to run inference on ("cuda" or "cpu")
+        init_seg_path: Optional path to initial segmentation mask for iterative refinement
         prompt_type: Type of prompt to use ("point" or "scribble")
         point_config: Configuration for point prompt generation
         return_per_class_masks: Whether to save individual class masks
@@ -226,7 +229,8 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
     log_dict = {
         "img_path": img_path,
         "seg_path": seg_path,
-        "output_folder": output_folder}
+        "output_folder": output_folder,
+        "init_seg_path": init_seg_path}
   
     if torch.cuda.is_available() and ("cuda" in str(device)):
         torch.cuda.empty_cache()
@@ -239,6 +243,8 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
         raise FileNotFoundError(f"Image not found: {img_path}")
     if not Path(seg_path).exists():
         raise FileNotFoundError(f"Segmentation image not found: {seg_path}")
+    if init_seg_path is not None and not Path(init_seg_path).exists():
+        raise FileNotFoundError(f"Initial segmentation not found: {init_seg_path}")
     
     # Create output directory
     Path(output_folder).mkdir(parents=True, exist_ok=True)
@@ -253,7 +259,7 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
         verbose=False,
         use_torch_compile=False,
         do_autozoom=True,
-        use_pinned_memory=True
+        use_pinned_memory=False
     )
     
     try:
@@ -334,17 +340,21 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
     else:
         scribble_mask = None
     
-
+    # read initial segmentation if provided
+    if init_seg_path is not None:
+        init_mask = tifffile.imread(init_seg_path)
+    else:
+        init_mask = None
     
     # 4. Run prediction
     print("\n[4/4] Running prediction...")
     if return_per_class_masks:
         total_mask, per_class_masks = nninter_predict(
-            session, img, df_pt, scribble_mask, return_per_class_masks=True, scribble_config=scribble_config
+            session, img, df_pt, scribble_mask=scribble_mask, init_mask=init_mask, return_per_class_masks=True, scribble_config=scribble_config
         )
     else:
         total_mask = nninter_predict(
-            session, img, df_pt, scribble_mask, return_per_class_masks=False, scribble_config=scribble_config
+            session, img, df_pt, scribble_mask=scribble_mask, init_mask=init_mask, return_per_class_masks=False, scribble_config=scribble_config
         )
         per_class_masks = None
     
@@ -401,6 +411,7 @@ def nninter_predict(
     session, 
     img, 
     df_pt: Optional[pd.DataFrame] = None,
+    init_mask: Optional[np.ndarray] = None,
     scribble_mask: Optional[np.ndarray] = None,
     scribble_config = None,
     return_per_class_masks: bool = False
@@ -413,6 +424,9 @@ def nninter_predict(
         img: Input image array with shape (1, z, y, x)
         df_pt: DataFrame with point prompts (columns: x, y, z, label, class_id)
                    Can be None if only using scribble
+        init_mask: Optional initial mask with shape (z, y, x)
+                   Values: 0=background, 1,2,3...=class IDs
+                   Can be None if not using an initial mask
         scribble_mask: Optional scribble mask with shape (z, y, x)
                        Values: 0=background, 1,2,3...=class IDs
                        Can be None if only using points
@@ -481,6 +495,17 @@ def nninter_predict(
         n_scribbles = 0
         n_points = 0
         
+        # add initial mask if provided
+        if init_mask is not None:
+            class_init_mask = (init_mask == class_id).astype(np.uint8)
+            print(f"      Initial mask pixels: {class_init_mask.sum():,}")
+            if class_init_mask.sum() > 0:
+                session.add_initial_seg_interaction(
+                    class_init_mask,
+                    run_prediction=False   
+                )
+
+        
         # 1. Add scribble interaction if available for this class
         if scribble_mask is not None:
             # Extract binary mask for current class
@@ -488,6 +513,7 @@ def nninter_predict(
            
             
             if class_scribble.sum() > 0:  # Only add if scribble exists
+  
                 session.add_scribble_interaction(
                     scribble_image=class_scribble,
                     include_interaction=True,
@@ -555,6 +581,9 @@ def nninter_predict(
             print(f"        Background: {count:,} pixels")
         else:
             print(f"        Class {val}: {count:,} pixels")
+            if init_mask is not None:
+                init_count = (init_mask == val).sum()
+                print(f"          Initial mask had {init_count:,} pixels")
     
     session.reset_interactions()
     del session
@@ -619,6 +648,7 @@ def run_nninteractive_yaml(file_path):
         seg_path=config['seg_path'],
         device=device,
         prompt_type=config['prompt_type'],
+        init_seg_path=optional_params.get('init_seg_path', None),
         point_config=point_config,
         output_folder=output_folder,
         return_per_class_masks=optional_params['return_per_class_masks'],

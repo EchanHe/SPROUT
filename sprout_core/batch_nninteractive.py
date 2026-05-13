@@ -57,6 +57,7 @@ def run_batch_nninteractive(file_path):
                 seg_path=config['seg_path'],
                 device=device,
                 prompt_type=config['prompt_type'],
+                init_seg_path=optional_params.get('init_seg_path', None),
                 point_config=point_config,
                 scribble_config=scribble_config,
                 output_folder=per_file_output_folder,

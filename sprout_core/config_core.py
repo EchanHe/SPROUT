@@ -1317,6 +1317,14 @@ input_val_nninteractive_run = {
         "required": True,
         "description": "Folder to save prediction outputs"
     },
+    "init_seg_path": {
+        "type": str,
+        "required": False,
+        "default": None,
+        "description": "Path to initial segmentation mask for iterative refinement",
+        "check_exist": True,
+        "check_extension": (".tif", ".tiff", ".png")
+    },
     
     # Prompt configuration
     "prompt_type": {

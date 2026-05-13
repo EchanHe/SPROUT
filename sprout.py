@@ -57,7 +57,7 @@ def main():
     # sam or nninteractive
     prompt_group = parser.add_mutually_exclusive_group()
     prompt_group.add_argument('--sam', action='store_true', help="Use SAM for prompt extraction")
-    prompt_group.add_argument('--nninteractive', action='store_true', help="Use nnInteractive for prompt extraction")
+    prompt_group.add_argument('--nninteractive', '--nn', action='store_true', help="Use nnInteractive for prompt extraction")
     
     parser.add_argument('--batch', action='store_true', help="Run in batch mode using pipeline functions")
     parser.add_argument('--config', type=str, help="Path to the YAML config file")
