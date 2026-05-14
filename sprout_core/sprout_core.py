@@ -7,6 +7,8 @@ import tifffile
 
 from scipy.ndimage import binary_fill_holes
 
+from sprout_core import config_core
+
 
 
 
@@ -744,7 +746,7 @@ def find_seed_by_ero_custom(volume_array, threshold , segments, ero_iter,
     
     # Use boundary if provided.
     if boundary is not None:
-        boundary = check_and_cast_boundary(boundary)
+        boundary = config_core.check_and_cast_boundary(boundary)
         volume_label[boundary] = False
     
     # Logging

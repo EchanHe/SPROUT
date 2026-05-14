@@ -244,7 +244,7 @@ def make_adaptive_seed_ero(
 
 
     if boundary is not None:
-        boundary = sprout_core.check_and_cast_boundary(boundary)
+        boundary = config_core.check_and_cast_boundary(boundary)
         img[boundary] = False
 
 
@@ -631,7 +631,7 @@ def make_adaptive_seed_thre(
     
     
     if boundary is not None:
-        boundary = sprout_core.check_and_cast_boundary(boundary)
+        boundary = config_core.check_and_cast_boundary(boundary)
         img[boundary] = False
     
     for ero_iter in range(1, erosion_steps+1):

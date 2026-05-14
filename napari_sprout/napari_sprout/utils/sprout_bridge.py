@@ -71,7 +71,7 @@ class SPROUTBridge:
         
         # Apply boundary if provided
         if boundary is not None:
-            boundary = sprout_core.check_and_cast_boundary(boundary)
+            boundary = config_core.check_and_cast_boundary(boundary)
             volume_label[boundary] = False
         
         # Apply erosion
@@ -130,7 +130,7 @@ class SPROUTBridge:
         
         # Check boundary
         if boundary is not None:
-            boundary = sprout_core.check_and_cast_boundary(boundary)
+            boundary = config_core.check_and_cast_boundary(boundary)
         
         # Iterate through thresholds
         for i, (threshold, dilate_iter) in enumerate(zip(thresholds, dilate_iters)):

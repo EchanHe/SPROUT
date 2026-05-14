@@ -21,7 +21,18 @@ support_footprints =['ball','cube',
 
 support_footprints_2d = ['ball', 'cube' ,'disk' , 'square', 'X', 'Y']
 
-
+def valid_boundary(boundary):    
+    if boundary.ndim not in [2, 3]:
+        raise ValueError(f"Boundary must be 2D or 3D, got {boundary.ndim}D.")
+    # check if boundary is True or false or just two value (0 or others)
+    if not np.issubdtype(boundary.dtype, np.bool_):
+        if not (np.issubdtype(boundary.dtype, np.integer) or boundary.dtype == np.uint8):
+            raise ValueError(f"Boundary must be boolean or integer type, got {boundary.dtype}.")
+        # check if boundary only have two values
+        unique_values = np.unique(boundary)
+        if len(unique_values) != 2:
+            raise ValueError(f"Boundary must have only two values, got {unique_values}.")
+    return True
 def valid_input_data(img, seg=None, boundary=None):
     """
     Validate that input image, segmentation, and boundary arrays match in shape and format.
@@ -53,19 +64,8 @@ def valid_input_data(img, seg=None, boundary=None):
             raise ValueError(f"Image and segmentation must have the same shape, got {img.shape} and {seg.shape}.")
     # if boundary is provided, check if it has the same shape as img
     if boundary is not None:
-        if boundary.ndim not in [2, 3]:
-            raise ValueError(f"Boundary must be 2D or 3D, got {boundary.ndim}D.")
-        # check if boundary is True or false or just two value (0 or others)
-        if not np.issubdtype(boundary.dtype, np.bool_):
-            if not np.issubdtype(boundary.dtype, np.integer) or boundary.dtype != np.uint8:
-                raise ValueError(f"Boundary must be boolean or integer type, got {boundary.dtype}.")
-            # check if boundary only have two values
-            unique_values = np.unique(boundary)
-            if len(unique_values) != 2:
-                raise ValueError(f"Boundary must have only two values, got {unique_values}.")
-            
-        
-        
+        valid_boundary(boundary)
+
         if img.shape != boundary.shape:
             raise ValueError(f"Image and boundary must have the same shape, got {img.shape} and {boundary.shape}.")
 

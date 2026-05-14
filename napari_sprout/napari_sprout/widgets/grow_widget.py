@@ -231,6 +231,10 @@ class SeedGrowthWidget(QWidget):
         final_layout = QVBoxLayout()
         final_layout.addWidget(scroll)
         self.setLayout(final_layout)
+
+        # refresh layers when layers changed in napari
+        self.viewer.layers.events.inserted.connect(lambda e: self.refresh_layers())
+        self.viewer.layers.events.removed.connect(lambda e: self.refresh_layers())
         
         # Add default threshold
         # self._add_threshold_row(100, None, 5)
