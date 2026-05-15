@@ -1523,6 +1523,16 @@ def merge_row_and_yaml_no_conflict(row: dict, yaml_config: dict) -> dict:
     if duplicate_keys:
         raise ValueError(f"Conflict detected: keys present in both CSV row and YAML config: {list(duplicate_keys)}")
     
+    # check row value, if it is a string representation of a list, convert it to a list
+    for k, v in row.items():
+        if isinstance(v, str) and v.startswith("[") and v.endswith("]"):
+            try:
+                parsed = ast.literal_eval(v)
+                if isinstance(parsed, list):
+                    row[k] = parsed
+            except Exception as e:
+                pass
+    
     # turn values of nan to None
     for k, v in row.items():
         if isinstance(v, float) and np.isnan(v):

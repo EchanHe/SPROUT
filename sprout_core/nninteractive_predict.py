@@ -193,7 +193,7 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
                  init_seg_path = None,
                 prompt_type: Literal['point', 'scribble'] = "point",
                 point_config: Optional[PointPromptConfig] = None,
-                 return_per_class_masks: bool = False,
+                 return_per_class_masks: bool = True,
                  scribble_config= None):
     """
     Main function for nnInteractive prediction with point prompts.
@@ -348,15 +348,20 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
     
     # 4. Run prediction
     print("\n[4/4] Running prediction...")
-    if return_per_class_masks:
-        total_mask, per_class_masks = nninter_predict(
-            session, img, df_pt, scribble_mask=scribble_mask, init_mask=init_mask, return_per_class_masks=True, scribble_config=scribble_config
-        )
-    else:
-        total_mask = nninter_predict(
-            session, img, df_pt, scribble_mask=scribble_mask, init_mask=init_mask, return_per_class_masks=False, scribble_config=scribble_config
-        )
-        per_class_masks = None
+
+    def save_class_mask(class_id, mask):
+        out = Path(output_folder) / f"{Path(img_path).stem}_class_{class_id}.tif"
+        tifffile.imwrite(out, mask.astype(np.uint8) * 255, compression='zlib')
+        print(f"      ✓ Saved class {class_id}: {mask.sum():,} pixels")
+
+    total_mask = nninter_predict(
+        session, img, df_pt,
+        scribble_mask=scribble_mask,
+        init_mask=init_mask,
+        scribble_config=scribble_config,
+        on_class_predicted=save_class_mask if return_per_class_masks else None
+    )
+
     
     # Save results
     print("\n      Saving results...")
@@ -364,11 +369,11 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
     tifffile.imwrite(output_path, total_mask , compression='zlib')
     print(f"      ✓ Saved: {output_path}")
     
-    if return_per_class_masks:
-        for class_id, mask in per_class_masks.items():
-            output_path = Path(output_folder) / f"{Path(img_path).stem}_class_{class_id}.tif"
-            tifffile.imwrite(output_path, mask.astype(np.uint8) * 255, compression='zlib')
-            print(f"      ✓ Saved class {class_id}: {mask.sum():,} pixels")
+    # if return_per_class_masks:
+    #     for class_id, mask in per_class_masks.items():
+    #         output_path = Path(output_folder) / f"{Path(img_path).stem}_class_{class_id}.tif"
+    #         tifffile.imwrite(output_path, mask.astype(np.uint8) * 255, compression='zlib')
+    #         print(f"      ✓ Saved class {class_id}: {mask.sum():,} pixels")
 
     if device.type == "cuda":
         peak_allocated = torch.cuda.max_memory_allocated(device)      # bytes
@@ -401,10 +406,10 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
     with open(Path(output_folder) / "nninteractive_log.yaml", 'w') as f:
         yaml.dump(log_dict, f)
     
-    if return_per_class_masks:
-        return total_mask, per_class_masks , log_dict
-    else:
-        return total_mask, log_dict
+    # if return_per_class_masks:
+    #     return total_mask, per_class_masks , log_dict
+    # else:
+    return total_mask, log_dict
 
 
 def nninter_predict(
@@ -414,7 +419,7 @@ def nninter_predict(
     init_mask: Optional[np.ndarray] = None,
     scribble_mask: Optional[np.ndarray] = None,
     scribble_config = None,
-    return_per_class_masks: bool = False
+    on_class_predicted=None
 ) -> Union[np.ndarray, Tuple[np.ndarray, Dict[int, np.ndarray]]]:
     """
     Perform prediction with point and/or scribble prompts for each class.
@@ -432,6 +437,7 @@ def nninter_predict(
                        Can be None if only using points
         return_per_class_masks: Whether to return individual masks per class
         scribble_config: Configuration for scribble prompt generation
+        on_class_predicted: Optional callback function with signature (class_id, mask) called after each class is predicted. Useful for saving masks without keeping all in memory.
     
     Returns:
         total_mask: Combined segmentation with class IDs
@@ -465,7 +471,7 @@ def nninter_predict(
     
     # Initialize output
     total_mask = np.zeros(img.shape[1:], dtype=np.uint8)
-    per_class_masks = {}
+    # per_class_masks = {}
     
     # Collect all class IDs from both sources
     class_ids = set()
@@ -509,7 +515,7 @@ def nninter_predict(
         # 1. Add scribble interaction if available for this class
         if scribble_mask is not None:
             # Extract binary mask for current class
-            class_scribble = (scribble_mask == class_id).astype(np.float32)
+            class_scribble = (scribble_mask == class_id).astype(np.uint8)
            
             
             if class_scribble.sum() > 0:  # Only add if scribble exists
@@ -558,9 +564,9 @@ def nninter_predict(
         n_pixels = current_mask.sum()
         
         # 5. Save mask
-        if return_per_class_masks:
-            per_class_masks[class_id] = current_mask
         
+        if on_class_predicted is not None:
+            on_class_predicted(class_id, current_mask)
         # 6. Update total mask
         total_mask[current_mask] = class_id
         
@@ -588,10 +594,8 @@ def nninter_predict(
     session.reset_interactions()
     del session
     torch.cuda.empty_cache()
-    if return_per_class_masks:
-        return total_mask, per_class_masks
-    else:
-        return total_mask
+
+    return total_mask
 
 
 def _validate_coordinates(df: pd.DataFrame, img_shape: tuple):
