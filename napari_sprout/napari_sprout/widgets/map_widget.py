@@ -102,7 +102,6 @@ class LabelMapperWidget(QWidget):
         self.clear_current_btn.setToolTip("Remove all label assignments associated with the currently selected class.")
         self.clear_all_btn.setToolTip("Remove all label-to-class mappings across all classes.")
 
-
         current_class_layout.addWidget(QLabel("Current Class:"))
         current_class_layout.addWidget(self.class_dropdown)
         current_class_layout.addWidget(self.undo_btn)
@@ -111,6 +110,16 @@ class LabelMapperWidget(QWidget):
         current_class_layout.addWidget(self.clear_all_btn)
         
         self.layout().addLayout(current_class_layout)
+
+        # --- Shortcut hint ---
+        # shortcut_hint = QLabel(
+        #     "Shortcuts: Ctrl+Click = assign  |  Alt+D = delete mapping  |  "
+        #     "Alt+N = next class  |  Alt+B = prev class  "
+        #     "(Alt+N / Alt+B disabled in Auto mode)"
+        # )
+        # shortcut_hint.setStyleSheet("color: gray; font-size: 10px;")
+        # shortcut_hint.setWordWrap(True)
+        # self.layout().addWidget(shortcut_hint)
 
         # --- Label Assign Summary ---
         self.mapping_summary = QListWidget()
@@ -136,14 +145,13 @@ class LabelMapperWidget(QWidget):
         self.save_scheme_btn.clicked.connect(self.save_scheme)
         self.add_class_btn.clicked.connect(self.add_class)
         self.remove_class_btn.clicked.connect(self.remove_class)
-        self.clear_classes_btn.clicked.connect(self.clear_all_classes)  # new connection
+        self.clear_classes_btn.clicked.connect(self.clear_all_classes)
         
         # For class mapping
         self.undo_btn.clicked.connect(self.undo)
         self.clear_current_btn.clicked.connect(self.clear_current_class_mappings)
         self.clear_all_btn.clicked.connect(self.clear_all_mappings)
 
-        # self.viewer.mouse_drag_callbacks.append(self.on_click)
         self.viewer.layers.selection.events.active.connect(self.update_active_label_layer_binding)
         self.viewer.window.qt_viewer.canvas.events.key_press.connect(self.on_keypress)
         self.class_dropdown.currentIndexChanged.connect(self.sync_class_index)
@@ -208,17 +216,47 @@ class LabelMapperWidget(QWidget):
         else:
             QMessageBox.information(self, "Info", f"Class '{name}' not found in the scheme.")
 
-    def update_scheme_ui(self, update_dropdown=True):
+    def update_scheme_ui(self, update_dropdown=True, preserve_index=False):
+        # Remember current index before rebuilding if needed
+        saved_index = self.current_class_index if preserve_index else None
+
         self.scheme_list.clear()
         if update_dropdown:
+            self.class_dropdown.blockSignals(True)
             self.class_dropdown.clear()
         for cls in self.scheme:
             self.scheme_list.addItem(f"{cls}: {self.get_labels_for_class(cls)}")
             if update_dropdown:
                 self.class_dropdown.addItem(cls)
+        if update_dropdown:
+            if preserve_index and saved_index is not None:
+                # Clamp to valid range in case scheme shrank
+                clamped = min(saved_index, self.class_dropdown.count() - 1)
+                clamped = max(clamped, 0)
+                self.class_dropdown.setCurrentIndex(clamped)
+                self.current_class_index = clamped
+            self.class_dropdown.blockSignals(False)
 
     def get_labels_for_class(self, cls):
         return [k for k, v in self.label2class.items() if v == cls]
+
+    def next_class(self):
+        if not self.scheme:
+            return
+        self.current_class_index = (self.current_class_index + 1) % len(self.scheme)
+        self.class_dropdown.blockSignals(True)
+        self.class_dropdown.setCurrentIndex(self.current_class_index)
+        self.class_dropdown.blockSignals(False)
+        print(f"Switched to next class: {self.scheme[self.current_class_index]}")
+
+    def prev_class(self):
+        if not self.scheme:
+            return
+        self.current_class_index = (self.current_class_index - 1) % len(self.scheme)
+        self.class_dropdown.blockSignals(True)
+        self.class_dropdown.setCurrentIndex(self.current_class_index)
+        self.class_dropdown.blockSignals(False)
+        print(f"Switched to prev class: {self.scheme[self.current_class_index]}")
 
     def assign_label(self, label):
         cls = self.class_dropdown.currentText()
@@ -227,14 +265,12 @@ class LabelMapperWidget(QWidget):
         prev = self.label2class.get(label, None)
         self.undo_stack.append((label, prev))
         self.label2class[label] = cls
-        self.update_scheme_ui(update_dropdown = False)
+        self.update_scheme_ui(update_dropdown=False)
         self.update_mapping_summary()
 
         # Automatically advance to the next class if in auto mode
-        # will keep cycling through the classes
         if self.radio_auto.isChecked():
-            self.current_class_index = (self.current_class_index + 1) % len(self.scheme)
-            self.class_dropdown.setCurrentIndex(self.current_class_index)
+            self.next_class()
 
     def on_click(self, layer, event):
         if not isinstance(layer, Labels):
@@ -251,35 +287,47 @@ class LabelMapperWidget(QWidget):
         # Not add mapping if no current class is selected / current class is empty
         current_cls = self.class_dropdown.currentText()
         if not current_cls:
-            # ignore the click — no class selected to map to
-        
             print("No current class selected; Ctrl+click ignored.")
             return
 
         self.assign_label(label)
 
-
     def on_keypress(self, event):
-        if event.key == 'D':
-            if self.label_layer is None:
-                return
-            cursor = self.viewer.cursor.position
-            coords = tuple(np.round(self.label_layer.world_to_data(cursor)).astype(int))
-            if any(c < 0 or c >= s for c, s in zip(coords, self.label_layer.data.shape)):
-                return
-            label = int(self.label_layer.data[coords])
-            prev = self.label2class.get(label, None)
-            self.undo_stack.append((label, prev))
-            if label in self.label2class:
-                del self.label2class[label]
-            self.update_mapping_summary()
-            self.update_scheme_ui(update_dropdown= False)
-            
-            if self.radio_auto.isChecked():
-                # Automatically advance to the next class if in auto mode
-                self.current_class_index = (self.current_class_index + 1) % len(self.scheme)
-                self.class_dropdown.setCurrentIndex(self.current_class_index)
-        
+        # For now not hot key , as they can conflict with napari's built in shortcuts. 
+        return
+        # alt = "Alt" in event.modifiers
+
+        # # Ctrl+D: delete mapping under cursor
+        # if alt and event.key == 'd':
+        #     if self.label_layer is None:
+        #         return
+        #     cursor = self.viewer.cursor.position
+        #     coords = tuple(np.round(self.label_layer.world_to_data(cursor)).astype(int))
+        #     if any(c < 0 or c >= s for c, s in zip(coords, self.label_layer.data.shape)):
+        #         return
+        #     label = int(self.label_layer.data[coords])
+        #     prev = self.label2class.get(label, None)
+        #     self.undo_stack.append((label, prev))
+        #     if label in self.label2class:
+        #         del self.label2class[label]
+        #     self.update_mapping_summary()
+        #     self.update_scheme_ui(update_dropdown=False)
+        #     if self.radio_auto.isChecked():
+        #         self.next_class()
+
+        # # Ctrl+N: next class (Manual mode only)
+        # elif alt and event.key == 'n':
+        #     if self.radio_auto.isChecked():
+        #         print("Alt+N disabled in Auto mode.")
+        #         return
+        #     self.next_class()
+
+        # # Ctrl+B: previous class (Manual mode only)
+        # elif alt and event.key == 'b':
+        #     if self.radio_auto.isChecked():
+        #         print("Alt+B disabled in Auto mode.")
+        #         return
+        #     self.prev_class()
 
     def update_mapping_summary(self):
         self.mapping_summary.clear()
@@ -295,7 +343,7 @@ class LabelMapperWidget(QWidget):
         else:
             self.label2class[label] = prev
         self.update_mapping_summary()
-        self.update_scheme_ui()
+        self.update_scheme_ui(preserve_index=True)
         
     def clear_current_class_mappings(self):
         current_cls = self.class_dropdown.currentText()
@@ -303,15 +351,14 @@ class LabelMapperWidget(QWidget):
         for lbl in labels_to_remove:
             del self.label2class[lbl]
         self.update_mapping_summary()
-        self.update_scheme_ui()
+        self.update_scheme_ui(preserve_index=True)    
         print(f"Cleared mappings for class '{current_cls}'.")
 
     def clear_all_mappings(self):
         self.label2class.clear()
         self.update_mapping_summary()
-        self.update_scheme_ui()
+        self.update_scheme_ui(preserve_index=True)
         print("Cleared all mappings.")
-
 
     def clear_all_classes(self):
         """Clear the entire scheme (all classes) and any associated mappings."""
@@ -332,7 +379,6 @@ class LabelMapperWidget(QWidget):
         self.scheme.clear()
         self.label2class.clear()
         self.undo_stack.clear()
-        # Ensure dropdown and lists are updated
         self.update_mapping_summary()
         self.update_scheme_ui()
         print("Cleared all classes and mappings.")
@@ -360,6 +406,7 @@ class LabelMapperWidget(QWidget):
         # Add new layer
         self.viewer.add_labels(new_data, name=f"{self.label_layer.name}_mapped")
         print("New mapped segmentation layer created.")
+
     def export_mapping_to_json(self):
         if not self.label2class:
             QMessageBox.information(self, "Info", "No mappings to export.")

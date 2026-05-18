@@ -183,7 +183,7 @@ class QtLabelSelector(QWidget):
         label_merge_layout.addRow(QLabel("Merge Source:"), self.merge_source_combo)
 
         self.merge_offset_checkbox = QCheckBox("Auto offset source IDs to avoid conflicts")
-        self.merge_offset_checkbox.setChecked(True)
+        self.merge_offset_checkbox.setChecked(False)
         self.merge_offset_checkbox.setToolTip(
             "If checked, source label IDs will be shifted up to avoid overlapping with active layer IDs."
         )
