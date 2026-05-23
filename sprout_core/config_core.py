@@ -1386,6 +1386,24 @@ input_val_nninteractive_run = {
         "default": False,
         "description": "Use negative scribbles in prompts"
     },
+    "auto_split_scribble": {
+        "type": bool,
+        "required": False,
+        "default": False,
+        "description": "Automatically split scribbles"
+    },
+    "max_zoom_factor": {
+        "type": float,
+        "required": False,
+        "default": 2.0,
+        "description": "Maximum zoom factor for scribble processing"
+    },
+    "verbose_scribble": {
+        "type": bool,
+        "required": False,
+        "default": False,
+        "description": "Enable verbose output for scribble processing"
+    },
     
     # Output configuration
     "return_per_class_masks": {
