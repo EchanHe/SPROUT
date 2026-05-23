@@ -3,16 +3,145 @@ import pandas as pd
 import torch
 import tifffile
 from pathlib import Path
-from typing import TypedDict, Literal, Optional, Union, Dict, Tuple
+from typing import List, TypedDict, Literal, Optional, Union, Dict, Tuple
 from nnInteractive.inference.inference_session import nnInteractiveInferenceSession
 from sprout_core.sprout_prompt_core import seed_to_point_prompts_nninteractive
 import os, sys
 import yaml
 import sprout_core.config_core as config_core
 
+
+def estimate_scribble_zoom_factor(scribble_binary: np.ndarray, patch_size: list) -> Tuple[float, list, list]:
+    """
+    Estimate the zoom_out_factor that nnInteractive would apply to the given scribble.
+    This replicates the logic in nnInteractive._generic_add_patch_from_image.
+
+    Returns
+    -------
+    zoom_out_factor : float
+    roi             : [[z_min, z_max], [y_min, y_max], [x_min, x_max]]
+    roi_center      : [cz, cy, cx]
+    """
+    nonzero = np.nonzero(scribble_binary)
+    if len(nonzero[0]) == 0:
+        return 1.0, [], []
+
+    roi        = [[int(ax.min()), int(ax.max()) + 1] for ax in nonzero]
+    roi_center = [round((r[0] + r[1]) / 2) for r in roi]
+    roi_size   = [r[1] - r[0] for r in roi]
+
+    # Replicates the logic in nnInteractive source code
+    requested_size   = [s + p // 3 for s, p in zip(roi_size, patch_size)]
+    zoom_out_factor  = max(1.0, max(r / p for r, p in zip(requested_size, patch_size)))
+
+    return zoom_out_factor, roi, roi_center
+
+
+def _print_scribble_debug_info(
+    label: str,
+    scribble_binary: np.ndarray,
+    patch_size: list,
+    session=None,
+):
+    """
+    Print debug information related to a scribble:
+      - Number of non-zero pixels and the ROI
+      - Estimated zoom_out_factor
+      - Zoom/center queued in the session (readable after add_scribble_interaction)
+    """
+    zoom_est, roi, roi_center = estimate_scribble_zoom_factor(scribble_binary, patch_size)
+    roi_size = [r[1] - r[0] for r in roi] if roi else []
+
+    print(f"\n        ── [Scribble Debug | {label}] ──")
+    print(f"           Non-zero pixels : {int(scribble_binary.sum()):,}")
+    print(f"           ROI           : {roi}  (z/y/x order)")
+    print(f"           ROI size      : {roi_size}")
+    print(f"           ROI center    : {roi_center}")
+    print(f"           Estimated zoom: {zoom_est:.3f}  (patch_size={patch_size})")
+    print(f"           Patch size    : {patch_size}")
+
+    # If the session has already add_scribble_interaction (run_prediction=False),
+    # session.new_interaction_zoom_out_factors will have values
+    if session is not None and hasattr(session, 'new_interaction_zoom_out_factors'):
+        q_zooms   = session.new_interaction_zoom_out_factors
+        q_centers = session.new_interaction_centers
+        if q_zooms:
+            print(f"           session queued zoom   : {q_zooms}")
+            print(f"           session queued center : {q_centers}")
+        else:
+            print(f"           session queued zoom   : (empty, not yet add_interaction)")
+    print(f"        ── [End Debug] ──\n")
+
+
+def split_scribble_into_chunks(
+    scribble_binary: np.ndarray,
+    patch_size: list,
+    max_zoom_factor: float = 2.0,
+    _depth: int = 0,
+    _max_depth: int = 6,
+) -> List[np.ndarray]:
+    """
+    If scribble zoom_out_factor pass max_zoom_factor, split the scribble into smaller chunks along the longest axis of the ROI.
+
+    Parameters
+    ----------
+    scribble_binary : np.ndarray  Binary mask (0/1), shape (z, y, x)
+    patch_size      : list        Model patch size, e.g., [192, 192, 192]
+    max_zoom_factor : float       Maximum allowed zoom_out_factor, split if exceeded
+    _depth/_max_depth             Internal recursion protection, do not set externally
+
+    Returns
+    -------
+    list of np.ndarray  Each element is a sub scribble binary mask that does not exceed the threshold
+    """
+    if _depth >= _max_depth:
+        return [scribble_binary]  # Prevent infinite recursion
+
+    zoom_out_factor, roi, _ = estimate_scribble_zoom_factor(scribble_binary, patch_size)
+
+    if zoom_out_factor <= max_zoom_factor:
+        return [scribble_binary]
+
+    # Find the longest axis
+    roi_sizes    = [r[1] - r[0] for r in roi]
+    longest_axis = int(np.argmax(roi_sizes))
+
+    # Split along the longest axis
+    axis_start = roi[longest_axis][0]
+    axis_end   = roi[longest_axis][1]
+    mid        = (axis_start + axis_end) // 2
+
+    slicer_a = [slice(None)] * scribble_binary.ndim
+    slicer_b = [slice(None)] * scribble_binary.ndim
+    slicer_a[longest_axis] = slice(axis_start, mid)
+    slicer_b[longest_axis] = slice(mid, axis_end)
+
+    half_a = np.zeros_like(scribble_binary)
+    half_b = np.zeros_like(scribble_binary)
+    half_a[tuple(slicer_a)] = scribble_binary[tuple(slicer_a)]
+    half_b[tuple(slicer_b)] = scribble_binary[tuple(slicer_b)]
+
+    chunks = []
+    for half in (half_a, half_b):
+        if half.sum() > 0:
+            chunks.extend(
+                split_scribble_into_chunks(
+                    half, patch_size, max_zoom_factor,
+                    _depth=_depth + 1, _max_depth=_max_depth
+                )
+            )
+    return chunks if chunks else [scribble_binary]
+
+
 def parse_scribble_config(optional_params):
     scribble_config = {
-        'use_negative_scribble': optional_params.get('use_negative_scribble', False)    
+        'use_negative_scribble': optional_params.get('use_negative_scribble', False),
+        
+        'auto_split_scribble':   optional_params.get('auto_split_scribble', True),
+        
+        'max_zoom_factor':       optional_params.get('max_zoom_factor', 2.0),
+        
+        'verbose_scribble':      optional_params.get('verbose_scribble', False),
     }
     return scribble_config
 
@@ -465,6 +594,18 @@ def nninter_predict(
                 f"Scribble mask shape {scribble_mask.shape} doesn't match "
                 f"image shape {expected_shape}"
             )
+
+    # Get the scribble config if provided, or set defaults
+    _cfg                = scribble_config or {}
+    use_neg_scribble    = _cfg.get('use_negative_scribble', False)
+    auto_split          = _cfg.get('auto_split_scribble',   False)
+    max_zoom_factor     = float(_cfg.get('max_zoom_factor', 2.0))
+    verbose_scribble    = _cfg.get('verbose_scribble',      False)
+
+    
+    # get the patch size
+    patch_size = list(session.configuration_manager.patch_size) \
+    if session.configuration_manager is not None else None
     
     # Set image
     session.set_image(img.astype(np.float32))
@@ -519,22 +660,114 @@ def nninter_predict(
            
             
             if class_scribble.sum() > 0:  # Only add if scribble exists
-  
-                session.add_scribble_interaction(
-                    scribble_image=class_scribble,
-                    include_interaction=True,
-                    run_prediction=False
-                )
-                session._predict()
-                if scribble_config and scribble_config.get('use_negative_scribble', False):
-                    negative_scribble = (scribble_mask != class_id) & (scribble_mask != 0)
-            
+                
+                
+                # zoom_est, _, _ = estimate_scribble_zoom_factor(class_scribble, patch_size)
+                # print(" Working on class", class_id, end="")
+                # print(" The zoom factor for this scribble is estimated to be:", zoom_est)
+                
+                # session.add_scribble_interaction(
+                #     scribble_image=class_scribble,
+                #     include_interaction=True,
+                #     run_prediction=False
+                # )
+                # session._predict()
+                
+                if auto_split and patch_size:
+                    zoom_est, _, _ = estimate_scribble_zoom_factor(class_scribble, patch_size)
+                    if zoom_est > max_zoom_factor:
+                        chunks = split_scribble_into_chunks(
+                            class_scribble, patch_size, max_zoom_factor
+                        )
+                        print(
+                            f"        ⚠  Scribble zoom_est={zoom_est:.2f} > {max_zoom_factor} → "
+                            f"split into {len(chunks)} chunks"
+                        )
+                    else:
+                        chunks = [class_scribble]
+                        print(f"        ✓  Scribble zoom_est={zoom_est:.2f} ≤ {max_zoom_factor}, no split needed")
+                else:
+                    chunks = [class_scribble]
+
+                # for chunk_i, chunk in enumerate(chunks):
+                for chunk_i, chunk in enumerate(chunks):
+                    if chunk.sum() == 0:
+                        continue
+
+                    # verbose: 每个 chunk 的信息
+                    if verbose_scribble and patch_size:
+                        _print_scribble_debug_info(
+                            label=f"Class {class_id} - chunk {chunk_i + 1}/{len(chunks)}",
+                            scribble_binary=chunk,
+                            patch_size=patch_size,
+                            session=None,
+                        )
+
                     session.add_scribble_interaction(
-                        scribble_image=negative_scribble,
-                        include_interaction=False,
-                        run_prediction=False
+                        scribble_image=chunk,
+                        include_interaction=True,
+                        run_prediction=False,
                     )
                     session._predict()
+                
+                # # add negative scribble if configured
+                # if scribble_config and scribble_config.get('use_negative_scribble', False):
+                #     negative_scribble = (scribble_mask != class_id) & (scribble_mask != 0)
+                    
+                #     zoom_est, _, _ = estimate_scribble_zoom_factor(negative_scribble, patch_size)
+                #     print(" Adding negative scribble for class", class_id, end="")
+                #     print(" The zoom factor for this scribble is estimated to be:", zoom_est)
+            
+                #     session.add_scribble_interaction(
+                #         scribble_image=negative_scribble,
+                #         include_interaction=False,
+                #         run_prediction=False
+                #     )
+                #     session._predict()
+                # ── Negative scribble ─────────────────────────────────────────
+                if use_neg_scribble:
+                    negative_scribble = (
+                        (scribble_mask != class_id) & (scribble_mask != 0)
+                    ).astype(np.float32)
+
+                    if negative_scribble.sum() > 0:
+                        if verbose_scribble and patch_size:
+                            _print_scribble_debug_info(
+                                label=f"Class {class_id} - negative scribble",
+                                scribble_binary=negative_scribble,
+                                patch_size=patch_size,
+                                session=None,
+                            )
+
+                        # split for the negative scribble if zoom factor is too high
+                        if auto_split and patch_size:
+                            neg_zoom_est, _, _ = estimate_scribble_zoom_factor(
+                                negative_scribble, patch_size
+                            )
+                            if neg_zoom_est > max_zoom_factor:
+                                neg_chunks = split_scribble_into_chunks(
+                                    negative_scribble, patch_size, max_zoom_factor
+                                )
+                                print(
+                                    f"        ⚠  Neg scribble zoom_est={neg_zoom_est:.2f} > {max_zoom_factor} → "
+                                    f"split into {len(neg_chunks)} chunks"
+                                )
+                            else:
+                                neg_chunks = [negative_scribble]
+                        else:
+                            neg_chunks = [negative_scribble]
+
+                        for neg_chunk in neg_chunks:
+                            if neg_chunk.sum() == 0:
+                                continue
+                            session.add_scribble_interaction(
+                                scribble_image=neg_chunk,
+                                include_interaction=False,
+                                run_prediction=False,
+                            )
+                            session._predict()                    
+                    
+                    
                 n_scribbles = class_scribble.sum()
                 # session._predict()
         # 2. Add point interactions if available for this class
