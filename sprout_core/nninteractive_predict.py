@@ -10,6 +10,98 @@ import os, sys
 import yaml
 import sprout_core.config_core as config_core
 
+class nnInteractiveSessionWithProb(nnInteractiveInferenceSession):
+    """
+    Extension of nnInteractiveInferenceSession that also maintains a float32
+    foreground probability map (prob_buffer) in addition to the binary target_buffer.
+
+    A forward hook captures softmax(logits)[1] (foreground probability) after each
+    network forward pass. A patched paste_tensor writes those probabilities into
+    prob_buffer whenever the binary prediction is written into target_buffer.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.prob_buffer: Optional[torch.Tensor] = None
+        self._last_fg_prob: Optional[torch.Tensor] = None  # CPU float32 tensor, updated by hook
+
+    def initialize_from_trained_model_folder(self, *args, **kwargs):
+        super().initialize_from_trained_model_folder(*args, **kwargs)
+        # Register hook to capture foreground probability after every forward pass
+        self.network.register_forward_hook(self._capture_fg_prob_hook)
+
+    def _capture_fg_prob_hook(self, module, input, output):
+        """
+        Fires after every network forward pass.
+        output shape: (1, 2, *patch_size) -- two logit channels (bg, fg).
+        Stores softmax fg probability as a CPU float32 tensor.
+        """
+        logits = output[0].float()  # (2, *patch_size) on device
+        self._last_fg_prob = torch.softmax(logits, dim=0)[1].detach().cpu()
+
+    def set_target_buffer(self, target_buffer):
+        super().set_target_buffer(target_buffer)
+        # Initialise a matching float32 prob_buffer
+        if isinstance(target_buffer, torch.Tensor):
+            self.prob_buffer = torch.zeros(target_buffer.shape, dtype=torch.float32)
+        elif isinstance(target_buffer, np.ndarray):
+            self.prob_buffer = np.zeros(target_buffer.shape, dtype=np.float32)
+
+    def reset_interactions(self):
+        super().reset_interactions()
+        if self.prob_buffer is not None:
+            if isinstance(self.prob_buffer, torch.Tensor):
+                self.prob_buffer.zero_()
+            else:
+                self.prob_buffer.fill(0.0)
+        self._last_fg_prob = None
+
+    @torch.inference_mode()
+    def _predict(self, force_full_refine: bool = False):
+        """
+        Override _predict to also write foreground probabilities into prob_buffer.
+
+        We temporarily replace paste_tensor in the inference_session module's namespace
+        with a wrapper. Whenever paste_tensor writes into target_buffer, the wrapper
+        also writes the corresponding fg probability into prob_buffer.
+        The original function is always restored in the finally block.
+        """
+        import nnInteractive.inference.inference_session as _sess_mod
+        from nnInteractive.utils.crop import paste_tensor as _orig_paste
+
+        session = self
+
+        def _prob_paste(dst, src, bbox):
+            _orig_paste(dst, src, bbox)
+            if (
+                dst is session.target_buffer
+                and session._last_fg_prob is not None
+                and session.prob_buffer is not None
+            ):
+                fg_prob = session._last_fg_prob
+                # Resize fg_prob if the prediction patch was spatially resampled (autozoom)
+                if list(fg_prob.shape) != list(src.shape):
+                    fg_prob = torch.nn.functional.interpolate(
+                        fg_prob[None, None].float(),
+                        list(src.shape),
+                        mode='trilinear',
+                        align_corners=False,
+                    )[0, 0]
+                prob_dst = (
+                    session.prob_buffer
+                    if isinstance(session.prob_buffer, torch.Tensor)
+                    else torch.from_numpy(session.prob_buffer)
+                )
+                _orig_paste(prob_dst, fg_prob.cpu(), bbox)
+                if isinstance(session.prob_buffer, np.ndarray):
+                    session.prob_buffer[:] = prob_dst.numpy()
+
+        _sess_mod.paste_tensor = _prob_paste
+        try:
+            super()._predict(force_full_refine)
+        finally:
+            _sess_mod.paste_tensor = _orig_paste  # always restore original
+
 def parse_scribble_config(optional_params):
     scribble_config = {
         'use_negative_scribble': optional_params.get('use_negative_scribble', False)    
@@ -194,7 +286,8 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
                 prompt_type: Literal['point', 'scribble'] = "point",
                 point_config: Optional[PointPromptConfig] = None,
                  return_per_class_masks: bool = True,
-                 scribble_config= None):
+                 scribble_config= None,
+                 save_prob_maps: bool = False):
     """
     Main function for nnInteractive prediction with point prompts.
     
@@ -209,6 +302,7 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
         point_config: Configuration for point prompt generation
         return_per_class_masks: Whether to save individual class masks
         scribble_config: Configuration for scribble prompt generation
+        save_prob_maps: Whether to save per-class foreground probability maps
     Returns:
         total_mask or (total_mask, per_class_masks)
     """
@@ -224,6 +318,7 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
     print(f"    Point config: {point_config}")
     print(f"    Return per class masks: {return_per_class_masks}")
     print(f"    Scribble config: {scribble_config}")
+    print(f"    Save probability maps: {save_prob_maps}")
     print("=" * 60)
 
     log_dict = {
@@ -254,7 +349,9 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
     device = torch.device(device)
     print(f"      Device: {device}")
     
-    session = nnInteractiveInferenceSession(
+    # Use probability-tracking session if save_prob_maps is enabled
+    SessionClass = nnInteractiveSessionWithProb if save_prob_maps else nnInteractiveInferenceSession
+    session = SessionClass(
         device=device,
         verbose=False,
         use_torch_compile=False,
@@ -354,12 +451,19 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
         tifffile.imwrite(out, mask.astype(np.uint8) * 255, compression='zlib')
         print(f"      ✓ Saved class {class_id}: {mask.sum():,} pixels")
 
+    def save_prob_map(class_id, prob_map):
+        # Save foreground probability map as float32 TIFF (values in [0.0, 1.0])
+        out = Path(output_folder) / f"{Path(img_path).stem}_class_{class_id}_prob.tif"
+        tifffile.imwrite(out, prob_map, compression='zlib')
+        print(f"      Saved prob map class {class_id}: min={prob_map.min():.3f}, max={prob_map.max():.3f}")
+
     total_mask = nninter_predict(
         session, img, df_pt,
         scribble_mask=scribble_mask,
         init_mask=init_mask,
         scribble_config=scribble_config,
-        on_class_predicted=save_class_mask if return_per_class_masks else None
+        on_class_predicted=save_class_mask if return_per_class_masks else None,
+        on_class_prob_predicted=save_prob_map if save_prob_maps else None,
     )
 
     
@@ -419,7 +523,8 @@ def nninter_predict(
     init_mask: Optional[np.ndarray] = None,
     scribble_mask: Optional[np.ndarray] = None,
     scribble_config = None,
-    on_class_predicted=None
+    on_class_predicted=None,
+    on_class_prob_predicted=None,
 ) -> Union[np.ndarray, Tuple[np.ndarray, Dict[int, np.ndarray]]]:
     """
     Perform prediction with point and/or scribble prompts for each class.
@@ -438,6 +543,7 @@ def nninter_predict(
         return_per_class_masks: Whether to return individual masks per class
         scribble_config: Configuration for scribble prompt generation
         on_class_predicted: Optional callback function with signature (class_id, mask) called after each class is predicted. Useful for saving masks without keeping all in memory.
+        on_class_prob_predicted: Optional callback function with signature (class_id, prob_map_float32) called after each class probability map is predicted.
     
     Returns:
         total_mask: Combined segmentation with class IDs
@@ -563,11 +669,18 @@ def nninter_predict(
         current_mask = session.target_buffer.cpu().numpy() > 0
         n_pixels = current_mask.sum()
         
-        # 5. Save mask
+        # 5. Get probability map if available and callback is provided
+        if on_class_prob_predicted is not None and hasattr(session, 'prob_buffer') and session.prob_buffer is not None:
+            prob_map = session.prob_buffer
+            if isinstance(prob_map, torch.Tensor):
+                prob_map = prob_map.cpu().numpy()
+            on_class_prob_predicted(class_id, prob_map.copy().astype(np.float32))
+
+        # 6. Save mask
         
         if on_class_predicted is not None:
             on_class_predicted(class_id, current_mask)
-        # 6. Update total mask
+        # 7. Update total mask
         total_mask[current_mask] = class_id
         
         # Print summary
@@ -656,7 +769,8 @@ def run_nninteractive_yaml(file_path):
         point_config=point_config,
         output_folder=output_folder,
         return_per_class_masks=optional_params['return_per_class_masks'],
-        scribble_config=scribble_config
+        scribble_config=scribble_config,
+        save_prob_maps=optional_params.get('save_prob_maps', False),
     )
 
 # Main execution

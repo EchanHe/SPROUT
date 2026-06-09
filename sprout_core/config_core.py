@@ -1394,6 +1394,12 @@ input_val_nninteractive_run = {
         "default": False,
         "description": "Return separate masks for each class"
     },
+    "save_prob_maps": {
+        "type": bool,
+        "required": False,
+        "default": False,
+        "description": "Save per-class foreground probability maps as float32 TIFF files"
+    },
 
 
 }

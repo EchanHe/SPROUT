@@ -1,0 +1,64 @@
+# Path to the trained nnInteractive model folder
+model_path: "./models/nninteractive_model"
+
+# Path to the input image
+img_path: "./demo_data/image.tif"
+
+# Path to the seed/segmentation mask used to generate prompts
+seg_path: "./demo_data/seeds.tif"
+
+# Type of prompt to use: "point" or "scribble"
+prompt_type: "point"
+
+# Device to run inference on, for example "cuda:0" or "cpu"
+device: "cuda:0"
+
+# Output folder for prediction results
+output_folder: "./result/nninteractive_predict"
+
+
+#### Optional parameters ####
+## Can be commented out if you want to use the default values
+
+# Path to an initial segmentation mask for iterative refinement
+# init_seg_path: "./demo_data/init_seg.tif"
+
+# Save one binary mask per class
+return_per_class_masks: true
+
+# Save per-class foreground probability maps as float32 TIFF files
+save_prob_maps: false
+
+
+## Point prompt configuration
+
+# Number of positive points per class
+default_n_pos: 1
+
+# Number of negative points per class
+default_n_neg: 0
+
+# Point sampling method: "kmeans", "grid", "center_edge", or "random"
+default_method: "grid"
+
+# Sample negative points from background
+negative_from_bg: true
+
+# Sample negative points from other class regions
+negative_from_other_classes: true
+
+# Sample negative points individually for each other class
+negative_per_other_class: false
+
+# Per-class prompt configuration
+# class_config:
+#   1:
+#     n_pos: 3
+#     n_neg: 1
+#     method: "grid"
+
+
+## Scribble prompt configuration
+
+# Use negative scribbles when prompt_type is "scribble"
+use_negative_scribble: false
