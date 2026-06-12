@@ -3,10 +3,10 @@ import yaml
 from make_seeds import run_make_seeds
 from make_grow import run_make_grow
 from make_adaptive_seed import run_make_adaptive_seed
-
+from make_sweep_adaptive_seed import run_sweep_adaptive_seed
 
 from batch_grow import run_batch_grow
-from batch_seeds import run_batch_adaptive_seed, run_batch_seeds
+from batch_seeds import run_batch_adaptive_seed, run_batch_seeds, run_batch_sweep_adaptive_seed
 
 import os
 
@@ -26,8 +26,11 @@ def main():
         For seeds generation:
             python sprout.py --seeds --config path/to/config.yaml
         
-        For adaptive seed generation
+        For adaptive seed generation (classic)
             python sprout.py --adaptive_seed --config path/to/config.yaml
+
+        For fast sweep + adaptive combine (recommended)
+            python sprout.py --sweep_adaptive --config path/to/config.yaml
         
         For growing
             python sprout.py --grow --config path/to/config.yaml
@@ -49,7 +52,8 @@ def main():
     # Mutually exclusive group
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument('--seeds', action='store_true', help="Run the seed generation function")
-    group.add_argument('--adaptive_seed', action='store_true', help="Run the adaptive seed generation function")
+    group.add_argument('--adaptive_seed', action='store_true', help="Run the adaptive seed generation function (classic)")
+    group.add_argument('--sweep_adaptive', action='store_true', help="Run fast sweep + adaptive combine (recommended)")
     group.add_argument('--grow', action='store_true', help="Run the grow function")
     group.add_argument('--prompt', action='store_true', help="Run the PROMPT extraction function")
     
@@ -94,7 +98,7 @@ def main():
         else:
             run_make_grow(args.config)
     elif args.adaptive_seed:
-        
+
         if not args.config:
             print("[ERROR] --config is required when using --adaptive_seed")
             parser.print_help()
@@ -103,6 +107,15 @@ def main():
             run_batch_adaptive_seed(args.config)
         else:
             run_make_adaptive_seed(args.config)
+    elif args.sweep_adaptive:
+        if not args.config:
+            print("[ERROR] --config is required when using --sweep_adaptive")
+            parser.print_help()
+            exit(1)
+        if args.batch:
+            run_batch_sweep_adaptive_seed(args.config)
+        else:
+            run_sweep_adaptive_seed(args.config)
     elif args.prompt:
         # either sam or nninteractive must be specified
         if not (args.sam or args.nninteractive):

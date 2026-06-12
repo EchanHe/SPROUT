@@ -349,11 +349,18 @@ def check_and_assign_thresholds(thresholds, upper_thresholds, reverse=False):
         if any(thresholds[i+1] > thresholds[i] for i in range(len(thresholds)-1)):
             raise ValueError("Thresholds must be equal or strictly decreasing.")
         
-        # Ensure upper_thresholds are equal or strictly decreasing, but only if not all None
+        # upper_thresholds must be non-decreasing (widens together with lower going down)
         if not all(up is None for up in upper_thresholds):
             filtered_upper = [up for up in upper_thresholds if up is not None]
             if any(filtered_upper[i] > filtered_upper[i+1] for i in range(len(filtered_upper)-1)):
-                raise ValueError("Upper thresholds must be equal or strictly increasing (ignoring None values).")        
+                raise ValueError("Upper thresholds must be equal or strictly increasing (ignoring None values).")
+        # Each (lower, upper) pair must be coherent: lower <= upper
+        for i, (lo, up) in enumerate(zip(thresholds, upper_thresholds)):
+            if up is not None and lo > up:
+                raise ValueError(
+                    f"Each threshold must be <= its upper_threshold. "
+                    f"Found thresholds[{i}]={lo} > upper_thresholds[{i}]={up}."
+                )
     else:
         # Ensure thresholds are equal or strictly increasing
         if any(thresholds[i] > thresholds[i+1] for i in range(len(thresholds)-1)):
@@ -1025,6 +1032,304 @@ input_val_make_adaptive_seed = {
         "description": "create a split if the the convex hull's area/volume is within the limit"
     },  
    
+}
+
+
+input_val_seed_sweep = {
+    "img_path": {
+        "type": str,
+        "required": True,
+        "description": "Path to input image.",
+        "check_exist": True,
+        "check_extension": (".tif", ".tiff"),
+    },
+    "output_folder": {
+        "type": str,
+        "required": True,
+        "description": "Root directory for sweep output TIFFs.",
+    },
+    "thresholds": {
+        "type": (int, list),
+        "subtype": (int, float),
+        "required": True,
+        "min": 0,
+        "description": (
+            "Single int or list of ints. Single / length-1 → erosion mode; "
+            "list >1 → threshold mode."
+        ),
+    },
+    "erosion_steps": {
+        "type": int,
+        "min": 0,
+        "max": 1000,
+        "required": True,
+        "description": "Erosion iterations per step (threshold mode) or total steps (erosion mode).",
+    },
+    "segments": {
+        "type": (int, list),
+        "subtype": int,
+        "min": 1,
+        "required": True,
+        "description": (
+            "Max connected components to keep per step. "
+            "Int: same limit for all steps. "
+            "List: one value per step (length must equal number of steps)."
+        ),
+    },
+    # optional
+    "num_threads": {
+        "type": int,
+        "min": 1,
+        "max": psutil.cpu_count(),
+        "required": False,
+        "default": 1,
+        "description": "Parallel threads for threshold mode (ignored in erosion mode).",
+    },
+    "upper_thresholds": {
+        "type": (int, list),
+        "subtype": (int, float),
+        "required": False,
+        "default": None,
+        "min": 0,
+        "description": "Upper threshold(s) for range thresholding.",
+    },
+    "boundary_path": {
+        "type": str,
+        "required": False,
+        "default": None,
+        "check_exist": True,
+        "description": "Optional boundary mask path.",
+        "check_extension": (".tif", ".tiff"),
+    },
+    "footprints": {
+        "type": (str, list),
+        "required": False,
+        "default": None,
+        "description": "Erosion footprint(s): 'ball', 'cube', 'ball_XY', etc.",
+    },
+    "base_name": {
+        "type": str,
+        "required": False,
+        "default": None,
+        "description": "Subfolder name inside output_folder. Defaults to image filename.",
+    },
+    "workspace": {
+        "type": str,
+        "required": False,
+        "default": "",
+        "description": "Root path prepended to all relative paths.",
+    },
+    "verbose": {
+        "type": bool,
+        "required": False,
+        "default": True,
+        "description": "Print progress for each step.",
+    },
+}
+
+
+input_val_sweep_adaptive_seed = {
+    "img_path": {
+        "type": str,
+        "required": True,
+        "description": "Path to input image.",
+        "check_exist": True,
+        "check_extension": (".tif", ".tiff"),
+    },
+    "output_folder": {
+        "type": str,
+        "required": True,
+        "description": "Root directory for all outputs.",
+    },
+    "thresholds": {
+        "type": (int, list),
+        "subtype": (int, float),
+        "required": True,
+        "min": 0,
+        "description": (
+            "Single int / length-1 list → erosion mode; "
+            "list >1 → threshold mode."
+        ),
+    },
+    "erosion_steps": {
+        "type": int,
+        "min": 0,
+        "max": 1000,
+        "required": True,
+        "description": "Erosion iterations per step (threshold mode) or total steps (erosion mode).",
+    },
+    "segments": {
+        "type": (int, list),
+        "subtype": int,
+        "min": 1,
+        "required": True,
+        "description": (
+            "Max connected components to keep per step. "
+            "Int: same limit for all steps. "
+            "List: one value per step (length must equal number of steps)."
+        ),
+    },
+    # optional sweep
+    "num_threads": {
+        "type": int,
+        "min": 1,
+        "max": psutil.cpu_count(),
+        "required": False,
+        "default": 1,
+        "description": "Threads for parallel threshold sweep (ignored in erosion mode).",
+    },
+    "upper_thresholds": {
+        "type": (int, list),
+        "subtype": (int, float),
+        "required": False,
+        "default": None,
+        "min": 0,
+        "description": "Upper threshold(s) for range thresholding.",
+    },
+    "boundary_path": {
+        "type": str,
+        "required": False,
+        "default": None,
+        "check_exist": True,
+        "description": "Optional boundary mask.",
+        "check_extension": (".tif", ".tiff"),
+    },
+    "footprints": {
+        "type": (str, list),
+        "required": False,
+        "default": None,
+        "description": "Erosion footprint(s).",
+    },
+    "base_name": {
+        "type": str,
+        "required": False,
+        "default": None,
+        "description": "Subfolder name. Defaults to image filename.",
+    },
+    "workspace": {
+        "type": str,
+        "required": False,
+        "default": "",
+        "description": "Root path prepended to relative paths.",
+    },
+    "seeds_folder": {
+        "type": str,
+        "required": False,
+        "default": None,
+        "description": "If set and folder exists, skip sweep and load TIFFs from here.",
+    },
+    "seeds_sweep_direction": {
+        "type": str,
+        "required": False,
+        "default": "s2l",
+        "choices": ["s2l", "l2s"],
+        "description": (
+            "Order of pre-existing seeds_folder TIFFs: 's2l' (step_000 strictest) "
+            "or 'l2s' (step_000 loosest). Ignored when running a fresh sweep "
+            "(direction is auto-detected there)."
+        ),
+    },
+    # optional combine
+    "direction": {
+        "type": str,
+        "required": False,
+        "default": "strict_to_loose",
+        "choices": ["strict_to_loose", "loose_to_strict", "both"],
+        "description": "Combine direction.",
+    },
+    "min_area": {
+        "type": int,
+        "min": 1,
+        "required": False,
+        "default": 1,
+        "description": "Minimum region area for combine.",
+    },
+    "connectivity": {
+        "type": int,
+        "min": 1,
+        "required": False,
+        "default": 1,
+        "description": "Connectivity for connected-components labelling.",
+    },
+    "input_mode": {
+        "type": str,
+        "required": False,
+        "default": "auto",
+        "choices": ["auto", "binary", "label"],
+        "description": "How to interpret sweep TIFFs.",
+    },
+    "top_n": {
+        "type": int,
+        "min": 1,
+        "required": False,
+        "default": None,
+        "description": "Keep only the top-N seeds in the final result.",
+    },
+    "save_intermediate": {
+        "type": bool,
+        "required": False,
+        "default": False,
+        "description": "Save combine_seed after each combine step.",
+    },
+    "verbose": {
+        "type": bool,
+        "required": False,
+        "default": True,
+        "description": "Print progress.",
+    },
+    # s2l-specific (YAML prefix s2l_; mapped internally to the combine function)
+    "s2l_min_current_coverage": {
+        "type": float,
+        "min": 0,
+        "max": 1,
+        "required": False,
+        "default": None,
+        "description": (
+            "s2l: min fraction of a current region (by its own area) that a new "
+            "region must cover to count as growing / merging that current region."
+        ),
+    },
+    "s2l_max_emerge_coverage": {
+        "type": float,
+        "min": 0,
+        "max": 1,
+        "required": False,
+        "default": None,
+        "description": (
+            "s2l: max fraction of a new region (by its own area) overlapping any "
+            "current region, at or below which it may emerge as a brand-new seed."
+        ),
+    },
+    # l2s-specific
+    "l2s_min_new_coverage": {
+        "type": float,
+        "min": 0,
+        "max": 1,
+        "required": False,
+        "default": 0.5,
+        "description": (
+            "l2s: when assigning a region of the next (stricter) seed to the "
+            "current seeds, the min fraction of that region (by its own area) "
+            "overlapping a current seed for it to be assigned to that seed."
+        ),
+    },
+    "l2s_max_new_coverage": {
+        "type": float,
+        "min": 0,
+        "max": 1,
+        "required": False,
+        "default": 0.05,
+        "description": (
+            "l2s: max fraction of a new region (by its own area) overlapping any "
+            "current seed, at or below which an unassigned region is treated as new."
+        ),
+    },
+    "l2s_keep_disappeared": {
+        "type": bool,
+        "required": False,
+        "default": True,
+        "description": "l2s: keep last shape of seeds that disappear.",
+    },
 }
 
 

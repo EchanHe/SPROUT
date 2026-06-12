@@ -1,5 +1,6 @@
 import make_seeds
 import make_adaptive_seed
+import make_sweep_adaptive_seed
 
 import yaml
 import os,sys
@@ -184,6 +185,36 @@ def run_batch_adaptive_seed(file_path):
 
     df.to_csv(os.path.join(config['output_folder'],
                            os.path.basename(csv_path) + f"_running_results_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"), index = False)    
+
+
+def run_batch_sweep_adaptive_seed(file_path):
+    _, extension = os.path.splitext(file_path)
+    print(f"processing config the file {file_path}")
+    if extension == '.yaml':
+        with open(file_path, 'r') as f:
+            yaml_config = yaml.safe_load(f)
+
+    print("Config for pipeline")
+    for key, value in yaml_config.items():
+        print(f"\t{key}: {value}")
+
+    csv_path = yaml_config['csv_path']
+    df = pd.read_csv(csv_path)
+    sprout_core.check_tiff_files(df['img_path'])
+
+    for index, row in df.iterrows():
+        yaml_config.pop("csv_path", None)
+        config = config_core.merge_row_and_yaml_no_conflict(dict(row), yaml_config)
+        try:
+            make_sweep_adaptive_seed.run_sweep_adaptive_seed_from_dict(config)
+        except Exception as e:
+            print(f"Error occurs when processing {config['img_path']}: {e}")
+            df.loc[index, 'error'] = str(e)
+
+        df.loc[index, 'output_folder'] = config['output_folder']
+
+    df.to_csv(os.path.join(config['output_folder'],
+                           os.path.basename(csv_path) + f"_running_results_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"), index=False)
 
 
 if __name__ == "__main__":

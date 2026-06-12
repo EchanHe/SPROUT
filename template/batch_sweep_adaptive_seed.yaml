@@ -1,0 +1,34 @@
+# CSV with one row per image. Required column: img_path.
+# Any parameter below can also appear in the CSV to override the global value.
+csv_path: "./template/sweep_adaptive_seeds_input.csv"
+
+# ── Sweep (global defaults, override per-row in CSV) ─────────────────────────
+output_folder: "./result/batch_sweep_adaptive"
+thresholds: [230, 220, 210, 190, 180, 170, 160, 140]
+erosion_steps: 0
+segments: 500
+num_threads: 4
+
+# ── Combine ───────────────────────────────────────────────────────────────────
+direction: strict_to_loose   # strict_to_loose | loose_to_strict | both
+min_area: 20
+connectivity: 3
+input_mode: label
+top_n: 100
+save_intermediate: false
+verbose: true
+
+# s2l params (null = use function default)
+s2l_min_current_coverage: ~
+s2l_max_emerge_coverage: ~
+
+# l2s params
+l2s_min_new_coverage: 0.5
+l2s_max_new_coverage: 0.05
+l2s_keep_disappeared: true
+
+# ── Optional ──────────────────────────────────────────────────────────────────
+# workspace: ""
+# boundary_path: ~
+# upper_thresholds: ~
+# footprints: ~
