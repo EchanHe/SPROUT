@@ -1,0 +1,74 @@
+# ── Input ────────────────────────────────────────────────────────────────────
+img_path: "./demo_data/foram_img.tif"
+output_folder: "./result/sweep_adaptive"
+
+# ── Sweep (segment generation) ───────────────────────────────────────────────
+# List of >1 values → threshold mode (steps are independent, can run in parallel).
+# Single int or list of 1 → erosion mode (steps are sequential).
+thresholds: [230, 220, 210, 190, 180, 170, 160, 140]
+
+# Fixed erosion applied at each threshold step (threshold mode),
+# or total number of erosion steps (erosion mode).
+erosion_steps: 0
+
+# Max connected components to keep per sweep step.
+segments: 500
+
+# Parallel threads for threshold mode (ignored in erosion mode).
+# Recommended: match the number of thresholds, capped at cpu_count - 1.
+num_threads: 4
+
+# ── Combine ──────────────────────────────────────────────────────────────────
+# strict_to_loose : grow/lock/emerge  (seeds start small, grow outward)
+# loose_to_strict : shrink/split/disappear  (seeds start large, refine inward)
+# both            : run both directions and save results side by side
+direction: strict_to_loose
+
+# Shared combine parameters
+min_area: 20
+connectivity: 3
+input_mode: label        # label: each nonzero value is one region; binary: run connected-components
+top_n: 100               # keep only the top-N seeds by final area (null to keep all)
+save_intermediate: false # save combine_seed after every step (useful for debugging)
+verbose: true
+
+# strict_to_loose parameters
+# min fraction of a current region (by its own area) a new region must cover to grow / merge it
+s2l_min_current_coverage: ~
+# max fraction of a new region (by its own area) overlapping any current region, at/below which it may emerge as a new seed
+s2l_max_emerge_coverage: ~
+
+# loose_to_strict parameters
+# min fraction of a next-seed region (by its own area) overlapping a current seed to assign it there
+l2s_min_new_coverage: ~
+# max fraction of a new region (by its own area) overlapping any current seed, at/below which an unassigned region is treated as new
+l2s_max_new_coverage: ~
+# keep the last shape of seeds that disappear at a stricter threshold
+l2s_keep_disappeared: true
+
+# ── Optional ─────────────────────────────────────────────────────────────────
+
+# Path to boundary mask (excluded from thresholding). Default: none.
+# boundary_path: ~
+
+# Upper threshold for range thresholding: img >= threshold & img <= upper_threshold.
+# Provide one value per threshold, or omit.
+# upper_thresholds: [255, 255, 255, 255, 255, 255, 255, 255]
+
+# Erosion footprint: 'ball' (default), 'cube', 'ball_XY', 'X', 'Y', 'Z', etc.
+# footprints: ~
+
+# Output subfolder name. Defaults to the image filename without extension.
+# base_name: ~
+
+# If set and the folder exists, skip sweep and load step_*.tif files from here.
+# seeds_folder: ~
+
+# Direction of the pre-existing sweep files (only used with seeds_folder).
+# "s2l": step_000 is the strictest mask (lower ↓ / upper ↑ over steps).
+# "l2s": step_000 is the loosest mask (lower ↑ / upper ↓, or erosion sweep).
+# Default: "s2l". When running a fresh sweep this is auto-detected.
+# seeds_sweep_direction: s2l
+
+# Root path prepended to all relative paths (useful for batch scripts).
+# workspace: ~
