@@ -98,7 +98,7 @@ class nnInteractiveSessionWithProb(nnInteractiveInferenceSession):
 
         _sess_mod.paste_tensor = _prob_paste
         try:
-            super()._predict(force_full_refine)
+            super()._predict()
         finally:
             _sess_mod.paste_tensor = _orig_paste  # always restore original
 
