@@ -1300,6 +1300,15 @@ input_val_sweep_adaptive_seed = {
             "current region, at or below which it may emerge as a brand-new seed."
         ),
     },
+    "s2l_mask_by_last_seed": {
+        "type": bool,
+        "required": False,
+        "default": False,
+        "description": (
+            "s2l: if true, restrict the final result to the loosest seed's "
+            "footprint (the last sweep step); regions outside it are removed."
+        ),
+    },
     # l2s-specific
     "l2s_min_new_coverage": {
         "type": float,

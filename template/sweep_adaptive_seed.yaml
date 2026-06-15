@@ -37,6 +37,8 @@ verbose: true
 s2l_min_current_coverage: ~
 # max fraction of a new region (by its own area) overlapping any current region, at/below which it may emerge as a new seed
 s2l_max_emerge_coverage: ~
+# restrict the final result to the loosest seed's footprint (drops artefacts outside it)
+s2l_mask_by_last_seed: false
 
 # loose_to_strict parameters
 # min fraction of a next-seed region (by its own area) overlapping a current seed to assign it there

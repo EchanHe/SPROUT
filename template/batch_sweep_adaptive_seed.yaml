@@ -21,6 +21,7 @@ verbose: true
 # s2l params (null = use function default)
 s2l_min_current_coverage: ~
 s2l_max_emerge_coverage: ~
+s2l_mask_by_last_seed: false
 
 # l2s params
 l2s_min_new_coverage: 0.5

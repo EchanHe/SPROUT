@@ -58,6 +58,8 @@ def _map_yaml_to_combine_kwargs(optional, direction):
         "min_current_coverage": optional.get("s2l_min_current_coverage", None),
         # YAML: s2l_max_emerge_coverage → internal: max_emerge_coverage
         "max_emerge_coverage": optional.get("s2l_max_emerge_coverage", None),
+        # YAML: s2l_mask_by_last_seed → internal: mask_by_last_seed
+        "mask_by_last_seed": optional.get("s2l_mask_by_last_seed", False),
     }
 
     l2s_extra = {
