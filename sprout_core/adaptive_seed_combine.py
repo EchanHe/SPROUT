@@ -52,7 +52,7 @@ COMBINE_SHARED_KEYS = frozenset({
 })
 COMBINE_S2L_KEYS = frozenset({
     "min_current_coverage", "max_emerge_coverage",
-    "intermediate_prefix", "vectorize_overlap",
+    "intermediate_prefix", "vectorize_overlap", "mask_by_last_seed",
 })
 COMBINE_L2S_KEYS = frozenset({
     "min_new_coverage", "max_new_coverage",
@@ -397,8 +397,15 @@ def adaptive_seed_s2l_from_seeds(
     verbose=False,
     log_every=1,
     vectorize_overlap=False,
+    mask_by_last_seed=False,
 ):
-    """Strict-to-loose adaptive seed: emerge / grow / lock events."""
+    """Strict-to-loose adaptive seed: emerge / grow / lock events.
+
+    mask_by_last_seed: if True, restrict the final result to the footprint of
+    the loosest seed (the last input seed). Regions outside it (e.g. artefacts
+    that emerged at stricter steps) are removed. Assumes the loosest seed
+    cleanly captures the whole target.
+    """
     if min_area < 1:
         raise ValueError("min_area must be >= 1.")
     if top_n is not None and top_n < 1:
@@ -549,6 +556,12 @@ def adaptive_seed_s2l_from_seeds(
                 f"step={time.perf_counter() - step_start:.2f}s, "
                 f"total={time.perf_counter() - start_time:.2f}s"
             )
+
+    if mask_by_last_seed:
+        # Restrict the result to the loosest seed's footprint (last input seed);
+        # anything outside it (e.g. artefacts emerged at stricter steps) is
+        # removed. Assumes the loosest seed cleanly captures the whole target.
+        combine_seed[array_seeds[-1] == 0] = 0
 
     for seed_id, item in metadata_by_seed_id.items():
         if item["finalization_reason"] is None:
