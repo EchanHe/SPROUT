@@ -606,6 +606,21 @@ class QtLabelSelector(QWidget):
         keep_top_n = self.top_n_spin.value()
         sort_by_size = self.sort_checkbox.isChecked()
 
+        # Warn when splitting label 0 in single-class mode: 0 is usually the
+        # background, so splitting it tends to be slow and produce odd results.
+        if not self.split_all_checkbox.isChecked() and target_class == 0:
+            resp = QMessageBox.question(
+                self,
+                "Split label 0 (background)?",
+                "You selected label 0, which is usually the background.\n"
+                "Splitting it may be slow and produce strange results.\n\n"
+                "Continue anyway?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if resp != QMessageBox.Yes:
+                return
+
         data = label_layer.data.copy()
 
         # check if target label exists before doing calculations
@@ -628,10 +643,16 @@ class QtLabelSelector(QWidget):
         ##
         
         def on_done(result):
+            new_data, did_split = result
             if target_layer not in self.viewer.layers:
                 print("Layer was removed before update.")
                 return
-            target_layer.data = result
+            # The "no split needed" check now happens inside the worker, so the
+            # connected-component labeling runs only once (off the UI thread).
+            if not did_split:
+                QMessageBox.information(self, "Info", "No split needed.")
+                return
+            target_layer.data = new_data
             if self.split_all_checkbox.isChecked():
                 msg = f"Split all non-background labels completed in layer {target_layer.name}."
             else:
@@ -644,13 +665,6 @@ class QtLabelSelector(QWidget):
             worker_args = [data, keep_top_n, sort_by_size]
             print("Split mode: all non-background labels")
         else:
-            # Early check if split is needed
-            mask = (data == target_class)
-
-            cc = cc_label(mask, connectivity=2)
-            if cc.max() <= 1:
-                QMessageBox.information(self, "Info", "No split needed.")
-                return
             worker_func = self._do_split_class
             worker_args = [data, target_class, keep_top_n, sort_by_size]
             print(f"Split mode: single class {target_class}")
@@ -678,20 +692,21 @@ class QtLabelSelector(QWidget):
         sort_by_size: bool,
         start_label_base: int,
     ):
-        """Process a single target_class on data and return (result, new_label_base).
+        """Process a single target_class on data and return (result, new_label_base, did_split).
 
         - data: original label image
         - start_label_base: starting offset for numbering new components (usually pass current result.max())
+        - did_split: True only if the class was actually split into >1 component
         """
         result = data.copy()
         mask = (result == target_class)
         if not np.any(mask):
-            return result, start_label_base
+            return result, start_label_base, False
 
         cc = cc_label(mask, connectivity=2)
         num_components = cc.max()
         if num_components <= 1:
-            return result, start_label_base
+            return result, start_label_base, False
 
         if keep_top_n > 0:
             # bincount gives all component sizes in one pass; index [1:] skips background.
@@ -701,10 +716,11 @@ class QtLabelSelector(QWidget):
             cc = np.where(np.isin(cc, list(keep_ids)), cc, 0)
             num_components = cc.max()
 
+        # Vectorized relabel: every nonzero component id becomes base+id in one pass.
         result[mask] = 0
         base = start_label_base
-        for i in range(1, num_components + 1):
-            result[cc == i] = base + i
+        nonzero = cc > 0
+        result[nonzero] = cc[nonzero] + base
 
         if sort_by_size:
             result, _ = sort_labels_by_size(result)
@@ -712,39 +728,41 @@ class QtLabelSelector(QWidget):
         else:
             base = base + num_components
 
-        return result, base
-    
-    def _do_split_class(self, data: np.ndarray, target_class: int, keep_top_n: int, sort_by_size: bool) -> np.ndarray:
-        result, _ = self._split_single_class(
+        return result, base, True
+
+    def _do_split_class(self, data: np.ndarray, target_class: int, keep_top_n: int, sort_by_size: bool):
+        result, _, did_split = self._split_single_class(
             data=data,
             target_class=target_class,
             keep_top_n=keep_top_n,
             sort_by_size=sort_by_size,
             start_label_base=data.max()
         )
-        return result
+        return result, did_split
 
-    def _do_split_all_classes(self, data: np.ndarray, keep_top_n: int, sort_by_size: bool) -> np.ndarray:
+    def _do_split_all_classes(self, data: np.ndarray, keep_top_n: int, sort_by_size: bool):
         result = data.copy()
         labels = np.unique(result)
         labels = labels[labels != 0]
 
         if labels.size == 0:
-            return result
+            return result, False
 
         # Starting base: current max label
         label_base = result.max()
+        any_split = False
 
         for lbl in labels:
-            result, label_base = self._split_single_class(
+            result, label_base, did_split = self._split_single_class(
                 data=result,
                 target_class=lbl,
                 keep_top_n=keep_top_n,
                 sort_by_size=sort_by_size,
                 start_label_base=label_base
             )
+            any_split = any_split or did_split
 
-        return result
+        return result, any_split
 
     def update_active_label_layer_binding(self, event):
         layer = event.value
@@ -1009,8 +1027,6 @@ class QtLabelSelector(QWidget):
                 if lbl == 0:
                     continue
                 mask = (label_img == lbl)
-                if mask.sum() == 0:
-                    continue
                 max_area = np.prod(mask.shape) * 0.25
                 current_area_threshold = min(area_threshold, max_area)
 
@@ -1196,8 +1212,6 @@ class QtLabelSelector(QWidget):
                 if lbl == 0:
                     continue
                 mask = (data == lbl)
-                if not np.any(mask):
-                    continue
                 transformed = morph_func(mask, selem)
                 result[transformed] = lbl
 
@@ -1322,7 +1336,7 @@ class QtLabelSelector(QWidget):
 
 
     def _filter_single_label(self, mask, result, label_val, min_size, top_n, ndim):
-        labeled = cc_label(mask, connectivity=1)
+        labeled = cc_label(mask, connectivity=2)
 
         # Single-pass sizes for every component (index 0 is background).
         counts = np.bincount(labeled.ravel())
