@@ -102,27 +102,27 @@ class QtLabelSelector(QWidget):
         # self.viewer.layers.events.removed.connect(self.update_layer_list)
 
 
-        label_select_group = QGroupBox("Label Selection")
-        label_select_group.setToolTip("Select labels by clicking on the image. Use the buttons below to process selected labels.")
+        label_select_group = QGroupBox("Region Selection")
+        label_select_group.setToolTip("Select regions by clicking on the image. Use the buttons below to process selected regions.")
         label_select_layout = QFormLayout()
-        
-        # Label display
-        self.label_display = QLabel("Selected labels: []")
-        self.label_display.setToolTip("Displays labels you have selected by clicking on the image.")
+
+        # Region display
+        self.label_display = QLabel("Selected regions: []")
+        self.label_display.setToolTip("Displays regions you have selected by clicking on the image.")
         # layout.addWidget(self.label_display)
         label_select_layout.addRow(self.label_display)
         
         # Clear button
         clear_btn = QPushButton("Clear Selection")
-        clear_btn.setToolTip("Clear all currently selected labels.")
+        clear_btn.setToolTip("Clear all currently selected regions.")
         clear_btn.clicked.connect(self.clear_selection)
 
         label_select_layout.addRow(clear_btn)
 
         # Mode select
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems(["Keep selected labels", "Remove selected labels"])
-        self.mode_combo.setToolTip("Choose whether to keep or remove the selected labels during processing.")
+        self.mode_combo.addItems(["Keep selected regions", "Remove selected regions"])
+        self.mode_combo.setToolTip("Choose whether to keep or remove the selected regions during processing.")
         # layout.addWidget(QLabel("Mode:"))
         # layout.addWidget(self.mode_combo)
         
@@ -130,7 +130,7 @@ class QtLabelSelector(QWidget):
 
         # Run button
         run_btn = QPushButton("Run processing")
-        run_btn.setToolTip("Run the main label selection processing according to the chosen mode and options.")
+        run_btn.setToolTip("Run the main region selection processing according to the chosen mode and options.")
         run_btn.setStyleSheet("""QPushButton { font-weight: bold; background-color: #45a049;}""")
         run_btn.clicked.connect(self.process_selected_operation)
         # layout.addWidget(run_btn)
@@ -143,23 +143,23 @@ class QtLabelSelector(QWidget):
         # layout.addWidget(QLabel("Replace Label"))
         
         # ---- Label Replace Group ----
-        label_replc_group = QGroupBox("Label Replace")
-        label_replc_group.setToolTip("Replace all pixels of a source class label with a target class label.")
+        label_replc_group = QGroupBox("Region Replace")
+        label_replc_group.setToolTip("Replace all voxels of a source region with a target region.")
         label_replc_layout = QFormLayout()
-        
-        
+
+
         self.src_spin = QSpinBox()
         self.src_spin.setMinimum(0)
-        self.src_spin.setMaximum(10000)  
-        self.src_spin.setToolTip("Enter the source class label you want to replace.")
-        
+        self.src_spin.setMaximum(10000)
+        self.src_spin.setToolTip("Enter the source region (ID) you want to replace.")
+
         self.dst_spin = QSpinBox()
         self.dst_spin.setMinimum(0)
         self.dst_spin.setMaximum(10000)
-        self.dst_spin.setToolTip("Enter the target class label that will replace the source.")
+        self.dst_spin.setToolTip("Enter the target region (ID) that will replace the source.")
 
-        label_replc_layout.addRow(QLabel("Source Class:"), self.src_spin)
-        label_replc_layout.addRow(QLabel("Target Class:"), self.dst_spin)
+        label_replc_layout.addRow(QLabel("Source Region:"), self.src_spin)
+        label_replc_layout.addRow(QLabel("Target Region:"), self.dst_spin)
         
         # layout.addWidget(QLabel("Source Class:"))
         # layout.addWidget(self.src_spin)
@@ -169,7 +169,7 @@ class QtLabelSelector(QWidget):
 
         set_class_btn = QPushButton("Replace")
         set_class_btn.setStyleSheet("""QPushButton { font-weight: bold; background-color: #45a049;}""")
-        set_class_btn.setToolTip("Replace all pixels of the source class with the target class.")
+        set_class_btn.setToolTip("Replace all voxels of the source region with the target region.")
         set_class_btn.clicked.connect(self.set_class_operation)
         # layout.addWidget(set_class_btn)
         label_replc_layout.addRow(set_class_btn)
@@ -177,21 +177,21 @@ class QtLabelSelector(QWidget):
         # layout.addWidget(label_replc_group)
 
         # ---- Merge Labels Group ----
-        label_merge_group = QGroupBox("Merge Labels")
+        label_merge_group = QGroupBox("Merge Label Layers")
         label_merge_group.setToolTip(
-            "Merge another Labels layer into the active layer.\n"
-            "Pixels that are 0 in the active layer will be filled with values from the source layer."
+            "Merge another label layer into the active label layer.\n"
+            "Voxels that are 0 in the active layer will be filled with values from the source layer."
         )
         label_merge_layout = QFormLayout()
 
         self.merge_source_combo = QComboBox()
-        self.merge_source_combo.setToolTip("Select the Labels layer to merge INTO the active layer.")
-        label_merge_layout.addRow(QLabel("Merge Source:"), self.merge_source_combo)
+        self.merge_source_combo.setToolTip("Select the label layer to merge INTO the active label layer.")
+        label_merge_layout.addRow(QLabel("Source Label Layer:"), self.merge_source_combo)
 
         self.merge_offset_checkbox = QCheckBox("Auto offset source IDs to avoid conflicts")
         self.merge_offset_checkbox.setChecked(False)
         self.merge_offset_checkbox.setToolTip(
-            "If checked, source label IDs will be shifted up to avoid overlapping with active layer IDs."
+            "If checked, source region IDs will be shifted up to avoid overlapping with active layer IDs."
         )
         label_merge_layout.addRow(self.merge_offset_checkbox)
 
@@ -209,22 +209,24 @@ class QtLabelSelector(QWidget):
         
 
         # ---- Label Split Group ----
-        label_split_group = QGroupBox("Label Split")
-        
-        label_split_group.setToolTip("Split a selected label class into connected components.")
+        label_split_group = QGroupBox("Region Split")
+
+        label_split_group.setToolTip("Split a selected region into connected components.")
         label_split_layout = QFormLayout()
 
-        self.split_all_checkbox = QCheckBox("Split all non-background labels")
+        self.split_all_checkbox = QCheckBox("Split all non-background regions")
         self.split_all_checkbox.setChecked(False)
-        self.split_all_checkbox.setToolTip("If checked, split all labels > 0 instead of only the target class.")
-        label_split_layout.addRow(self.split_all_checkbox)        
-        
+        self.split_all_checkbox.setToolTip("If checked, split all regions > 0 instead of only the target region.")
+        label_split_layout.addRow(self.split_all_checkbox)
+
         self.split_class_spin = QSpinBox()
         self.split_class_spin.setMinimum(0)
         self.split_class_spin.setMaximum(10000)
-        self.split_class_spin.setToolTip("Enter the label class ID to split into components.")
+        self.split_class_spin.setToolTip("Enter the region ID to split into components.")
+        # Grey out the single-region target while "split all" is active.
+        self.split_all_checkbox.toggled.connect(self.split_class_spin.setDisabled)
 
-        label_split_layout.addRow(QLabel("Target Class to Split:"), self.split_class_spin)
+        label_split_layout.addRow(QLabel("Target Region:"), self.split_class_spin)
         
         self.sort_checkbox = QCheckBox("Sort by size (reassign IDs by size)")
         self.sort_checkbox.setChecked(True)
@@ -241,17 +243,17 @@ class QtLabelSelector(QWidget):
         # layout.addWidget(self.top_n_spin)
         label_split_layout.addRow(QLabel("Keep Top-N Components (0 = all):"), self.top_n_spin)
 
-        split_btn = QPushButton("Run Split Class")
+        split_btn = QPushButton("Run Split Region")
         split_btn.setStyleSheet("""QPushButton { font-weight: bold; background-color: #45a049;}""")
-        split_btn.setToolTip("Split selected label into connected components.")
+        split_btn.setToolTip("Split selected region into connected components.")
         split_btn.clicked.connect(self.split_class_operation)
         label_split_layout.addRow(split_btn)
         label_split_group.setLayout(label_split_layout)
         # layout.addWidget(label_split_group)
 
         # ---- Keep Top-N Labels Group ----
-        keep_label_group = QGroupBox("Keep Top-N Labels")
-        keep_label_group.setToolTip("Keep the N largest labels based on total area/volume.")
+        keep_label_group = QGroupBox("Keep Top-N Regions")
+        keep_label_group.setToolTip("Keep the N largest regions based on total area/volume.")
 
         keep_layout = QFormLayout()
 
@@ -259,10 +261,10 @@ class QtLabelSelector(QWidget):
         self.keep_label_topn_spin.setMinimum(1)
         self.keep_label_topn_spin.setMaximum(10_000)
         self.keep_label_topn_spin.setValue(5)
-        self.keep_label_topn_spin.setToolTip("Number of labels to keep (by total pixel count).")
-        keep_layout.addRow(QLabel("Top-N Labels:"), self.keep_label_topn_spin)
+        self.keep_label_topn_spin.setToolTip("Number of regions to keep (by total pixel count).")
+        keep_layout.addRow(QLabel("Top-N Regions:"), self.keep_label_topn_spin)
 
-        keep_label_btn = QPushButton("Run Keep Top-N Labels")
+        keep_label_btn = QPushButton("Run Keep Top-N Regions")
         keep_label_btn.setStyleSheet("QPushButton { font-weight: bold; background-color: #3c8dbc; }")
         keep_label_btn.clicked.connect(self.run_keep_top_n_labels)
         keep_layout.addRow(keep_label_btn)
@@ -276,6 +278,18 @@ class QtLabelSelector(QWidget):
         filter_group.setToolTip("Remove small connected components or keep only the largest regions.")
 
         filter_layout = QFormLayout()
+
+        self.filter_all_checkbox = QCheckBox("Apply to all non-background regions")
+        self.filter_all_checkbox.setChecked(False)
+        self.filter_all_checkbox.setToolTip("If checked, filter all regions > 0 instead of a single target region.")
+        filter_layout.addRow(self.filter_all_checkbox)
+
+        self.filter_target_label_spin = QSpinBox()
+        self.filter_target_label_spin.setMinimum(0)
+        self.filter_target_label_spin.setMaximum(10_000)
+        self.filter_target_label_spin.setToolTip("The region to filter. 0 is usually the background.")
+        self.filter_all_checkbox.toggled.connect(self.filter_target_label_spin.setDisabled)
+        filter_layout.addRow(QLabel("Target Region:"), self.filter_target_label_spin)
 
         self.filter_min_size_spin = QSpinBox()
         self.filter_min_size_spin.setMinimum(0)
@@ -291,12 +305,6 @@ class QtLabelSelector(QWidget):
         self.filter_top_n_spin.setToolTip("Keep only the top-N largest components (0 = all).")
         filter_layout.addRow(QLabel("Keep Top-N:"), self.filter_top_n_spin)
 
-        self.filter_target_label_spin = QSpinBox()
-        self.filter_target_label_spin.setMinimum(0)
-        self.filter_target_label_spin.setMaximum(10_000)
-        self.filter_target_label_spin.setToolTip("Only filter the given label (0 = all labels > 0).")
-        filter_layout.addRow(QLabel("Target Label (0 = all):"), self.filter_target_label_spin)
-
         filter_btn = QPushButton("Run Filtering")
         filter_btn.setStyleSheet("QPushButton { font-weight: bold; background-color: #d97d00; }")
         filter_btn.clicked.connect(self.run_filtering_operation)
@@ -308,9 +316,21 @@ class QtLabelSelector(QWidget):
 
         # ---- Fill holes operation ----
         fill_group = QGroupBox("Fill Holes")
-        fill_group.setToolTip("Fill small holes inside label regions.")
+        fill_group.setToolTip("Fill small holes inside regions.")
 
         fill_layout = QFormLayout()
+
+        self.fill_all_checkbox = QCheckBox("Apply to all non-background regions")
+        self.fill_all_checkbox.setChecked(False)
+        self.fill_all_checkbox.setToolTip("If checked, fill holes in all regions > 0 instead of a single target region.")
+        fill_layout.addRow(self.fill_all_checkbox)
+
+        self.fill_target_spin = QSpinBox()
+        self.fill_target_spin.setMinimum(0)
+        self.fill_target_spin.setMaximum(10_000)
+        self.fill_target_spin.setToolTip("The region to process. 0 is usually the background.")
+        self.fill_all_checkbox.toggled.connect(self.fill_target_spin.setDisabled)
+        fill_layout.addRow(QLabel("Target Region:"), self.fill_target_spin)
 
         self.fill_area_spin = QSpinBox()
         self.fill_area_spin.setMinimum(1)
@@ -324,12 +344,6 @@ class QtLabelSelector(QWidget):
         self.fill_in_2d_checkbox.setToolTip("Apply hole filling on each 2D slice (if 3D).")
         fill_layout.addRow(self.fill_in_2d_checkbox)
 
-        self.fill_target_spin = QSpinBox()
-        self.fill_target_spin.setMinimum(0)
-        self.fill_target_spin.setMaximum(10_000)
-        self.fill_target_spin.setToolTip("Target label to process (0 = all labels > 0).")
-        fill_layout.addRow(QLabel("Target Label (0 = all):"), self.fill_target_spin)
-
         fill_btn = QPushButton("Run Fill Holes")
         fill_btn.setStyleSheet("QPushButton { font-weight: bold; background-color: #0066aa; }")
         fill_btn.clicked.connect(self.run_fill_holes_operation)
@@ -342,9 +356,21 @@ class QtLabelSelector(QWidget):
         
 
         morph_group = QGroupBox("Morphology Transform")
-        morph_group.setToolTip("Apply morphological operations to label regions.")
+        morph_group.setToolTip("Apply morphological operations to regions.")
 
         morph_layout = QFormLayout()
+
+        self.morph_all_checkbox = QCheckBox("Apply to all non-background regions")
+        self.morph_all_checkbox.setChecked(False)
+        self.morph_all_checkbox.setToolTip("If checked, apply the operation to all regions > 0 instead of a single target region.")
+        morph_layout.addRow(self.morph_all_checkbox)
+
+        self.morph_target_spin = QSpinBox()
+        self.morph_target_spin.setMinimum(0)
+        self.morph_target_spin.setMaximum(10_000)
+        self.morph_target_spin.setToolTip("The region to process. 0 is usually the background.")
+        self.morph_all_checkbox.toggled.connect(self.morph_target_spin.setDisabled)
+        morph_layout.addRow(QLabel("Target Region:"), self.morph_target_spin)
 
         self.morph_op_combo = QComboBox()
         self.morph_op_combo.addItems(["Erode", "Dilate", "Open", "Close"])
@@ -357,12 +383,6 @@ class QtLabelSelector(QWidget):
         self.morph_kernel_spin.setValue(2)
         self.morph_kernel_spin.setToolTip("Kernel radius for the operation.")
         morph_layout.addRow(QLabel("Kernel Radius:"), self.morph_kernel_spin)
-
-        self.morph_target_spin = QSpinBox()
-        self.morph_target_spin.setMinimum(0)
-        self.morph_target_spin.setMaximum(10_000)
-        self.morph_target_spin.setToolTip("Target label to process (0 = all labels > 0).")
-        morph_layout.addRow(QLabel("Target Label (0 = all):"), self.morph_target_spin)
 
         morph_btn = QPushButton("Run Morphology")
         morph_btn.setStyleSheet("QPushButton { font-weight: bold; background-color: #8844aa; }")
@@ -400,31 +420,27 @@ class QtLabelSelector(QWidget):
 
         tab_widget = QTabWidget()
 
-        # ── Tab 1: Selection ──────────────────────────────
-        tab_selection = QWidget()
-        tab_selection_layout = QVBoxLayout(tab_selection)
-        tab_selection_layout.addWidget(label_select_group)
-        tab_selection_layout.addWidget(label_replc_group)
-        tab_selection_layout.addWidget(label_merge_group)
-        tab_selection_layout.addStretch()
-        tab_widget.addTab(tab_selection, "Selection")
+        # ── Tab 1: Select & Edit ──────────────────────────
+        # Region identity / membership: select, replace IDs, merge layers, split.
+        tab_edit = QWidget()
+        tab_edit_layout = QVBoxLayout(tab_edit)
+        tab_edit_layout.addWidget(label_select_group)
+        tab_edit_layout.addWidget(label_replc_group)
+        tab_edit_layout.addWidget(label_merge_group)
+        tab_edit_layout.addWidget(label_split_group)
+        tab_edit_layout.addStretch()
+        tab_widget.addTab(tab_edit, "Select && Edit")
 
-        # ── Tab 2: Split & Filter ─────────────────────────
-        tab_split = QWidget()
-        tab_split_layout = QVBoxLayout(tab_split)
-        tab_split_layout.addWidget(label_split_group)
-        tab_split_layout.addWidget(keep_label_group)
-        tab_split_layout.addWidget(filter_group)
-        tab_split_layout.addStretch()
-        tab_widget.addTab(tab_split, "Split & Filter")
-
-        # ── Tab 3: Morphology ─────────────────────────────
-        tab_morph = QWidget()
-        tab_morph_layout = QVBoxLayout(tab_morph)
-        tab_morph_layout.addWidget(fill_group)
-        tab_morph_layout.addWidget(morph_group)
-        tab_morph_layout.addStretch()
-        tab_widget.addTab(tab_morph, "Morphology")
+        # ── Tab 2: Cleanup & Refine ───────────────────────
+        # Noise removal and shape refinement: keep top-N, filter, fill, morphology.
+        tab_refine = QWidget()
+        tab_refine_layout = QVBoxLayout(tab_refine)
+        tab_refine_layout.addWidget(keep_label_group)
+        tab_refine_layout.addWidget(filter_group)
+        tab_refine_layout.addWidget(fill_group)
+        tab_refine_layout.addWidget(morph_group)
+        tab_refine_layout.addStretch()
+        tab_widget.addTab(tab_refine, "Cleanup && Refine")
 
         layout.addWidget(tab_widget)
 
@@ -471,7 +487,7 @@ class QtLabelSelector(QWidget):
 
     def update_display_label(self):
         label_str = ", ".join(str(lbl) for lbl in sorted(self.selected_labels))
-        self.label_display.setText(f"Selected labels: {label_str}")
+        self.label_display.setText(f"Selected regions: {label_str}")
 
     def on_click(self, layer, event):
         if not isinstance(layer, Labels):
@@ -504,7 +520,7 @@ class QtLabelSelector(QWidget):
         
         # if src == dst:return
         if src == dst:
-            QMessageBox.information(self, "Info", "Source and target class are the same. No operation needed.")
+            QMessageBox.information(self, "Info", "Source and target region are the same. No operation needed.")
             return
         
         # check if src value exists before doing calculations
@@ -527,7 +543,7 @@ class QtLabelSelector(QWidget):
         data[data == src] = dst
         target_layer.data = data
         # QMessageBox.information(self, "Success", f"Class {src} changed to {dst}.")
-        show_info(f"Class {src} changed to {dst} in layer {target_layer.name}.")
+        show_info(f"Region {src} changed to {dst} in layer {target_layer.name}.")
 
         self.clear_selection()
 
@@ -606,19 +622,10 @@ class QtLabelSelector(QWidget):
         keep_top_n = self.top_n_spin.value()
         sort_by_size = self.sort_checkbox.isChecked()
 
-        # Warn when splitting label 0 in single-class mode: 0 is usually the
+        # Warn when splitting region 0 in single-region mode: 0 is usually the
         # background, so splitting it tends to be slow and produce odd results.
         if not self.split_all_checkbox.isChecked() and target_class == 0:
-            resp = QMessageBox.question(
-                self,
-                "Split label 0 (background)?",
-                "You selected label 0, which is usually the background.\n"
-                "Splitting it may be slow and produce strange results.\n\n"
-                "Continue anyway?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No,
-            )
-            if resp != QMessageBox.Yes:
+            if not self._confirm_region_zero("Splitting"):
                 return
 
         data = label_layer.data.copy()
@@ -654,9 +661,9 @@ class QtLabelSelector(QWidget):
                 return
             target_layer.data = new_data
             if self.split_all_checkbox.isChecked():
-                msg = f"Split all non-background labels completed in layer {target_layer.name}."
+                msg = f"Split all non-background regions completed in layer {target_layer.name}."
             else:
-                msg = f"Split class {target_class} completed in layer {target_layer.name}."
+                msg = f"Split region {target_class} completed in layer {target_layer.name}."
             show_info(msg)
             self.clear_selection()
 
@@ -849,14 +856,14 @@ class QtLabelSelector(QWidget):
         data = target_layer.data.copy()
         mask = np.isin(data, list(self.selected_labels))
 
-        if self.mode_combo.currentText() == "Keep selected labels":
+        if self.mode_combo.currentText() == "Keep selected regions":
             data = data * mask
-        elif self.mode_combo.currentText() == "Remove selected labels":
+        elif self.mode_combo.currentText() == "Remove selected regions":
             data = data * (~mask)
 
         target_layer.data = data
-        
-        kept_or_removed = "kept" if self.mode_combo.currentText() == "Keep selected labels" else "removed"
+
+        kept_or_removed = "kept" if self.mode_combo.currentText() == "Keep selected regions" else "removed"
         label_str = ", ".join(str(lbl) for lbl in sorted(self.selected_labels))
         
         # QMessageBox.information(
@@ -867,8 +874,8 @@ class QtLabelSelector(QWidget):
         # )
         
         show_info(
-            f"Label selection processing completed in layer {target_layer.name}.\n"
-            f"{kept_or_removed.capitalize()} labels: [{label_str}]"
+            f"Region selection processing completed in layer {target_layer.name}.\n"
+            f"{kept_or_removed.capitalize()} regions: [{label_str}]"
         )
         
         self.clear_selection()
@@ -881,9 +888,12 @@ class QtLabelSelector(QWidget):
 
         area_threshold = self.fill_area_spin.value()
         apply_in_2d = self.fill_in_2d_checkbox.isChecked()
-        target_label = self.fill_target_spin.value()
-        if target_label == 0:
-            target_label = None  # means process all labels > 0
+        if self.fill_all_checkbox.isChecked():
+            target_label = None  # process all regions > 0
+        else:
+            target_label = self.fill_target_spin.value()
+            if target_label == 0 and not self._confirm_region_zero("Filling holes in"):
+                return
 
         data = label_layer.data.copy()
 
@@ -1111,14 +1121,30 @@ class QtLabelSelector(QWidget):
     #     target_layer.data = result
     #     QMessageBox.information(self, "Done", f"{op_name} operation completed.")
 
+    def _confirm_region_zero(self, op_name="Processing"):
+        """Ask before operating on region 0 (usually the background).
+
+        Returns True if the user chose to proceed.
+        """
+        resp = QMessageBox.question(
+            self,
+            "Use region 0 (background)?",
+            "You selected region 0, which is usually the background.\n"
+            f"{op_name} it may be slow and produce strange results.\n\n"
+            "Continue anyway?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        return resp == QMessageBox.Yes
+
     def check_target_label(self,target_label, data):
         # if target label is None, it means process all labels > 0, so no need to check existence
         if target_label is not None and target_label not in np.unique(data):
             QMessageBox.warning(
                 self,
-                "Label Not Found",
-                f"Label {target_label} does not exist in the current layer.\n"
-                f"Existing labels: {sorted(np.unique(data)[np.unique(data) != 0].tolist())}"
+                "Region Not Found",
+                f"Region {target_label} does not exist in the current layer.\n"
+                f"Existing regions: {sorted(np.unique(data)[np.unique(data) != 0].tolist())}"
             )
             return False
         return True
@@ -1131,9 +1157,12 @@ class QtLabelSelector(QWidget):
 
         op_name = self.morph_op_combo.currentText()
         radius = self.morph_kernel_spin.value()
-        target_label = self.morph_target_spin.value()
-        if target_label == 0:
+        if self.morph_all_checkbox.isChecked():
             target_label = None
+        else:
+            target_label = self.morph_target_spin.value()
+            if target_label == 0 and not self._confirm_region_zero(f"Applying {op_name} to"):
+                return
 
         data = label_layer.data.copy()
         ndim = data.ndim
@@ -1272,9 +1301,12 @@ class QtLabelSelector(QWidget):
 
         min_size = self.filter_min_size_spin.value()
         top_n = self.filter_top_n_spin.value()
-        target_label = self.filter_target_label_spin.value()
-        if target_label == 0:
+        if self.filter_all_checkbox.isChecked():
             target_label = None
+        else:
+            target_label = self.filter_target_label_spin.value()
+            if target_label == 0 and not self._confirm_region_zero("Filtering"):
+                return
 
         if min_size == 0 and top_n == 0:
             QMessageBox.information(self, "Info", "No filtering performed (min size and top-N both zero).")
@@ -1383,7 +1415,7 @@ class QtLabelSelector(QWidget):
         unique_labels = np.unique(data)
         unique_labels = unique_labels[unique_labels != 0]
         if top_n >= len(unique_labels):
-            QMessageBox.information(self, "Info", f"Only {len(unique_labels)} labels found. No filtering needed.")
+            QMessageBox.information(self, "Info", f"Only {len(unique_labels)} regions found. No filtering needed.")
             return
 
         def on_done(result):
@@ -1392,7 +1424,7 @@ class QtLabelSelector(QWidget):
                 return
             target_layer.data = result
             # QMessageBox.information(self, "Done", f"Kept top {top_n} labels.")
-            show_info(f"Kept top {top_n} labels in layer {target_layer.name}.")
+            show_info(f"Kept top {top_n} regions in layer {target_layer.name}.")
 
         self.run_in_background(
             self._do_keep_top_n_labels,
