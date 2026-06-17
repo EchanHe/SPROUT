@@ -6,6 +6,7 @@ from qtpy.QtWidgets import (
 )
 from qtpy.QtCore import Qt
 from napari.layers import Labels
+from napari.utils.notifications import show_info
 
 class LabelMapperWidget(QWidget):
     def __init__(self, viewer):
@@ -396,16 +397,62 @@ class LabelMapperWidget(QWidget):
         class_to_id = {cls: idx + 1 for idx, cls in enumerate(self.scheme) if any(v == cls for v in self.label2class.values())}
         label_map = {lbl: class_to_id[cls] for lbl, cls in self.label2class.items() if cls in class_to_id}
 
-        # Create new data array
         old_data = self.label_layer.data
-        new_data = np.zeros_like(old_data)
+        layer_name = self.label_layer.name
 
+        def on_done(new_data):
+            self.viewer.add_labels(new_data, name=f"{layer_name}_mapped")
+            show_info(f"New mapped segmentation layer created from '{layer_name}'.")
+            print("New mapped segmentation layer created.")
+
+        # Disable the button while the (potentially heavy) remap runs in the background,
+        # mirroring the behaviour of the edit widget.
+        self.run_in_background(
+            self._do_apply_mapping,
+            [old_data, label_map],
+            on_done,
+            buttons_to_disable=[self.new_seg_button],
+        )
+
+    def _do_apply_mapping(self, old_data: np.ndarray, label_map: dict) -> np.ndarray:
+        # Build a lookup table and relabel in a single vectorized pass instead of
+        # one full-array scan per source label.
+        max_label = int(old_data.max())
+        lut = np.zeros(max_label + 1, dtype=old_data.dtype)
         for old_lbl, new_lbl in label_map.items():
-            new_data[old_data == old_lbl] = new_lbl
+            if 0 <= old_lbl <= max_label:
+                lut[old_lbl] = new_lbl
+        return lut[old_data]
 
-        # Add new layer
-        self.viewer.add_labels(new_data, name=f"{self.label_layer.name}_mapped")
-        print("New mapped segmentation layer created.")
+    def run_in_background(self, func, args, done_callback, buttons_to_disable=None):
+        from napari.qt.threading import thread_worker
+
+        @thread_worker
+        def worker_wrapper(*args):
+            return func(*args)
+
+        worker = worker_wrapper(*args)
+
+        if buttons_to_disable is None:
+            buttons_to_disable = []
+
+        for btn in buttons_to_disable:
+            btn.setEnabled(False)
+
+        def on_done(result):
+            for btn in buttons_to_disable:
+                btn.setEnabled(True)
+            done_callback(result)
+
+        def on_error(e):
+            print(f"Background task failed: {e}")
+            for btn in buttons_to_disable:
+                btn.setEnabled(True)
+            QMessageBox.warning(self, "Error", f"Operation failed:\n{e}")
+
+        worker.returned.connect(on_done)
+        worker.errored.connect(on_error)
+        worker.start()
 
     def export_mapping_to_json(self):
         if not self.label2class:

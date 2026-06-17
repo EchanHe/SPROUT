@@ -13,19 +13,25 @@ from skimage.morphology import remove_small_holes
 from skimage.morphology import erosion, dilation, opening, closing, disk, ball
 
 def sort_labels_by_size(label_img, ignore_label=0):
-    label_img = label_img.copy()
-    unique_labels = np.unique(label_img)
-    unique_labels = unique_labels[unique_labels != ignore_label]
+    # Single pass over the array with bincount instead of one full scan per label.
+    max_label = int(label_img.max())
+    counts = np.bincount(label_img.ravel(), minlength=max_label + 1)
+    if 0 <= ignore_label <= max_label:
+        counts[ignore_label] = 0
 
-    sizes = {label: np.sum(label_img == label) for label in unique_labels}
+    # Labels actually present, ordered by descending size. Sorting on the negated
+    # counts with a stable sort keeps equal-size labels in ascending-label order,
+    # matching the previous (stable) implementation.
+    present = np.nonzero(counts)[0]
+    order = present[np.argsort(-counts[present], kind="stable")]
 
-    sorted_labels = sorted(sizes.items(), key=lambda x: -x[1])  # [(old_label, size), ...]
+    remap = {int(old): new + 1 for new, old in enumerate(order)}
 
-    remap = {old: new + 1 for new, (old, _) in enumerate(sorted_labels)}
-
-    new_img = np.zeros_like(label_img)
+    # Relabel via a lookup table (single vectorized indexing pass).
+    lut = np.zeros(max_label + 1, dtype=label_img.dtype)
     for old, new in remap.items():
-        new_img[label_img == old] = new
+        lut[old] = new
+    new_img = lut[label_img]
 
     return new_img, remap
 
@@ -688,7 +694,8 @@ class QtLabelSelector(QWidget):
             return result, start_label_base
 
         if keep_top_n > 0:
-            sizes = [(cc == i).sum() for i in range(1, num_components + 1)]
+            # bincount gives all component sizes in one pass; index [1:] skips background.
+            sizes = np.bincount(cc.ravel(), minlength=num_components + 1)[1:]
             sorted_indices = np.argsort(sizes)[::-1]
             keep_ids = set(sorted_indices[:keep_top_n] + 1)
             cc = np.where(np.isin(cc, list(keep_ids)), cc, 0)
@@ -1316,10 +1323,12 @@ class QtLabelSelector(QWidget):
 
     def _filter_single_label(self, mask, result, label_val, min_size, top_n, ndim):
         labeled = cc_label(mask, connectivity=1)
-        component_ids = np.unique(labeled)[1:]  # skip background 0
 
-        # Compute size of each component
-        sizes = {i: np.sum(labeled == i) for i in component_ids}
+        # Single-pass sizes for every component (index 0 is background).
+        counts = np.bincount(labeled.ravel())
+        component_ids = np.nonzero(counts)[0]
+        component_ids = component_ids[component_ids != 0]  # skip background 0
+        sizes = {int(i): int(counts[i]) for i in component_ids}
 
         # Remove small components
         keep_ids = [i for i, size in sizes.items() if size >= min_size] if min_size > 0 else list(component_ids)
@@ -1385,7 +1394,9 @@ class QtLabelSelector(QWidget):
         if top_n >= len(labels):
             return data  # 不需要处理
 
-        sizes = {lbl: np.sum(data == lbl) for lbl in labels}
+        # Single pass over the array instead of one full scan per label.
+        counts = np.bincount(data.ravel())
+        sizes = {int(lbl): int(counts[lbl]) for lbl in labels}
         sorted_labels = sorted(sizes.items(), key=lambda x: x[1], reverse=True)
 
         keep_labels = [lbl for lbl, _ in sorted_labels[:top_n]]
