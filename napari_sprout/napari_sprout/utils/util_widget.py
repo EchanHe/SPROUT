@@ -80,13 +80,7 @@ class PreviewWorker(QRunnable):
             if self.use_cc:
                 binary, _ = get_ccomps_with_size_order(binary, self.cc_n)
 
-            num_classes = np.unique(binary).size
-            # if num_classes <=255:
-            #     binary = binary.astype(np.uint8)
-            # elif num_classes <= 65535:
-            
-            # update, instead of set 8 or 16 bit
-            # use 16 bit always to avoid overflow
+            # Always use 16-bit to avoid overflow (no class counting needed here).
             binary = binary.astype(np.uint16)
             
             self.signals.finished.emit(binary)

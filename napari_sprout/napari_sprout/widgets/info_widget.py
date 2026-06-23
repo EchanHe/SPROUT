@@ -65,10 +65,13 @@ class LayerInfoWidget(QWidget):
 
             if isinstance(layer, Labels):
                 data = layer.data
-                unique = np.unique(data)
+                # Single pass: bincount yields the size of every label at once,
+                # and its nonzero positions are exactly the unique labels (sorted).
+                counts = np.bincount(np.asarray(data).ravel())
+                unique = np.nonzero(counts)[0]
                 label_count = len(unique)
 
-                sizes = {label: np.sum(data == label) for label in unique}
+                sizes = {int(label): int(counts[label]) for label in unique}
                 nonzero_labels = [l for l in sizes if l != 0]
                 max_size = max(sizes.values()) if sizes else 0
                 min_size = min(sizes[l] for l in nonzero_labels) if nonzero_labels else 0
