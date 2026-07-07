@@ -1,3 +1,4 @@
+import sys
 import numpy as np
 from skimage.measure import label as cc_label
 from qtpy.QtWidgets import (QTabWidget, QWidget, QVBoxLayout, QComboBox, QPushButton, QLabel,
@@ -11,6 +12,13 @@ from qtpy.QtWidgets import QFrame
 import numpy as np
 from skimage.morphology import remove_small_holes
 from skimage.morphology import erosion, dilation, opening, closing, disk, ball
+
+from pathlib import Path
+sprout_path = Path(__file__).parent.parent.parent.parent
+if str(sprout_path) not in sys.path:
+    sys.path.insert(0, str(sprout_path))
+
+from sprout_core.sprout_core import get_sub_binary_image_by_pos
 
 def sort_labels_by_size(label_img, ignore_label=0):
     # Single pass over the array with bincount instead of one full scan per label.
@@ -691,6 +699,26 @@ class QtLabelSelector(QWidget):
         # )
 
 
+    def _label_connected_components(self, mask: np.ndarray) -> np.ndarray:
+        """Label connected components of a boolean mask.
+
+        Crops to the mask's bounding box before labeling (mirrors sprout_core's
+        get_sub_binary_image_by_pos usage) since the target region is often a
+        small fraction of a large volume. Uses full connectivity (mask.ndim) so
+        both 2D and 3D masks are handled correctly.
+        """
+        subset, bbox = get_sub_binary_image_by_pos(mask, margin=0)
+        labeled_subset = cc_label(subset, connectivity=subset.ndim)
+
+        labeled_full = np.zeros(mask.shape, dtype=labeled_subset.dtype)
+        if mask.ndim == 3:
+            min_z, max_z, min_y, max_y, min_x, max_x = bbox
+            labeled_full[min_z:max_z+1, min_y:max_y+1, min_x:max_x+1] = labeled_subset
+        else:
+            min_y, max_y, min_x, max_x = bbox
+            labeled_full[min_y:max_y+1, min_x:max_x+1] = labeled_subset
+        return labeled_full
+
     def _split_single_class(
         self,
         data: np.ndarray,
@@ -710,7 +738,7 @@ class QtLabelSelector(QWidget):
         if not np.any(mask):
             return result, start_label_base, False
 
-        cc = cc_label(mask, connectivity=2)
+        cc = self._label_connected_components(mask)
         num_components = cc.max()
         if num_components <= 1:
             return result, start_label_base, False
@@ -1368,7 +1396,7 @@ class QtLabelSelector(QWidget):
 
 
     def _filter_single_label(self, mask, result, label_val, min_size, top_n, ndim):
-        labeled = cc_label(mask, connectivity=2)
+        labeled = self._label_connected_components(mask)
 
         # Single-pass sizes for every component (index 0 is background).
         counts = np.bincount(labeled.ravel())
