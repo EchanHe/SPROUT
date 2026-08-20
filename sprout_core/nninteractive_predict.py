@@ -446,14 +446,19 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
     # 4. Run prediction
     print("\n[4/4] Running prediction...")
 
+    segs_folder = Path(output_folder) / "segs"
+    prob_folder = Path(output_folder) / "prob"
+
     def save_class_mask(class_id, mask):
-        out = Path(output_folder) / f"{Path(img_path).stem}_class_{class_id}.tif"
+        segs_folder.mkdir(parents=True, exist_ok=True)
+        out = segs_folder / f"{Path(img_path).stem}_class_{class_id}.tif"
         tifffile.imwrite(out, mask.astype(np.uint8) * 255, compression='zlib')
         print(f"      ✓ Saved class {class_id}: {mask.sum():,} pixels")
 
     def save_prob_map(class_id, prob_map):
         # Save foreground probability map as float32 TIFF (values in [0.0, 1.0])
-        out = Path(output_folder) / f"{Path(img_path).stem}_class_{class_id}_prob.tif"
+        prob_folder.mkdir(parents=True, exist_ok=True)
+        out = prob_folder / f"{Path(img_path).stem}_class_{class_id}_prob.tif"
         tifffile.imwrite(out, prob_map, compression='zlib')
         print(f"      Saved prob map class {class_id}: min={prob_map.min():.3f}, max={prob_map.max():.3f}")
 
