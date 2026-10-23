@@ -16,6 +16,8 @@ from ..utils.util_widget import (create_output_folder_row, SeedOptionalParamGrou
                                  MainSeedParamWidget, ThresholdWidget,apply_threshold_preview)
 from ..utils.histogram_threshold_widget import HistogramThresholdWidget, append_threshold_row
 from ..utils.boundary_check import boundary_ok
+from ..utils.roi_model import get_roi_model
+from ..utils.roi_widget import RoiReminder
 
 import yaml
 import sys
@@ -28,6 +30,8 @@ if root_dir not in sys.path:
     
 from make_seeds import make_seeds
 from make_adaptive_seed import make_adaptive_seed_thre, make_adaptive_seed_ero
+from sprout_core import roi as R
+from sprout_core.roi import RoiError
 
 class SeedWorker(QThread):
   
@@ -41,10 +45,11 @@ class SeedWorker(QThread):
                     sort=True, no_split_max_iter=3,
                     min_size=5, min_split_ratio=0.01, min_split_total_ratio=0,
                     save_every_iter=True, init_segments=None,last_segments=None,
-                    split_size_limit=(None, None), split_convex_hull_limit=(None, None)
-                    
+                    split_size_limit=(None, None), split_convex_hull_limit=(None, None),
+                    roi=None
                     ):
         super().__init__()
+        self.roi = roi   # sprout_core.roi.Roi or None (whole image)
         ## Parameters for both original and adaptive seed making
         self.seed_mode = seed_mode  # "Original", "Adaptive (Erosion)", "Adaptive (Thresholds)"
         self.img = img
@@ -76,6 +81,9 @@ class SeedWorker(QThread):
         try:
             if self.seed_mode not in ["Original", "Adaptive (Erosion)", "Adaptive (Thresholds)"]:
                 raise ValueError("Invalid seed mode selected.")
+            if self.roi is not None:
+                # ROI as a wall: run on its bbox + 1, outside the ROI counts as boundary
+                self.img, self.boundary, _ = R.wall_inputs(self.roi, self.img, self.boundary)
             if self.seed_mode == "Original":
                 # Call the original seed making function
                 seeds_dict, _ = make_seeds(
@@ -148,11 +156,14 @@ class SeedWorker(QThread):
                     
                     return_for_napari=True
                 )
+            if self.roi is not None:
+                seeds_dict = R.paste_seeds(self.roi, seeds_dict)
+                R.write_sidecar(self.roi, os.path.join(self.output_folder, self.base_name))
             # Emit finished signal with results
             self.finished.emit(seeds_dict)
 
         except Exception as e:
-            self.error.emit(str(e))
+            self.error.emit(("ROI: " if self.roi is not None else "") + str(e))
 
 
 def set_min_size_policy_recursive(widget, min_width=40, max_width=300):
@@ -187,6 +198,8 @@ class SeedGenerationWidget(QWidget):
         self.current_boundary = None
         self.preview_layer = None
         self.seeds_layer = None
+        self._run_roi = None             # ROI and image scale / translate of the running job
+        self._run_layer_kwargs = None
         
         self._init_ui()
         self._connect_signals()
@@ -330,6 +343,9 @@ class SeedGenerationWidget(QWidget):
 
         output_group.setLayout(output_layout)
         layout.addWidget(output_group)
+        
+        self.roi_reminder = RoiReminder(self.viewer)
+        layout.addWidget(self.roi_reminder)
         
         # Execute buttons
         btn_layout = QHBoxLayout()
@@ -516,12 +532,17 @@ class SeedGenerationWidget(QWidget):
         self.threshold_widget.preview_btn.setEnabled(True)  # Re-enable button after processing
     
         
-    def add_labels_layer(self, seeds_dict):
+    def add_labels_layer(self, seeds_dict, roi=None, layer_kwargs=None):
         for seed_name, seed in seeds_dict.items():
+            kwargs = dict(layer_kwargs or {})   # the image's scale / translate
+            if roi is not None:
+                seed_name = R.roi_name(seed_name)
+                kwargs["metadata"] = {R.META_KEY: roi.to_metadata()}
             print(f"Adding seed layer: {seed_name}")
             self.seeds_layer = self.viewer.add_labels(
                 seed,
-                name=seed_name
+                name=seed_name,
+                **kwargs
             )
     
     def generate_seeds(self):
@@ -543,6 +564,14 @@ class SeedGenerationWidget(QWidget):
                     boundary = boundary_layer.data
             if not boundary_ok(self, self.boundary_combo.currentText(), boundary):
                 return
+            try:
+                roi = get_roi_model(self.viewer).roi_for(np.shape(self.current_image))
+            except RoiError as e:
+                show_error(f"ROI: {e}")
+                return
+            image_layer = self.viewer.layers[current_name]
+            self._run_roi = roi
+            self._run_layer_kwargs = {"scale": image_layer.scale, "translate": image_layer.translate}
 
             output_folder = self.output_folder_line.text()
             if not output_folder:
@@ -584,7 +613,7 @@ class SeedGenerationWidget(QWidget):
                 output_folder=output_folder,
                 
                 footprints=main_params['footprints'],
-                base_name= current_name,
+                base_name= R.roi_name(current_name) if roi is not None else current_name,
                 
                 sort=advance_params['sort'],
                 no_split_max_iter=advance_params['no_split_max_iter'],
@@ -595,8 +624,8 @@ class SeedGenerationWidget(QWidget):
                 init_segments=None,  # Add if needed
                 last_segments=None,  # Add if needed
                 split_size_limit = advance_params['split_size_limit'],
-                split_convex_hull_limit = advance_params['split_convex_hull_limit']
-                
+                split_convex_hull_limit = advance_params['split_convex_hull_limit'],
+                roi=roi
             )
             self.worker.finished.connect(self._on_seed_finished)
             self.worker.error.connect(self._on_seed_error)
@@ -697,7 +726,7 @@ class SeedGenerationWidget(QWidget):
         #     self.preview_layer = None
         
         # Add the generated seeds to the viewer
-        self.add_labels_layer(seeds_dict)
+        self.add_labels_layer(seeds_dict, roi=self._run_roi, layer_kwargs=self._run_layer_kwargs)
         
         # Update results label
         self.results_label.setText(f"Seeds generated: {len(seeds_dict)} layers")

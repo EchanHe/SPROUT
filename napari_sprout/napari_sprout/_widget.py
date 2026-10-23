@@ -13,6 +13,7 @@ from .widgets.seed_widget import SeedGenerationWidget
 from .widgets.grow_widget import SeedGrowthWidget
 from .widgets.boundary_widget import BoundaryWidget
 from .utils.sprout_bridge import SPROUTBridge
+from .utils.roi_widget import RoiWidget
 
 from .widgets.info_widget import LayerInfoWidget
 from .widgets.edit_widget import QtLabelSelector
@@ -60,6 +61,10 @@ class SPROUTWidget(QWidget):
         # info_label.setWordWrap(True)
         # info_label.setStyleSheet("QLabel { color: #666; }")
         # layout.addWidget(info_label)
+        
+        # One region of interest for every tab (off by default)
+        self.roi_widget = RoiWidget(self.viewer)
+        layout.addWidget(self.roi_widget)
         
         # Tab widget for workflow steps
         self.tabs = QTabWidget()

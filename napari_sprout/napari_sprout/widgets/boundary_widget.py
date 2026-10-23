@@ -27,12 +27,22 @@ from qtpy.QtWidgets import (
 )
 
 from sprout_core import boundary as B
+from sprout_core import roi as R
+from sprout_core.roi import RoiError
 
 from ..utils.histogram_widget import HistogramRangeWidget
+from ..utils.roi_model import get_roi_model
+from ..utils.roi_widget import RoiReminder
 from ..utils.slice_preview import SlicePreview
 
 PREVIEW_NAME = "Boundary preview"
 META_KEY = "sprout_boundary"
+
+
+def _bbox_inside(roi, outer):
+    """True if roi's bbox lies inside outer's (same image shape); False for roi None."""
+    return (roi is not None and roi.shape == outer.shape
+            and all(a.start >= b.start and a.stop <= b.stop for a, b in zip(roi.bbox(), outer.bbox())))
 
 
 class _Progress(QObject):
@@ -120,6 +130,11 @@ class TophatPanel(QWidget):
     def compute(img, p, device, progress, cancel):
         return B.tophat(img, p["kind"], p["shape"], p["size"], device, progress, cancel)
 
+    @staticmethod
+    def halo(p):
+        """Image context needed around an ROI for an exact result: closing / opening reach 2 * size."""
+        return R.tophat_halo(p["size"])
+
 
 # --------------------------------------------------------------------------
 class BoundaryWidget(QWidget):
@@ -142,6 +157,10 @@ class BoundaryWidget(QWidget):
         self._slice_preview = SlicePreview(napari_viewer, PREVIEW_NAME,
                                            color=(1, 0.15, 0.15, 1), opacity=0.7)
         self._pending_threshold = None
+        # ROI: the response is computed on its bbox + halo; _resp_roi is the ROI the
+        # current response was computed for (None = the whole image)
+        self._roi_model = get_roi_model(napari_viewer)
+        self._resp_roi = None
 
         # Layer changes are handled on the next event-loop turn and coalesced.
         # This also means nothing is started while napari is closing: the timer
@@ -207,6 +226,8 @@ class BoundaryWidget(QWidget):
         form.addRow(self.response_layer_cb)
         l2.addLayout(form)
 
+        self.compute_roi_reminder = RoiReminder(self.viewer, "Computes inside ROI")
+        l2.addWidget(self.compute_roi_reminder)
         row = QHBoxLayout()
         self.compute_btn = QPushButton("Compute")
         self.progress = QProgressBar()
@@ -242,6 +263,9 @@ class BoundaryWidget(QWidget):
         self.use_cb = QCheckBox("Use as boundary in Seeds / Grow")
         self.use_cb.setChecked(True)
         form.addRow(self.use_cb)
+        self.create_roi_reminder = RoiReminder(
+            self.viewer, "Creates inside ROI (the rest of an existing layer is kept)")
+        form.addRow(self.create_roi_reminder)
         row = QHBoxLayout()
         self.create_btn = QPushButton("Create Boundary Layer")
         self.import_btn = QPushButton("Import YAML")
@@ -282,6 +306,7 @@ class BoundaryWidget(QWidget):
         self.input_hist.range_committed.connect(lambda *_: self._on_intensity_range_committed())
         self.resp_hist.range_changed.connect(lambda *_: self._update_preview())
 
+        self._roi_model.changed.connect(self._on_roi_changed)
         self.compute_btn.clicked.connect(self._compute)
         self.stop_btn.clicked.connect(self._stop)
         self.create_btn.clicked.connect(self._create)
@@ -383,21 +408,57 @@ class BoundaryWidget(QWidget):
         self._img = np.asarray(layer.data)
         self.name_edit.setText(f"{name}_boundary")
         self.input_hist.show_message("Computing...")
+        self._compute_input_histogram()
+        self._update_buttons()
+
+    def _compute_input_histogram(self, keep_range=False):
+        """Histogram + default range of the original intensity (inside the ROI if one is set)."""
+        old = None
+        if keep_range:      # ROI changed: keep showing the old one until the new one is ready
+            self._job["hist"] += 1
+            old = self.input_hist.get_bounds() if self.input_hist._ready() else None
         job, img = self._job["hist"], self._img
+        roi = self._display_roi()
 
         def work():
-            counts, edges = B.histogram(img)
-            lo, hi, _, _ = B.default_intensity_range(img)
+            vals = img if roi is None else roi.sample_values(img)
+            counts, edges = B.histogram(vals)
+            lo, hi, _, _ = B.default_intensity_range(vals)
             return counts, edges, lo, hi
 
         def done(res):
             if job != self._job["hist"]:
                 return  # the user picked another image meanwhile
             counts, edges, lo, hi = res
+            if old is not None:
+                lo, hi = old
             self.input_hist.set_data(counts, edges, integer=img.dtype.kind in "ui", lower=lo, upper=hi)
 
         self._run(work, done)
-        self._update_buttons()
+
+    # ----------------------------------------------------------------- ROI
+    def _display_roi(self):
+        return None if self._img is None else self._roi_model.display_roi(self._img.shape)
+
+    def _resp_valid_for(self, roi):
+        """A response is valid for an ROI whose bbox lies inside the bbox it was computed on
+        (a whole-image response is valid for any ROI)."""
+        return self._resp_roi is None or _bbox_inside(roi, self._resp_roi)
+
+    def _on_roi_changed(self):
+        if self._img is None:
+            return
+        roi = self._display_roi()
+        if roi is None and self._roi_model.enabled:
+            return   # on but not usable yet (e.g. no box drawn): keep what is shown
+        self._compute_input_histogram(keep_range=True)
+        if self._computing or self._resp is None:
+            return   # a running Compute checks the ROI when it returns
+        if not self._resp_valid_for(roi):
+            self._reset_response("ROI changed: click Compute")
+            return
+        self._compute_response_histogram(keep_range=True)
+        self._update_preview()
 
     def _on_intensity_range_committed(self):
         if self._resp is None:
@@ -427,6 +488,11 @@ class BoundaryWidget(QWidget):
         if self._img is None:
             show_error("Select an image first")
             return
+        try:
+            roi = self._roi_model.roi_for(self._img.shape)
+        except RoiError as e:
+            show_error(f"ROI: {e}")
+            return
         self._stop()
         self._job["compute"] += 1
         job, img, key = self._job["compute"], self._img, self._current_key()
@@ -448,10 +514,21 @@ class BoundaryWidget(QWidget):
 
         def work():
             t0 = time.perf_counter()
-            resp, info = panel.compute(img, params, device, emit, cancel)
+            if roi is not None:   # on the ROI's bbox + halo; 0 elsewhere
+                resp_bb, info = R.run_local(lambda a: panel.compute(a, params, device, emit, cancel),
+                                            roi, img, panel.halo(params))
+                resp = np.zeros_like(img)
+                resp[roi.bbox()] = resp_bb
+            else:
+                resp, info = panel.compute(img, params, device, emit, cancel)
             info["seconds"] = time.perf_counter() - t0
             if cancel.is_set():
                 raise B.Cancelled()
+            if roi is not None:   # statistics of the voxels inside the ROI (aligned samples)
+                rv, iv = roi.sample_values(resp), roi.sample_values(img)
+                counts, edges = B.histogram(rv, img=iv, lower=ilo, upper=ihi)
+                suggest = B.suggest_threshold(rv, iv, ilo, ihi)
+                return resp, info, counts, edges, suggest
             counts, edges = B.histogram(resp, img=img, lower=ilo, upper=ihi)
             suggest = B.suggest_threshold(resp, img, ilo, ihi)
             return resp, info, counts, edges, suggest
@@ -465,8 +542,14 @@ class BoundaryWidget(QWidget):
             if key != self._current_key():
                 self._reset_response("Parameters changed during computing: click Compute")
                 return
+            now = self._display_roi()
+            usable = now is not None or not self._roi_model.enabled
+            if roi is not None and usable and not _bbox_inside(now, roi):
+                self._reset_response("ROI changed during computing: click Compute")
+                return
             resp, info, counts, edges, suggest = res
             self._resp, self._resp_key = resp, key
+            self._resp_roi = roi
             self._resp_desc = panel.describe(params)
             self._resp_info = info
             dev = "GPU" if info["device"] == "cuda" else "CPU"
@@ -510,8 +593,11 @@ class BoundaryWidget(QWidget):
         ilo, ihi = self._intensity_range()
         old = self.resp_hist.get_bounds()   # keep "no limit" as no limit
         self.resp_hist.show_message("Computing...")
+        roi = self._display_roi()
 
         def work():
+            if roi is not None:
+                return B.histogram(roi.sample_values(resp), img=roi.sample_values(img), lower=ilo, upper=ihi)
             return B.histogram(resp, img=img, lower=ilo, upper=ihi)
 
         def done(res):
@@ -548,6 +634,7 @@ class BoundaryWidget(QWidget):
         lo, hi = self.resp_hist.get_bounds()
         ilo, ihi = self._intensity_range()
         resp, img = self._resp, self._img
+        roi = self._display_roi()
 
         def mask(sl):
             r = resp[sl]
@@ -556,6 +643,8 @@ class BoundaryWidget(QWidget):
                 m &= r <= hi
             if ilo is not None or ihi is not None:
                 m &= B.intensity_mask(img[sl], ilo, ihi)
+            if roi is not None:
+                m &= roi.mask_window(sl)
             return m
 
         m = self._slice_preview.show_slice(mask)
@@ -579,16 +668,31 @@ class BoundaryWidget(QWidget):
         if self._resp is None:
             show_error("Compute first")
             return
+        try:
+            roi = self._roi_model.roi_for(self._img.shape)
+        except RoiError as e:
+            show_error(f"ROI: {e}")
+            return
+        if not self._resp_valid_for(roi):
+            show_error("ROI changed since Compute: click Compute")
+            return
         self._job["create"] += 1
         job, resp, img = self._job["create"], self._resp, self._img
         rec = self._params_record()
         rec["image"] = self._img_layer.name
+        if roi is not None:
+            rec["roi"] = roi.to_metadata()
         lo, hi = rec["threshold_lower"], rec["threshold_upper"]
         ilo, ihi = rec["intensity_lower"], rec["intensity_upper"]
         self.create_btn.setEnabled(False)
         self.create_btn.setText("Creating...")
 
         def work():
+            if roi is not None:   # the ROI's bbox only, 0 outside the ROI
+                bb = roi.bbox()
+                mask = B.threshold_mask(resp[bb], lo, hi, img[bb], ilo, ihi)
+                mask[~roi.mask_crop()] = 0
+                return mask, int(np.count_nonzero(mask))
             mask = B.threshold_mask(resp, lo, hi, img, ilo, ihi)
             return mask, int(np.count_nonzero(mask))
 
@@ -596,6 +700,18 @@ class BoundaryWidget(QWidget):
             if job != self._job["create"]:
                 return
             mask, n = res
+            if roi is not None:
+                if n == 0:
+                    show_error("No voxel inside the ROI is in the threshold range: lower the threshold")
+                elif n == roi.n_voxels:
+                    show_error("Every voxel inside the ROI is in the threshold range: raise the threshold")
+                else:
+                    name = self._add_or_update_output_roi(mask, rec, roi)
+                    self._slice_preview.remove()
+                    show_info(f"Updated '{name}' inside the ROI: {n:,} voxels ({n / roi.n_voxels:.2%} of the ROI)")
+                    if self.use_cb.isChecked():
+                        self.boundary_created.emit(name)
+                return
             if n == 0:
                 show_error("No voxel is in the threshold range: lower the threshold")
                 return
@@ -628,6 +744,29 @@ class BoundaryWidget(QWidget):
                 i += 1
             show_warning(f"A layer named '{base}' already exists; created '{name}'")
         self.viewer.add_labels(mask, name=name, metadata={META_KEY: rec}, **self._layer_kwargs())
+        return name
+
+    def _add_or_update_output_roi(self, mask_bb, rec, roi):
+        """Write the ROI part of the boundary; the rest of our own target layer is kept,
+        so a boundary can be stitched from regions with different thresholds."""
+        name = self.name_edit.text().strip() or f"{self._img_layer.name}_boundary"
+        lay = self.viewer.layers[name] if name in self.viewer.layers else None
+        if isinstance(lay, Labels) and META_KEY in lay.metadata and tuple(lay.data.shape) == roi.shape:
+            data = np.array(lay.data, copy=True)   # workers may still hold the old array
+            parts = list(lay.metadata.get(META_KEY + "_parts", [lay.metadata[META_KEY]]))
+            roi.paste(mask_bb, window=roi.bbox(), base=data, inplace=True, region="roi")
+            lay.data = data
+            lay.metadata = {META_KEY: rec, META_KEY + "_parts": parts + [rec]}
+            return name
+        if lay is not None:                # someone else's layer: never overwrite
+            base, i = name, 1
+            while name in self.viewer.layers:
+                name = f"{base}_{i}"
+                i += 1
+            show_warning(f"A layer named '{base}' already exists; created '{name}'")
+        data = roi.paste(mask_bb, window=roi.bbox(), dtype=np.uint8, region="roi")
+        self.viewer.add_labels(data, name=name, metadata={META_KEY: rec, META_KEY + "_parts": [rec]},
+                               **self._layer_kwargs())
         return name
 
     # ---------------------------------------------------------------- YAML

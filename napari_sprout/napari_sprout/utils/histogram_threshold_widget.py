@@ -25,9 +25,13 @@ from qtpy.QtWidgets import (
 )
 
 from sprout_core import boundary as B
+from sprout_core import roi as R
+from sprout_core.roi import RoiError
 from sprout_core.sprout_core import erosion_binary_img_on_sub, get_ccomps_with_size_order
 
 from .histogram_widget import HistogramRangeWidget
+from .roi_model import get_roi_model
+from .roi_widget import RoiReminder
 from .slice_preview import SlicePreview
 
 PREVIEW_NAME = "Threshold Preview"
@@ -63,19 +67,32 @@ def append_threshold_row(param_widget, lower, upper, default_dilation=5):
         param_widget.populate_thresholds_from_list(lows, ups)
 
 
-def threshold_erode_cc(img, lower=None, upper=None, erosion_steps=0, cc_n=None, cancel=None):
+def threshold_erode_cc(img, lower=None, upper=None, erosion_steps=0, cc_n=None, cancel=None, allowed=None):
     """Same steps as the old 3D preview (util_widget.PreviewWorker):
     threshold -> erosion x n -> keep the cc_n largest connected components.
 
-    lower/upper None = no limit. Returns uint8 (0/1) without CC, else a label image.
+    lower/upper None = no limit. allowed: optional bool mask, voxels outside it
+    act as a wall (ROI). Returns uint8 (0/1) without CC, else a label image.
     """
     binary = B.threshold_mask(img, lower, upper, cancel=cancel).astype(bool)
+    if allowed is not None:
+        binary &= allowed
     for _ in range(erosion_steps):
         binary = erosion_binary_img_on_sub(binary)
     if not cc_n:
         return binary.astype(np.uint8)
     labels, _ = get_ccomps_with_size_order(binary, cc_n)
     return labels.astype(np.uint16 if cc_n < 65536 else np.uint32)
+
+
+def threshold_erode_cc_in_roi(img, roi, lower=None, upper=None, erosion_steps=0, cc_n=None, cancel=None):
+    """threshold_erode_cc with the ROI as a wall, computed on the ROI's bbox + 1.
+
+    Equal to threshold_erode_cc(img, ..., allowed=roi.mask_full()); image-sized, 0 outside the ROI.
+    """
+    res = threshold_erode_cc(roi.crop(img, R.WALL_MARGIN), lower, upper, erosion_steps, cc_n, cancel,
+                             allowed=roi.mask_crop(R.WALL_MARGIN))
+    return roi.paste(res, margin=R.WALL_MARGIN)
 
 
 class HistogramThresholdWidget(QGroupBox):
@@ -99,6 +116,13 @@ class HistogramThresholdWidget(QGroupBox):
         self._hist_timer = QTimer(self)
         self._hist_timer.setSingleShot(True)
         self._hist_timer.timeout.connect(self._start_histogram)
+        # ROI: histogram, live slice and Create Preview Layer only look inside it
+        self._roi_model = get_roi_model(viewer)
+        self._roi_model.changed.connect(self._on_roi_changed)
+        self._hist_roi = None
+        self._auto_range = None
+        self._roi_refresh = False
+        self._slice_roi = False
 
         lay = QVBoxLayout(self)
         self.hist = HistogramRangeWidget()
@@ -134,6 +158,8 @@ class HistogramThresholdWidget(QGroupBox):
             self.use_connected_components_checkbox.toggled.connect(lambda *_: self._refresh_status())
             self.erosion_spin.valueChanged.connect(lambda *_: self._refresh_status())
 
+        self.roi_reminder = RoiReminder(viewer, "Preview inside ROI")
+        lay.addWidget(self.roi_reminder)
         row = QHBoxLayout()
         self.create_btn = QPushButton("Create Preview Layer")
         self.create_btn.setToolTip(
@@ -180,25 +206,41 @@ class HistogramThresholdWidget(QGroupBox):
         if self._img is None:
             return
         job, img = self._job, self._img
+        roi = self._hist_roi = self._roi_model.display_roi(img.shape)
 
         def work():
-            counts, edges = B.histogram(img)
+            vals = img if roi is None else roi.sample_values(img)   # ROI: only voxels inside it
+            counts, edges = B.histogram(vals)
             from skimage.filters import threshold_otsu
-            sub = B.subsample(img)
+            sub = B.subsample(vals)
             return counts, edges, float(threshold_otsu(sub)) if sub.min() < sub.max() else None
 
         def done(res):
-            if job != self._job:
+            if job != self._job or roi is not self._hist_roi:
                 return
             counts, edges, otsu = res
             lo, hi = self._pending or (otsu, None)   # start at Otsu, no upper limit
             self._pending = None
             self.hist.set_data(counts, edges, integer=img.dtype.kind in "ui", lower=lo, upper=hi)
+            self._auto_range = self.hist.get_range() if (lo, hi) == (otsu, None) else None
+            if self._roi_refresh:
+                self._roi_refresh = False
+                self._on_dims()        # redraw the live slice if it is shown
             self._set_enabled(True)
             self.status.setText("Drag the range to preview the current slice"
                                 if self.live_cb.isChecked() else "")
 
         self._run(work, done)
+
+    def _on_roi_changed(self):
+        """New ROI: recompute the histogram inside it; redraw the live slice."""
+        if self._img is None:
+            return
+        if self.hist._ready() and self._pending is None and self.hist.get_range() != self._auto_range:
+            self._pending = self.hist.get_bounds()   # keep the user's range ("no limit" stays)
+        self._roi_refresh = True
+        self._hist_timer.start(0)
+        self._on_dims()                # redraw the live slice if it is shown
 
     def set_range_by_dtype(self, dtype):
         """Compatibility no-op: the range now comes from the data (see set_image)."""
@@ -258,12 +300,17 @@ class HistogramThresholdWidget(QGroupBox):
             return
         lo, hi = self.hist.get_bounds()
         img = self._img
+        roi = self._roi_model.display_roi(img.shape)
+        inside = []
 
         def mask(sl):
             a = img[sl]
             m = np.ones(a.shape, bool) if lo is None else a >= lo
             if hi is not None:
                 m &= a <= hi
+            if roi is not None:
+                inside.append(roi.mask_window(sl))
+                m &= inside[0]
             return m
 
         m = self._preview.show_slice(mask)
@@ -272,13 +319,19 @@ class HistogramThresholdWidget(QGroupBox):
             self.status.setText("Live preview: switch to a 2D view")
             return
         self._last_slice = (int(m.sum()), m.size)
+        self._slice_roi = roi is not None
+        if roi is not None:   # count against the part of the slice inside the ROI
+            self._last_slice = (int(m.sum()), int(inside[0].sum()))
         self._refresh_status()
 
     def _refresh_status(self):
         if not self.live_cb.isChecked() or self._last_slice is None:
             return
         n, size = self._last_slice
-        text = f"Current slice: {n:,} voxels ({n / size:.2%})"
+        if self._slice_roi:
+            text = f"Current slice, inside the ROI: {n:,} voxels ({n / max(size, 1):.2%})"
+        else:
+            text = f"Current slice: {n:,} voxels ({n / size:.2%})"
         if self._uses_3d_ops():
             text += (". Live preview shows the threshold only; "
                      "Create Preview Layer to see erosion / connected components.")
@@ -288,6 +341,11 @@ class HistogramThresholdWidget(QGroupBox):
     def _create_preview_layer(self):
         if self._img is None:
             show_error("Please select an image first")
+            return
+        try:
+            roi = self._roi_model.roi_for(self._img.shape)
+        except RoiError as e:
+            show_error(f"ROI: {e}")
             return
         lo_b, hi_b = self.hist.get_bounds()
         lo, hi = self.get_thresholds()
@@ -300,6 +358,8 @@ class HistogramThresholdWidget(QGroupBox):
         self.create_btn.setText("Creating...")
 
         def work():
+            if roi is not None:
+                return threshold_erode_cc_in_roi(img, roi, lo_b, hi_b, ero, cc_n)
             return threshold_erode_cc(img, lo_b, hi_b, ero, cc_n)
 
         def done(result):
@@ -308,11 +368,15 @@ class HistogramThresholdWidget(QGroupBox):
             base = f"{layer.name}_preview_{lo:g}-{hi:g}"
             base += f"_ero{ero}" if ero else ""
             base += f"_cc{cc_n}" if cc_n else ""
+            if roi is not None:
+                base = R.roi_name(base)
             name, i = base, 1
             while name in self.viewer.layers:
                 name, i = f"{base}_{i}", i + 1
             meta = {"image": layer.name, "lower": lo, "upper": hi,
                     "erosion_steps": ero, "connected_components": cc_n}
+            if roi is not None:
+                meta["roi"] = roi.to_metadata()
             self.viewer.add_labels(result, name=name, scale=layer.scale, translate=layer.translate,
                                    metadata={"sprout_threshold_preview": meta})
             n = int(np.count_nonzero(result))

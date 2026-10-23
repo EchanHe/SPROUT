@@ -17,6 +17,8 @@ from ..utils.util_widget import (create_output_folder_row, GrowOptionalParamGrou
                                  MainGrowParamWidget,apply_threshold_preview,ThresholdWidget)
 from ..utils.histogram_threshold_widget import HistogramThresholdWidget, append_threshold_row
 from ..utils.boundary_check import boundary_ok
+from ..utils.roi_model import get_roi_model
+from ..utils.roi_widget import RoiReminder
 
 import yaml
 import sys
@@ -28,6 +30,8 @@ if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
 from make_grow import grow_mp
+from sprout_core import roi as R
+from sprout_core.roi import RoiError
 
 
 class GrowthWorker(QThread):
@@ -46,9 +50,11 @@ class GrowthWorker(QThread):
                  is_sort = False,
                  to_grow_ids=None,
                  min_growth_size=50,
-                 no_growth_max_iter=3
+                 no_growth_max_iter=3,
+                 roi=None
                  ):
         super().__init__()
+        self.roi = roi   # sprout_core.roi.Roi or None (whole image)
         self.image = image
         self.seeds = seeds
         self.thresholds = thresholds
@@ -74,6 +80,13 @@ class GrowthWorker(QThread):
     def run(self):
         try:
             print(f"Starting growth with {self.n_threads} threads")
+            if self.roi is not None:
+                # ROI as a wall: run on its bbox + 1 with the seeds inside the ROI only;
+                # sorting ids would renumber them inside the ROI only, so it is off
+                full_seeds = self.seeds
+                self.image, self.boundary, self.seeds = R.wall_inputs(
+                    self.roi, self.image, self.boundary, seg=self.seeds)
+                self.is_sort = False
             grows_dict , log_dict = grow_mp(
                 
                 img = self.image,
@@ -106,9 +119,12 @@ class GrowthWorker(QThread):
                 return_for_napari = True
                                    
                 )      
+            if self.roi is not None:   # image-sized; outside the ROI = the input seeds
+                grows_dict = R.paste_grow(self.roi, grows_dict, full_seeds)
+                R.write_sidecar(self.roi, os.path.join(self.output_folder, self.base_name))
             self.finished.emit(grows_dict, log_dict)
         except Exception as e:
-            self.error.emit(str(e))
+            self.error.emit(("ROI: " if self.roi is not None else "") + str(e))
 
 
 
@@ -131,6 +147,9 @@ class SeedGrowthWidget(QWidget):
         self.worker = None
         
         self.previous_image_name = None
+        self._run_roi = None             # ROI and image scale / translate of the running job
+        self._run_layer_kwargs = None
+        self._run_note = ""
         
         self._init_ui()
         self._connect_signals()
@@ -196,6 +215,9 @@ class SeedGrowthWidget(QWidget):
         # Output folder selection
         output_dir_layout, self.output_folder_line = create_output_folder_row()
         layout.addLayout(output_dir_layout)
+
+        self.roi_reminder = RoiReminder(self.viewer)
+        layout.addWidget(self.roi_reminder)
 
         # Control buttons
         btn_layout = QHBoxLayout()
@@ -330,6 +352,14 @@ class SeedGrowthWidget(QWidget):
                 self.current_boundary = self.viewer.layers[self.boundary_combo.currentText()].data
             if not boundary_ok(self, self.boundary_combo.currentText(), self.current_boundary):
                 return
+            try:
+                roi = get_roi_model(self.viewer).roi_for(np.shape(self.current_image))
+            except RoiError as e:
+                show_error(f"ROI: {e}")
+                return
+            image_layer = self.viewer.layers[self.image_combo.currentText()]
+            self._run_roi = roi
+            self._run_layer_kwargs = {"scale": image_layer.scale, "translate": image_layer.translate}
             
             # Get parameters
             # thresholds, upper_thresholds, dilate_iters = self._get_threshold_params()
@@ -354,6 +384,8 @@ class SeedGrowthWidget(QWidget):
 
 
             advance_params = self.advanced_params_box.get_params()
+            self._run_note = (" (Sort IDs is ignored with an ROI)"
+                              if roi is not None and advance_params['is_sort'] else "")
 
             # Create and start worker
             self.worker = GrowthWorker(
@@ -368,13 +400,14 @@ class SeedGrowthWidget(QWidget):
                 upper_thresholds=main_params["upper_thresholds"] if any(u is not None for u in main_params["upper_thresholds"]) else None,
                 boundary= self.current_boundary,
                 touch_rule= main_params['touch_rule'],
-                base_name=self.viewer.layers[self.image_combo.currentText()].name,
+                base_name=R.roi_name(image_layer.name) if roi is not None else image_layer.name,
                 save_every_n_iters= advance_params['save_every_n_iters'],
                 grow_to_end= advance_params['grow_to_end'],
                 is_sort= advance_params['is_sort'],
                 to_grow_ids= advance_params['to_grow_ids'],
                 min_growth_size= advance_params['min_growth_size'],
-                no_growth_max_iter= advance_params['no_growth_max_iter']
+                no_growth_max_iter= advance_params['no_growth_max_iter'],
+                roi=roi
             )
             
             self.worker.progress.connect(self.progress_bar.setValue)
@@ -401,16 +434,22 @@ class SeedGrowthWidget(QWidget):
         # self.growth_result = result
         
         # Add result to viewer
+        roi = self._run_roi
         for key, value in grows_dict.items():
             print(f"{key}: {value.shape}")
+            kwargs = dict(self._run_layer_kwargs or {})   # the image's scale / translate
+            if roi is not None:
+                key = R.roi_name(key)
+                kwargs["metadata"] = {R.META_KEY: roi.to_metadata()}
             self.viewer.add_labels(
                 value,  
-                name=key
+                name=key,
+                **kwargs
             )
         
         # Update UI
         self._reset_ui()
-        self.status_label.setText(f"Growth completed!")
+        self.status_label.setText(f"Growth completed!" + self._run_note)
         # import psutil, os
         # print("MEM (MB):", psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024)
         # Emit signal
