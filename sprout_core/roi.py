@@ -253,16 +253,26 @@ class Roi:
         return out
 
     def sample_values(self, arr, target=15_000_000):
-        """Values of arr inside the ROI, strided to roughly `target` samples of the bbox
-        (like boundary.subsample). The same ROI on arrays of the same shape gives
-        aligned samples, so they can be compared element by element."""
+        """Values of arr inside the ROI, roughly `target` of them (strided like
+        boundary.subsample). The same ROI on arrays of the same shape gives aligned
+        samples, so they can be compared element by element.
+
+        A mask ROI is strided by its voxel count, not its bbox; if the stride grid
+        misses (nearly) all of a sparse mask, every ROI voxel is taken instead
+        (thinned to `target`).
+        """
         crop = self.crop(arr)
-        step = max(1, int(round((max(crop.size, 1) / target) ** (1 / crop.ndim))))
+        basis = crop.size if self.sub_mask is None else self._n_voxels
+        step = max(1, int(round((max(basis, 1) / target) ** (1 / crop.ndim))))
         sl = (slice(None, None, step),) * crop.ndim
         sub = crop[sl]
         if self.sub_mask is None:
             return sub.ravel()
-        return sub[self.sub_mask[sl]]
+        vals = sub[self.sub_mask[sl]]
+        if vals.size < min(self._n_voxels, 1000) and step > 1:
+            vals = crop[self.sub_mask]
+            vals = vals[::max(1, vals.size // target)]
+        return vals
 
     def contains(self, points):
         """Bool per point, (N, ndim) int or float coordinates (rounded)."""
@@ -309,13 +319,16 @@ _EXT = re.compile(r"(\.(?:tif|tiff|png|jpg|jpeg|npy|nii|nii\.gz|h5|zarr))$", re.
 
 
 def roi_name(name):
-    """'x.tif' -> 'x_roi.tif', 'x' -> 'x_roi'; unchanged if '_roi' is already in it."""
-    if "_roi" in name:
-        return name
+    """'x.tif' -> 'x_roi.tif', 'x' -> 'x_roi'; unchanged if the stem already ends in '_roi'.
+
+    Only a trailing '_roi' counts: 'sample_roi1' -> 'sample_roi1_roi', so an ROI run
+    never writes to the folder / layer name of a whole-image run.
+    """
     m = _EXT.search(name)
-    if m:
-        return name[: m.start()] + "_roi" + m.group(1)
-    return name + "_roi"
+    stem, ext = (name[: m.start()], m.group(1)) if m else (name, "")
+    if stem.endswith("_roi"):
+        return name
+    return stem + "_roi" + ext
 
 
 def write_sidecar(roi, folder, margin=WALL_MARGIN, name="roi.json"):

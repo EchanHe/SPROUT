@@ -15,15 +15,18 @@ and display it. napari 0.6.1 limits: a Shapes rectangle lives on one slice, and
 nothing can be drawn in the 3D view.
 """
 import math
+import weakref
 
 import numpy as np
 from napari.layers import Image, Labels
 from napari.utils.notifications import show_info
 from qtpy.QtCore import QTimer
 from qtpy.QtWidgets import (
-    QButtonGroup, QCheckBox, QComboBox, QFormLayout, QGridLayout, QGroupBox, QHBoxLayout,
-    QLabel, QPushButton, QRadioButton, QSpinBox, QStackedWidget, QVBoxLayout, QWidget,
+    QButtonGroup, QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QGridLayout, QGroupBox,
+    QHBoxLayout, QLabel, QPushButton, QRadioButton, QSpinBox, QStackedWidget, QVBoxLayout, QWidget,
 )
+
+from sprout_core.roi import RoiError
 
 from .roi_model import get_roi_model
 
@@ -47,6 +50,14 @@ def _current_index(viewer, ref, ax):
     return int(round(ref.world_to_data(viewer.dims.point)[ax]))
 
 
+def _weak(obj):
+    return None if obj is None else weakref.ref(obj)
+
+
+def _deref(ref):
+    return None if ref is None else ref()
+
+
 # --------------------------------------------------------------------------
 class RoiBoxOverlay:
     """The box as a Shapes rectangle on the current 2D slice.
@@ -54,17 +65,34 @@ class RoiBoxOverlay:
     The layer gets the image's scale / translate / rotate / shear / affine, so its
     data coordinates are the image's voxel indices (anisotropic images included).
     Every programmatic change of the layer runs under `_syncing`, so that only the
-    user's own drawing / editing / deleting reaches the model.
+    user's own drawing / editing / deleting reaches the model. Other layers (the
+    image, the previously active layer) are only held by weak reference.
     """
 
     def __init__(self, viewer, model):
         self.viewer = viewer
         self.model = model
         self.layer = None
-        self.ref = None
+        self._ref = None
         self._syncing = False
-        self._prev_active = None
+        self._prev = None
         self._deleted_by_user = False
+
+    @property
+    def ref(self):
+        return _deref(self._ref)
+
+    @ref.setter
+    def ref(self, layer):
+        self._ref = _weak(layer)
+
+    @property
+    def _prev_active(self):
+        return _deref(self._prev)
+
+    @_prev_active.setter
+    def _prev_active(self, layer):
+        self._prev = _weak(layer)
 
     # ---- layer
     def _alive(self):
@@ -106,6 +134,22 @@ class RoiBoxOverlay:
         if layer is self.layer:
             self.layer = None
             self._deleted_by_user = not self._syncing
+        if layer is self.ref:
+            self.ref = None
+        if layer is self._prev_active:
+            self._prev_active = None
+
+    def remove_layer(self):
+        """Take the overlay out of the viewer (the editor is closing)."""
+        lay, self.layer = self.layer, None
+        try:
+            if lay is not None and lay in self.viewer.layers:
+                self._syncing = True
+                self.viewer.layers.remove(lay)
+        except Exception:
+            pass                     # the viewer is closing too
+        finally:
+            self._syncing = False
 
     # ---- drawing
     def start_draw(self, ref):
@@ -263,12 +307,14 @@ class RoiWidget(QGroupBox):
 
         self.toggled.connect(self._on_toggled)
         self.box_rb.toggled.connect(self._on_kind)
+        # Only Qt signals of the model (which lives with the viewer): when this
+        # widget is deleted, Qt drops the connections, nothing stays behind in napari.
         self.model.changed.connect(self._on_model_changed)
-        self.viewer.layers.events.inserted.connect(lambda e: self._refresh_timer.start(0))
-        self.viewer.layers.events.removed.connect(self._on_layer_removed)
-        self.viewer.dims.events.current_step.connect(lambda e: self._on_dims())
-        self.viewer.dims.events.order.connect(lambda e: self._on_dims())
-        self.viewer.dims.events.ndisplay.connect(lambda e: self._on_dims())
+        self.model.layer_inserted.connect(self._on_layer_inserted)
+        self.model.layer_removed.connect(self._on_layer_removed)
+        self.model.dims_changed.connect(self._on_dims)
+        overlay = self.overlay
+        self.destroyed.connect(lambda *_: overlay.remove_layer())   # the box goes with the panel
         self.refresh_layers()
         self._on_model_changed()
 
@@ -335,9 +381,11 @@ class RoiWidget(QGroupBox):
         grp = QButtonGroup(self)
         grp.addButton(self.all_rb)
         grp.addButton(self.label_rb)
-        self.label_spin = QSpinBox()
-        self.label_spin.setRange(1, 2 ** 31 - 1)
+        self.label_spin = QDoubleSpinBox()          # integer ids up to 2**53, beyond a QSpinBox
+        self.label_spin.setDecimals(0)
+        self.label_spin.setRange(1, 2 ** 53)
         self.label_spin.setValue(1)
+        self.label_spin.setKeyboardTracking(False)  # one value per Enter / focus-out, not per key
         row = QHBoxLayout()
         row.addWidget(self.all_rb)
         row.addWidget(self.label_rb)
@@ -379,7 +427,10 @@ class RoiWidget(QGroupBox):
         self.image_combo.addItems(imgs)
         self.image_combo.setCurrentText(pick)
         self.image_combo.blockSignals(False)
-        self._on_image_changed(self.image_combo.currentText())
+        ref = self._ref()           # automatic choice: never clears a box of another shape
+        if ref is not None and self.model.box_shape in (None, tuple(ref.data.shape)):
+            self.model.set_reference(ref)
+        self._update_axis_rows()
 
         mcur = self.model.mask_layer.name if self.model.mask_layer is not None else self.mask_combo.currentText()
         if mcur not in labs and isinstance(active, Labels):
@@ -393,11 +444,15 @@ class RoiWidget(QGroupBox):
         if self.model.kind == "mask" and self.model.mask_layer is None and self._mask_layer() is not None:
             self._apply_mask()
 
-    def _on_layer_removed(self, event):
-        self.overlay.on_layer_removed(event.value)
+    def _on_layer_inserted(self, layer):
+        self._refresh_timer.start(0)
+
+    def _on_layer_removed(self, layer):
+        self.overlay.on_layer_removed(layer)
         self._refresh_timer.start(0)
 
     def _on_image_changed(self, _name):
+        """The user picked another image (a box of another shape is cleared)."""
         ref = self._ref()
         self.model.set_reference(ref)
         self._update_axis_rows()
@@ -418,7 +473,7 @@ class RoiWidget(QGroupBox):
         if self.model.kind != "mask":
             return
         lay = self._mask_layer()
-        self.model.set_mask(lay, None if self.all_rb.isChecked() else self.label_spin.value())
+        self.model.set_mask(lay, None if self.all_rb.isChecked() else int(self.label_spin.value()))
 
     def _draw(self):
         self.overlay.start_draw(self._ref())
@@ -513,12 +568,18 @@ class RoiWidget(QGroupBox):
 
 # --------------------------------------------------------------------------
 class RoiReminder(QLabel):
-    """One line above a run button: hidden when the ROI is off."""
+    """One line above a run button: hidden when the ROI is off.
 
-    def __init__(self, viewer, text="Runs inside ROI", parent=None):
+    shape: optional callable giving the shape of the tab's image (or None), so a
+    mismatch shows here before a run fails; the tab calls refresh() when its image
+    changes.
+    """
+
+    def __init__(self, viewer, text="Runs inside ROI", parent=None, shape=None):
         super().__init__(parent)
         self.model = get_roi_model(viewer)
         self.text_ = text
+        self.shape = shape
         self.setWordWrap(True)
         self.model.changed.connect(self.refresh)
         self.refresh()
@@ -528,12 +589,18 @@ class RoiReminder(QLabel):
         if not m.enabled:
             self.setVisible(False)
             return
-        err = m.error
+        err, roi = m.error, m.roi
+        shape = self.shape() if self.shape is not None else None
+        if not err and shape is not None:
+            try:
+                roi.check_shape(shape)
+            except RoiError as e:
+                err = str(e)
         if err:
             self.setText(f"ROI is on but cannot be used: {err}")
             self.setStyleSheet(ERROR_STYLE)
         else:
-            self.setText(f"{self.text_}: {m.roi.describe()}")
+            self.setText(f"{self.text_}: {roi.describe()}")
             self.setStyleSheet(ROI_STYLE)
         self.setVisible(True)
 

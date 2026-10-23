@@ -344,7 +344,8 @@ class SeedGenerationWidget(QWidget):
         output_group.setLayout(output_layout)
         layout.addWidget(output_group)
         
-        self.roi_reminder = RoiReminder(self.viewer)
+        self.roi_reminder = RoiReminder(
+            self.viewer, shape=lambda: None if self.current_image is None else np.shape(self.current_image))
         layout.addWidget(self.roi_reminder)
         
         # Execute buttons
@@ -479,6 +480,7 @@ class SeedGenerationWidget(QWidget):
             if isinstance(layer, Image):
                 self.current_image = layer.data
                 self.threshold_widget.set_image(layer)
+                self.roi_reminder.refresh()
        
 
     

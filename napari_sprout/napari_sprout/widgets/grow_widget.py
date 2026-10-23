@@ -216,7 +216,8 @@ class SeedGrowthWidget(QWidget):
         output_dir_layout, self.output_folder_line = create_output_folder_row()
         layout.addLayout(output_dir_layout)
 
-        self.roi_reminder = RoiReminder(self.viewer)
+        self.roi_reminder = RoiReminder(
+            self.viewer, shape=lambda: None if self.current_image is None else np.shape(self.current_image))
         layout.addWidget(self.roi_reminder)
 
         # Control buttons
@@ -291,6 +292,7 @@ class SeedGrowthWidget(QWidget):
             if isinstance(layer, Image):
                 self.current_image = layer.data
             self.threshold_widget.set_image(layer)
+            self.roi_reminder.refresh()
             
     def _toggle_grow_params_visibility(self, state):
         self.advanced_params_box.setVisible(state == Qt.Checked)  
@@ -438,8 +440,7 @@ class SeedGrowthWidget(QWidget):
         for key, value in grows_dict.items():
             print(f"{key}: {value.shape}")
             kwargs = dict(self._run_layer_kwargs or {})   # the image's scale / translate
-            if roi is not None:
-                key = R.roi_name(key)
+            if roi is not None:   # the names already hold the '<image>_roi' base name
                 kwargs["metadata"] = {R.META_KEY: roi.to_metadata()}
             self.viewer.add_labels(
                 value,  

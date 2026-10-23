@@ -118,7 +118,10 @@ class HistogramThresholdWidget(QGroupBox):
         self._hist_timer.timeout.connect(self._start_histogram)
         # ROI: histogram, live slice and Create Preview Layer only look inside it
         self._roi_model = get_roi_model(viewer)
-        self._roi_model.changed.connect(self._on_roi_changed)
+        self._roi_timer = QTimer(self)          # next event-loop turn, like the histogram
+        self._roi_timer.setSingleShot(True)
+        self._roi_timer.timeout.connect(self._on_roi_changed)
+        self._roi_model.changed.connect(self._roi_timer.start)
         self._hist_roi = None
         self._auto_range = None
         self._roi_refresh = False
@@ -158,7 +161,8 @@ class HistogramThresholdWidget(QGroupBox):
             self.use_connected_components_checkbox.toggled.connect(lambda *_: self._refresh_status())
             self.erosion_spin.valueChanged.connect(lambda *_: self._refresh_status())
 
-        self.roi_reminder = RoiReminder(viewer, "Preview inside ROI")
+        self.roi_reminder = RoiReminder(viewer, "Preview inside ROI",
+                                        shape=lambda: None if self._img is None else self._img.shape)
         lay.addWidget(self.roi_reminder)
         row = QHBoxLayout()
         self.create_btn = QPushButton("Create Preview Layer")
@@ -191,6 +195,7 @@ class HistogramThresholdWidget(QGroupBox):
             return
         self._layer = layer
         self._img = None if layer is None else np.asarray(layer.data)
+        self.roi_reminder.refresh()
         self._preview.set_reference(layer)
         self._last_slice = None
         self._job += 1
@@ -213,7 +218,7 @@ class HistogramThresholdWidget(QGroupBox):
             counts, edges = B.histogram(vals)
             from skimage.filters import threshold_otsu
             sub = B.subsample(vals)
-            return counts, edges, float(threshold_otsu(sub)) if sub.min() < sub.max() else None
+            return counts, edges, float(threshold_otsu(sub)) if sub.size and sub.min() < sub.max() else None
 
         def done(res):
             if job != self._job or roi is not self._hist_roi:
@@ -236,6 +241,8 @@ class HistogramThresholdWidget(QGroupBox):
         """New ROI: recompute the histogram inside it; redraw the live slice."""
         if self._img is None:
             return
+        if self._roi_model.display_roi(self._img.shape) is self._hist_roi:
+            return                     # same ROI for this image (e.g. off -> still off)
         if self.hist._ready() and self._pending is None and self.hist.get_range() != self._auto_range:
             self._pending = self.hist.get_bounds()   # keep the user's range ("no limit" stays)
         self._roi_refresh = True

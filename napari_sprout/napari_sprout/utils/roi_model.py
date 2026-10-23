@@ -13,8 +13,14 @@ layer and label) and hands out immutable sprout_core.roi.Roi snapshots:
 listen to it behave exactly as before while the ROI is never used.
 
 A run keeps the Roi it got: later edits make a new snapshot and never change a
-running job. Mask snapshots are computed in the background (pending meanwhile)
-and recomputed, debounced, when the mask layer is painted or replaced.
+running job. Mask snapshots are computed in the background (pending meanwhile,
+one at a time) and recomputed, debounced, when the mask layer is painted or
+replaced. While the ROI is off (or a box), edits of the mask layer only mark the
+snapshot stale; it is recomputed when the mask is in use again.
+
+The model lives as long as its viewer and owns the napari event connections the
+ROI widgets need; it re-emits them as Qt signals (layer_inserted, layer_removed,
+dims_changed), so a closed SPROUT panel leaves no callbacks behind in napari.
 """
 import weakref
 
@@ -41,6 +47,9 @@ def _deref(ref):
 
 class RoiModel(QObject):
     changed = Signal()
+    layer_inserted = Signal(object)    # napari events, re-emitted for widgets
+    layer_removed = Signal(object)
+    dims_changed = Signal()
 
     MASK_DEBOUNCE_MS = 300
 
@@ -57,6 +66,9 @@ class RoiModel(QObject):
         self._mask_roi = None
         self._mask_error = None
         self._pending = False
+        self._stale = False          # mask edited while not in use: recompute when used
+        self._running = False        # a snapshot is being computed
+        self._rerun = False          # ...and another one was asked for meanwhile
         self._job = 0
         self._workers = set()
         self.version = 0
@@ -65,7 +77,10 @@ class RoiModel(QObject):
         self._mask_timer.setSingleShot(True)
         self._mask_timer.setInterval(self.MASK_DEBOUNCE_MS)
         self._mask_timer.timeout.connect(self._start_mask_snapshot)
+        viewer.layers.events.inserted.connect(self._on_layer_inserted)
         viewer.layers.events.removed.connect(self._on_layer_removed)
+        for name in ("current_step", "order", "ndisplay"):
+            getattr(viewer.dims.events, name).connect(self._on_dims)
 
     # ------------------------------------------------------------ state
     @property
@@ -111,11 +126,19 @@ class RoiModel(QObject):
         self.version += 1
         self.changed.emit()
 
+    def _mask_in_use(self):
+        return self._enabled and self._kind == "mask"
+
+    def _refresh_if_stale(self):
+        if self._stale and self._mask_in_use() and self.mask_layer is not None:
+            self._start_mask_snapshot(emit=False)
+
     # ------------------------------------------------------------ setters
     def set_enabled(self, on):
         on = bool(on)
         if on != self._enabled:
             self._enabled = on
+            self._refresh_if_stale()
             self._emit()
 
     def set_kind(self, kind):
@@ -123,13 +146,14 @@ class RoiModel(QObject):
             raise ValueError("kind must be 'box' or 'mask'")
         if kind != self._kind:
             self._kind = kind
+            self._refresh_if_stale()
             self._emit()
 
     def set_reference(self, layer):
-        """Image layer the box is drawn on. A box of another shape is cleared.
-
-        The reference is not part of the ROI itself, so `changed` only fires
-        when the box is cleared.
+        """Image layer the box is drawn on (the user picked it). A box of another
+        shape is cleared. The reference is not part of the ROI itself, so `changed`
+        only fires when the box is cleared. The editor does not call this for its
+        automatic image choice, so removing the reference image keeps the box.
         """
         if layer is self.reference:
             return
@@ -166,9 +190,10 @@ class RoiModel(QObject):
         self._mask_roi = None
         self._mask_error = None
         self._mask_timer.stop()
+        self._stale = False
         if layer is None:
             self._job += 1
-            self._pending = False
+            self._pending = self._rerun = False
         else:
             if old is not layer:
                 layer.events.data.connect(self._on_mask_edited)
@@ -188,6 +213,12 @@ class RoiModel(QObject):
 
     # ------------------------------------------------------- mask snapshot
     def _on_mask_edited(self, event=None):
+        if not self._mask_in_use():       # nobody uses the mask now: compute it when they do
+            self._mask_timer.stop()
+            self._job += 1
+            self._pending = self._rerun = False
+            self._stale = True
+            return
         self._mask_timer.start()          # debounce painting
         if not self._pending:
             self._pending = True
@@ -197,9 +228,19 @@ class RoiModel(QObject):
         layer = self.mask_layer
         if layer is None:
             return
-        self._job += 1
-        job, data, label, name = self._job, layer.data, self._label, layer.name
+        if not self._mask_in_use():
+            self._stale = True
+            self._pending = False
+            return
+        self._stale = False
         was_pending, self._pending = self._pending, True
+        self._job += 1
+        if self._running:                 # one full-size snapshot at a time
+            self._rerun = True
+            if emit and not was_pending:
+                self._emit()
+            return
+        job, data, label, name = self._job, layer.data, self._label, layer.name
 
         def work():
             return Roi.from_mask(np.asarray(data), label=label, name=name)
@@ -215,24 +256,40 @@ class RoiModel(QObject):
                 self._mask_error = f"cannot use mask '{name}': {type(e).__name__}: {e}"
                 self._emit()
 
+        def finished():
+            self._workers.discard(w)
+            self._running = False
+            if self._rerun:
+                self._rerun = False
+                self._start_mask_snapshot(emit=False)
+
         w = thread_worker(work, ignore_errors=True)()
         w.returned.connect(done)
         w.errored.connect(failed)
         self._workers.add(w)
-        w.finished.connect(lambda: self._workers.discard(w))
+        w.finished.connect(finished)
+        self._running = True
         w.start()
         if emit and not was_pending:
             self._emit()
+
+    def _on_layer_inserted(self, event):
+        self.layer_inserted.emit(event.value)
+
+    def _on_dims(self, event=None):
+        self.dims_changed.emit()
 
     def _on_layer_removed(self, event):
         lay = event.value
         if lay is self.mask_layer:
             self._job += 1
             self._mask_timer.stop()
-            self._pending = False
-            self._emit()
+            self._pending = self._rerun = False
+            if self._mask_in_use():
+                self._emit()
         elif lay is self.reference:
             self._ref = None             # the box itself stays valid
+        self.layer_removed.emit(lay)
 
     def _mask_present(self):
         lay, viewer = self.mask_layer, self.viewer
@@ -250,7 +307,7 @@ class RoiModel(QObject):
                 raise RoiError("no mask layer chosen")
             if not self._mask_present():
                 raise RoiError(f"mask layer '{self._mask_name}' was removed")
-            if self._pending:
+            if self._pending or self._stale:
                 raise RoiError("ROI mask is still being computed")
             if self._mask_error:
                 raise RoiError(self._mask_error)

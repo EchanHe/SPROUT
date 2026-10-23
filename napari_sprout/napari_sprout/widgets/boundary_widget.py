@@ -161,6 +161,7 @@ class BoundaryWidget(QWidget):
         # current response was computed for (None = the whole image)
         self._roi_model = get_roi_model(napari_viewer)
         self._resp_roi = None
+        self._input_roi = None       # the ROI the input histogram was computed for
 
         # Layer changes are handled on the next event-loop turn and coalesced.
         # This also means nothing is started while napari is closing: the timer
@@ -168,6 +169,9 @@ class BoundaryWidget(QWidget):
         self._refresh_timer = QTimer(self)
         self._refresh_timer.setSingleShot(True)
         self._refresh_timer.timeout.connect(self.refresh_layers)
+        self._roi_timer = QTimer(self)     # ROI changes too (nothing starts while closing)
+        self._roi_timer.setSingleShot(True)
+        self._roi_timer.timeout.connect(self._on_roi_changed)
 
         self._build_ui()
         self._connect()
@@ -226,7 +230,8 @@ class BoundaryWidget(QWidget):
         form.addRow(self.response_layer_cb)
         l2.addLayout(form)
 
-        self.compute_roi_reminder = RoiReminder(self.viewer, "Computes inside ROI")
+        img_shape = lambda: None if self._img is None else self._img.shape  # noqa: E731
+        self.compute_roi_reminder = RoiReminder(self.viewer, "Computes inside ROI", shape=img_shape)
         l2.addWidget(self.compute_roi_reminder)
         row = QHBoxLayout()
         self.compute_btn = QPushButton("Compute")
@@ -264,7 +269,7 @@ class BoundaryWidget(QWidget):
         self.use_cb.setChecked(True)
         form.addRow(self.use_cb)
         self.create_roi_reminder = RoiReminder(
-            self.viewer, "Creates inside ROI (the rest of an existing layer is kept)")
+            self.viewer, "Creates inside ROI (the rest of an existing layer is kept)", shape=img_shape)
         form.addRow(self.create_roi_reminder)
         row = QHBoxLayout()
         self.create_btn = QPushButton("Create Boundary Layer")
@@ -306,7 +311,7 @@ class BoundaryWidget(QWidget):
         self.input_hist.range_committed.connect(lambda *_: self._on_intensity_range_committed())
         self.resp_hist.range_changed.connect(lambda *_: self._update_preview())
 
-        self._roi_model.changed.connect(self._on_roi_changed)
+        self._roi_model.changed.connect(self._roi_timer.start)
         self.compute_btn.clicked.connect(self._compute)
         self.stop_btn.clicked.connect(self._stop)
         self.create_btn.clicked.connect(self._create)
@@ -406,6 +411,8 @@ class BoundaryWidget(QWidget):
 
         self._img_layer = layer
         self._img = np.asarray(layer.data)
+        for r in (self.compute_roi_reminder, self.create_roi_reminder):
+            r.refresh()
         self.name_edit.setText(f"{name}_boundary")
         self.input_hist.show_message("Computing...")
         self._compute_input_histogram()
@@ -418,12 +425,12 @@ class BoundaryWidget(QWidget):
             self._job["hist"] += 1
             old = self.input_hist.get_bounds() if self.input_hist._ready() else None
         job, img = self._job["hist"], self._img
-        roi = self._display_roi()
+        roi = self._input_roi = self._display_roi()
 
         def work():
             vals = img if roi is None else roi.sample_values(img)
             counts, edges = B.histogram(vals)
-            lo, hi, _, _ = B.default_intensity_range(vals)
+            lo, hi, _, _ = B.default_intensity_range(vals) if vals.size else (None, None, None, None)
             return counts, edges, lo, hi
 
         def done(res):
@@ -451,6 +458,8 @@ class BoundaryWidget(QWidget):
         roi = self._display_roi()
         if roi is None and self._roi_model.enabled:
             return   # on but not usable yet (e.g. no box drawn): keep what is shown
+        if roi is self._input_roi:
+            return   # nothing changed for this image (e.g. off -> still off)
         self._compute_input_histogram(keep_range=True)
         if self._computing or self._resp is None:
             return   # a running Compute checks the ROI when it returns
@@ -527,7 +536,7 @@ class BoundaryWidget(QWidget):
             if roi is not None:   # statistics of the voxels inside the ROI (aligned samples)
                 rv, iv = roi.sample_values(resp), roi.sample_values(img)
                 counts, edges = B.histogram(rv, img=iv, lower=ilo, upper=ihi)
-                suggest = B.suggest_threshold(rv, iv, ilo, ihi)
+                suggest = B.suggest_threshold(rv, iv, ilo, ihi) if rv.size else None
                 return resp, info, counts, edges, suggest
             counts, edges = B.histogram(resp, img=img, lower=ilo, upper=ihi)
             suggest = B.suggest_threshold(resp, img, ilo, ihi)
