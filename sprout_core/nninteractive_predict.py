@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import TypedDict, Literal, Optional, Union, Dict, Tuple
 from nnInteractive.inference.inference_session import nnInteractiveInferenceSession
 from sprout_core.sprout_prompt_core import seed_to_point_prompts_nninteractive
+from sprout_core.nni_engine import make_session
+from sprout_core.sprout_core import label_dtype
 import os, sys
 import yaml
 import sprout_core.config_core as config_core
@@ -31,7 +33,8 @@ def parse_point_config(optional_params):
 def nninter_main_from_prompts(model_path, img_path,output_folder,
                  df_pt_path = None, scribble_mask_path = None,
                  
-                 return_per_class_masks: bool = False):
+                 return_per_class_masks: bool = False,
+                 device = None):
     """
     Main function for nnInteractive prediction with point prompts.
     
@@ -42,6 +45,7 @@ def nninter_main_from_prompts(model_path, img_path,output_folder,
         scribble_mask_path: Path to scribble mask image
         output_folder: Folder to save output segmentation
         return_per_class_masks: Whether to save individual class masks
+        device: "cuda" / "cpu" / torch.device; None = cuda if available else cpu
     
     Returns:
         total_mask or (total_mask, per_class_masks)
@@ -69,16 +73,13 @@ def nninter_main_from_prompts(model_path, img_path,output_folder,
     
     # 1. Initialize session
     print("\n[1/4] Initializing model...")
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    if device is None:
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    device = torch.device(device)
     print(f"      Device: {device}")
     
-    session = nnInteractiveInferenceSession(
-        device=device,
-        verbose=False,
-        use_torch_compile=False,
-        do_autozoom=True,
-        use_pinned_memory=True
-    )
+    # keyword arguments filtered for the installed nnInteractive (2.x has no use_pinned_memory)
+    session = make_session(device, use_pinned_memory=True)
     
     try:
         session.initialize_from_trained_model_folder(model_path)
@@ -142,15 +143,15 @@ def nninter_main_from_prompts(model_path, img_path,output_folder,
     
     # 4. Run prediction
     print("\n[4/4] Running prediction...")
-    if return_per_class_masks:
-        total_mask, per_class_masks = nninter_predict(
-            session, img, df_pt, scribble_mask, return_per_class_masks=True
-        )
-    else:
-        total_mask = nninter_predict(
-            session, img, df_pt, scribble_mask, return_per_class_masks=False
-        )
-        per_class_masks = None
+    per_class_masks = {} if return_per_class_masks else None
+
+    def collect_class_mask(class_id, mask):
+        per_class_masks[int(class_id)] = mask
+
+    total_mask = nninter_predict(
+        session, img, df_pt=df_pt, scribble_mask=scribble_mask,
+        on_class_predicted=collect_class_mask if return_per_class_masks else None
+    )
     
     # Save results
     print("\n      Saving results...")
@@ -254,13 +255,8 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
     device = torch.device(device)
     print(f"      Device: {device}")
     
-    session = nnInteractiveInferenceSession(
-        device=device,
-        verbose=False,
-        use_torch_compile=False,
-        do_autozoom=True,
-        use_pinned_memory=False
-    )
+    # keyword arguments filtered for the installed nnInteractive (2.x has no use_pinned_memory)
+    session = make_session(device, use_pinned_memory=False)
     
     try:
         session.initialize_from_trained_model_folder(model_path)
@@ -469,8 +465,6 @@ def nninter_predict(
     # Set image
     session.set_image(img.astype(np.float32))
     
-    # Initialize output
-    total_mask = np.zeros(img.shape[1:], dtype=np.uint8)
     # per_class_masks = {}
     
     # Collect all class IDs from both sources
@@ -486,6 +480,9 @@ def nninter_predict(
     
     # Sort class IDs (reversed order for better results)
     class_ids = sorted(class_ids, reverse=True)
+
+    # Initialize output (dtype by the largest class id: ids > 255 must not wrap)
+    total_mask = np.zeros(img.shape[1:], dtype=label_dtype(int(class_ids[0]) if class_ids else 0))
     
     print(f"      Processing {len(class_ids)} classes: {class_ids}")
     
