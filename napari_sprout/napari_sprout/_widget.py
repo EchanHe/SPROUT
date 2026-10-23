@@ -12,6 +12,7 @@ import numpy as np
 from .widgets.seed_widget import SeedGenerationWidget
 from .widgets.grow_widget import SeedGrowthWidget
 from .widgets.boundary_widget import BoundaryWidget
+from .widgets.prompt_tab import PromptTab
 from .utils.sprout_bridge import SPROUTBridge
 from .utils.roi_widget import RoiWidget
 
@@ -72,11 +73,13 @@ class SPROUTWidget(QWidget):
         # Create widgets for each step
         self.seed_widget = SeedGenerationWidget(self.viewer)
         self.grow_widget = SeedGrowthWidget(self.viewer)
+        self.prompt_tab = PromptTab(self.viewer)
         self.boundary_widget = BoundaryWidget(self.viewer)
 
         # Add tabs
         self.tabs.addTab(self.seed_widget, "1. Generate Seeds")
         self.tabs.addTab(self.grow_widget, "2. Grow Seeds")
+        self.tabs.addTab(self.prompt_tab, "Prompt (AI)")
         self.tabs.addTab(self.boundary_widget, "Boundary")
         
         layout.addWidget(self.tabs)
