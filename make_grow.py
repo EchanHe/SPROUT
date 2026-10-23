@@ -1,6 +1,10 @@
 # import nibabel as nib
 import os, sys
-from skimage.morphology import ball
+import itertools
+from collections import deque
+from concurrent.futures import ThreadPoolExecutor
+from scipy import ndimage as ndi
+from skimage.morphology import ball, disk, binary_dilation
 import tifffile
 from datetime import datetime
 import yaml
@@ -23,7 +27,7 @@ lock = threading.Lock()
 # Function to recursively create global variables from the config dictionary
             
 
-def grow_function(result, threshold_binary, label_id_list,touch_rule,non_bg_mask):
+def grow_function(result, threshold_binary, label_id_list,touch_rule,non_bg_mask, allowed=None):
     """
     Perform the growth operation for each label ID in the label ID list.
 
@@ -35,6 +39,9 @@ def grow_function(result, threshold_binary, label_id_list,touch_rule,non_bg_mask
     """
     for label_id in label_id_list:
         dilated_binary_label_id = (result ==label_id)
+        if allowed is not None:
+            # only label voxels inside the allowed region (threshold, not boundary) grow
+            dilated_binary_label_id &= allowed
         dilated_binary_label_id = sprout_core.dilation_binary_img_on_sub(dilated_binary_label_id, 
                                                                     margin = 2, kernal_size = 1)
 
@@ -66,7 +73,47 @@ def grow_function(result, threshold_binary, label_id_list,touch_rule,non_bg_mask
             # result[dilated_binary_label_id & threshold_binary] = label_id  
             result[dilated_binary_label_id] = label_id  
 
-def dilation_one_iter_mp(input_mask, threshold_binary, 
+def _write_mask_stop(input_mask, label_id, bb, footprint, allowed=None):
+    """Voxels that `label_id` writes in one 'stop' iteration, inside bounding box `bb`.
+
+    Same as grow_function on its single-threaded path: dilate the label by one voxel,
+    minus the voxels that belonged to ANOTHER label at the start of the iteration.
+    It depends only on `input_mask` (the start-of-iteration state), not on what other
+    labels write during the iteration, so labels can be computed in parallel.
+
+    allowed: bool mask of bb's shape. Only label voxels inside it are dilated, so a
+    seed voxel outside the threshold range or on the boundary cannot grow out (a seed
+    sitting on a thin boundary or a dark gap used to grow to both sides).
+    """
+    sub = input_mask[bb]
+    own = sub == label_id
+    dilated = binary_dilation(own if allowed is None else own & allowed, footprint)
+    taken_by_others = (sub != 0) & ~own
+    return dilated & ~taken_by_others
+
+
+def _compute_parallel_write_in_order(task, label_ids, num_threads, result):
+    """Run task(label_id) -> (label_id, bb, write_mask) on a thread pool, but apply the
+    writes to `result` strictly in the order of `label_ids`.
+
+    With touch_rule='stop' this reproduces the single-threaded result exactly, for any
+    number of threads: two labels competing for the same new voxel -> the one written
+    later (higher id) keeps it, as in the sequential loop. A small window of pending
+    tasks bounds the memory held by finished-but-not-yet-written masks.
+    """
+    workers = max(1, int(num_threads or 1))
+    ids = iter(list(label_ids))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        pending = deque(pool.submit(task, lid) for lid in itertools.islice(ids, 2 * workers))
+        while pending:
+            label_id, bb, write = pending.popleft().result()
+            result[bb][write] = label_id
+            nxt = next(ids, None)
+            if nxt is not None:
+                pending.append(pool.submit(task, nxt))
+
+
+def dilation_one_iter_mp(input_mask, threshold_binary,
                             num_threads,
                              touch_rule = 'stop',
                              to_grow_ids = None,
@@ -87,43 +134,46 @@ def dilation_one_iter_mp(input_mask, threshold_binary,
     """
 
 
-    unique_ids = np.unique(input_mask)
-    # remove the background id
-    unique_ids = unique_ids[unique_ids!=0]        
-    if to_grow_ids is not None:
-        label_id_list = np.intersect1d(unique_ids, to_grow_ids)
-    else:
-        label_id_list = unique_ids
-
-    
-    result = input_mask.copy()  
-    # Create sublists and start multi-threading
-    sublists = [label_id_list[i::num_threads] for i in range(num_threads)]
-    # Create a list to hold the threads
-    threads = []
-    
-    if touch_rule == 'stop':
-        non_bg_mask = (result != 0)
-    elif touch_rule == 'overwrite':
-        non_bg_mask = None
-    else:
+    if touch_rule not in ('stop', 'overwrite'):
         raise ValueError(f"Unknown touch_rule: {touch_rule}. Must be 'stop' or 'overwrite'.")
-    
-    for sublist in sublists:
-        # print(f"Processing sublist {sublist}")
-        
-        thread = threading.Thread(target=grow_function, args=(result, 
-                                                              threshold_binary,
-                                                              sublist,
-                                                              touch_rule,
-                                                              non_bg_mask))
-        threads.append(thread)
-        thread.start()
-        
-    # Wait for all threads to complete
-    for thread in threads:
-        thread.join()
-     
+
+    # One pass gives every label's bounding box (and which labels exist), instead of
+    # np.unique plus three full-volume comparisons per label.
+    objects = ndi.find_objects(input_mask)
+    present = [i + 1 for i, s in enumerate(objects) if s is not None]
+    if to_grow_ids is not None:
+        label_id_list = np.intersect1d(present, to_grow_ids)
+    else:
+        label_id_list = present
+
+    result = input_mask.copy()
+    non_bg_mask = (result != 0) if touch_rule == 'stop' else None
+
+    if touch_rule == 'stop':
+        # Labels are computed in parallel from the start-of-iteration state and written in
+        # ascending id order: deterministic and identical to the single-threaded result.
+        # (The old version let threads read `result` while others were writing to it, so
+        # contested voxels went to whichever thread was faster.)
+        footprint = ball(1) if input_mask.ndim == 3 else disk(1)
+        shape = input_mask.shape
+
+        def task(label_id):
+            box = objects[int(label_id) - 1]
+            bb = tuple(slice(max(s.start - 1, 0), min(s.stop + 1, n)) for s, n in zip(box, shape))
+            allowed = np.asarray(threshold_binary[bb], bool)
+            if boundary is not None:
+                allowed = allowed & np.logical_not(boundary[bb])
+            return label_id, bb, _write_mask_stop(input_mask, label_id, bb, footprint, allowed)
+
+        _compute_parallel_write_in_order(task, label_id_list, num_threads, result)
+    else:
+        # 'overwrite': a label may overwrite another label's original voxels, so each label
+        # depends on the ones processed before it. Keep the sequential algorithm.
+        allowed = np.asarray(threshold_binary, bool)
+        if boundary is not None:
+            allowed = allowed & np.logical_not(boundary)
+        grow_function(result, threshold_binary, label_id_list, touch_rule, non_bg_mask, allowed)
+
     
     if boundary is not None:
         result[boundary] = 0
@@ -355,12 +405,10 @@ def grow_mp(**kwargs):
 
     # create the result array
     # If the input mask has more than 65535 ids, convert it to uint16
-    result = seg.copy()
-    if np.unique(result).size > 255:
-        print("Input mask has more than 65535 ids, converting to uint16")
-        result = result.astype('uint16')
-    else:
-        result = result.astype('uint8')
+    # Pick the dtype from the largest label id, not from the number of labels:
+    # ids {7, 300} used to be cast to uint8, turning 300 into 44 (and merging it
+    # with an existing label 44). uint8 is still used whenever every id fits.
+    result = sprout_core.cast_labels(seg, np.uint8)
         
     # Iterate through and make growth results
     for i, (threshold ,upper_threshold,dilate_iter) in enumerate(zip(thresholds , upper_thresholds,dilation_steps)):
