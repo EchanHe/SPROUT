@@ -18,7 +18,8 @@ from .widgets.info_widget import LayerInfoWidget
 from .widgets.edit_widget import QtLabelSelector
 from .widgets.map_widget import LabelMapperWidget
 from .widgets.tools_widget import SPROUTToolWidget
-from .widgets.prompt_widget import SproutPromptWidget
+# SproutPromptWidget is imported where it is used: its module imports torch / SAM at
+# import time, which would make every SPROUT panel load them.
 
 class SPROUTWidget(QWidget):
     """Main SPROUT widget containing all workflow steps."""
@@ -285,6 +286,8 @@ def make_sprout_widget_prompt(viewer: "napari.viewer.Viewer" = None):
         viewer = napari.current_viewer()
         if viewer is None:
             raise RuntimeError("No napari viewer found")
+
+    from .widgets.prompt_widget import SproutPromptWidget
 
     widget = SproutPromptWidget(viewer)
     # Ensure widget is visible
