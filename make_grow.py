@@ -493,8 +493,8 @@ def grow_mp(**kwargs):
                 print(f"\tIter:{i_dilate}. Last Input size = {input_size} and Output_size = {output_size}")
 
                 
-                # Early stopping conditions
-                if count_below_threshold >= no_growth_max_iter:
+                # Early stopping conditions (no_growth_max_iter=None: early stop is off)
+                if is_early_stop:
                     print(f"\tNot growing for {no_growth_max_iter} iters\nBreaking at iteration {i_dilate} with Input size = {input_size} and Output_size = {output_size}")
                     break
                 # If grow to end, check if the size is similar to the threshold size
