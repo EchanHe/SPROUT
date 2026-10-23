@@ -171,21 +171,59 @@ def empty_points_df():
     })
 
 
+_STATS_CHUNK = 1 << 21          # voxels per chunk in class_stats (bounds the temporaries)
+
+
 def class_stats(seg, allowed=None):
     """Voxels per non-zero class id (optionally only where `allowed`).
 
     Returns DataFrame[class_id, voxels] sorted by id, classes with 0 voxels left out.
+    Counted in chunks along the first axis, so no full-size temporary is made.
     """
-    vals = seg[allowed] if allowed is not None else seg.ravel()
-    max_id = int(vals.max()) if vals.size else 0
-    if vals.size and int(vals.min()) < 0:
+    seg = np.asarray(seg)
+    if allowed is not None:
+        allowed = np.asarray(allowed, dtype=bool)
+        if allowed.shape != seg.shape:
+            raise ValueError(f"allowed shape {allowed.shape} must match seeds shape {seg.shape}")
+    if seg.ndim == 0 or seg.size == 0:
+        return pd.DataFrame({'class_id': np.zeros(0, np.int64), 'voxels': np.zeros(0, np.int64)})
+    if seg.ndim == 1:
+        seg = seg[None]
+        allowed = None if allowed is None else allowed[None]
+    per_row = max(1, int(np.prod(seg.shape[1:])))
+    step = max(1, _STATS_CHUNK // per_row)
+    chunks = [slice(i, min(i + step, seg.shape[0])) for i in range(0, seg.shape[0], step)]
+
+    def vals(sl):
+        v = seg[sl]
+        return v[allowed[sl]] if allowed is not None else v.ravel()
+
+    lo, hi = None, None
+    for sl in chunks:
+        v = vals(sl)
+        if v.size:
+            lo = int(v.min()) if lo is None else min(lo, int(v.min()))
+            hi = int(v.max()) if hi is None else max(hi, int(v.max()))
+    if hi is None:
+        return pd.DataFrame({'class_id': np.zeros(0, np.int64), 'voxels': np.zeros(0, np.int64)})
+    if lo < 0:
         raise ValueError("label ids must be non-negative")
-    if max_id < 2 ** 20:
-        counts = np.bincount(vals.astype(np.intp, copy=False), minlength=max_id + 1)
+    if hi < 2 ** 20:
+        counts = np.zeros(hi + 1, np.int64)
+        for sl in chunks:
+            v = vals(sl)
+            if v.size:
+                counts += np.bincount(v.astype(np.intp, copy=False), minlength=hi + 1)
         ids = np.nonzero(counts)[0]
         counts = counts[ids]
     else:
-        ids, counts = np.unique(vals, return_counts=True)
+        acc = {}
+        for sl in chunks:
+            u, n = np.unique(vals(sl), return_counts=True)
+            for a, b in zip(u.tolist(), n.tolist()):
+                acc[a] = acc.get(a, 0) + b
+        ids = np.array(sorted(acc), dtype=np.int64)
+        counts = np.array([acc[i] for i in ids.tolist()], dtype=np.int64)
     keep = ids != 0
     return pd.DataFrame({'class_id': ids[keep].astype(np.int64),
                          'voxels': counts[keep].astype(np.int64)})

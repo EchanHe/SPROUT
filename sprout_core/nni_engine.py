@@ -312,12 +312,17 @@ class NniEngine(PromptEngine):
         if key is not None and key == self._image_key and self._shape == img3d.shape:
             return False
         lo, hi = [0, 0, 0], list(img3d.shape)
-        for ax in range(3):
-            nz = np.flatnonzero(np.any(img3d != 0, axis=tuple(a for a in range(3) if a != ax)))
-            if not len(nz):
-                raise PromptEngineError("the image (crop) is entirely zero")
-            if self._major is not None and self._major < 2:
+        if self._major is not None and self._major < 2:
+            # 1.x crops the image to its nonzero box: points outside it cannot be used
+            nonzero = img3d != 0
+            for ax in range(3):
+                nz = np.flatnonzero(np.any(nonzero, axis=tuple(a for a in range(3) if a != ax)))
+                if not len(nz):
+                    raise PromptEngineError("the image (crop) is entirely zero")
                 lo[ax], hi[ax] = int(nz[0]), int(nz[-1]) + 1
+            del nonzero
+        elif not img3d.any():
+            raise PromptEngineError("the image (crop) is entirely zero")
 
         def work():
             arr = img3d if (self._major or 2) >= 2 else img3d.astype(np.float32)
@@ -406,6 +411,7 @@ class NniEngine(PromptEngine):
             return self._read_buffer()
 
         self.active = None
+        self.state_token += 1
         try:
             mask = self._run(work)
         except Exception as e:

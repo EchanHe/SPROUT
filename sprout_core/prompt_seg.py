@@ -113,6 +113,7 @@ class ClassResult:
     n_points: int = 0             # points given to the model
     n_dropped: int = 0            # points outside ROI / crop / model's valid region
     mask_key: Any = None          # hash of the mask prompts (initial mask / scribbles); None: none
+    state_token: Any = None       # engine.state_token right after this result was predicted
 
     def full_mask_in(self, window):
         """This class's mask over `window` (tuple of slices with explicit start/stop)."""
@@ -289,27 +290,37 @@ class ResultStore:
         out = np.zeros(tuple(max(s.stop - s.start, 0) for s in window), dtype)
         if not self.results or _empty(window):
             return out
-        count = np.zeros(out.shape, np.uint16)
         hits = []
         for c in sorted(self.results, reverse=True):       # descending: smaller id wins
             r = self.results[c]
             inter = _intersect(r.slices, window)
             if inter is None:
                 continue
-            m = r.mask[_shift(inter, r.slices)]
-            w = _shift(inter, window)
-            out[w][m] = c
-            count[w] += m
-            hits.append(c)
+            out[_shift(inter, window)][r.mask[_shift(inter, r.slices)]] = c
+            hits.append((c, inter))
         if rule == "min_id":
             return out
-        contested = count > 1
-        cb = _tight_bbox(contested)
+        # Contested voxels can only lie where two bounding boxes overlap: count claims only there.
+        cb = None
+        for reg in _overlap_regions(hits):
+            count = np.zeros(tuple(s.stop - s.start for s in reg), np.uint16)
+            for c, inter in hits:
+                ii = _intersect(inter, reg)
+                if ii is not None:
+                    r = self.results[c]
+                    count[_shift(ii, reg)] += r.mask[_shift(ii, r.slices)]
+            tb = _tight_bbox(count > 1)
+            del count
+            if tb is not None:
+                tb = tuple(slice(t.start + g.start, t.stop + g.start) for t, g in zip(tb, reg))
+                cb = _union(cb, tb)
         if cb is None:
             return out
-        sub = tuple(slice(s.start + w.start, s.stop + w.start) for s, w in zip(cb, window))   # full coords
+        sub = cb                                                # full coords
         claims = {}
-        for c in hits:
+        for c, inter in hits:
+            if _intersect(inter, sub) is None:
+                continue
             m = self.results[c].full_mask_in(sub)
             if m.any():
                 claims[c] = m
@@ -319,21 +330,51 @@ class ResultStore:
             any_claim = np.zeros(lab.shape, bool)
             for m in claims.values():
                 any_claim |= m
-            view = out[cb]
+            view = out[_shift(sub, window)]
             view[any_claim] = lab[any_claim].astype(dtype, copy=False)
         return out
 
     def overlap_voxels(self):
         """Number of voxels claimed by more than one stored class."""
-        reg = self.bbox()
-        if reg is None or len(self.results) < 2:
-            return 0
-        count = np.zeros(tuple(s.stop - s.start for s in reg), np.uint16)
-        for r in self.results.values():
-            inter = _intersect(r.slices, reg)
-            if inter is not None:
-                count[_shift(inter, reg)] += r.mask[_shift(inter, r.slices)]
-        return int((count > 1).sum())
+        hits = [(c, r.slices) for c, r in self.results.items() if not _empty(r.slices)]
+        total = 0
+        for reg in _overlap_regions(hits):
+            count = np.zeros(tuple(s.stop - s.start for s in reg), np.uint16)
+            for c, sl in hits:
+                ii = _intersect(sl, reg)
+                if ii is not None:
+                    count[_shift(ii, reg)] += self.results[c].mask[_shift(ii, sl)]
+            total += int((count > 1).sum())     # the regions are disjoint
+        return total
+
+
+def _overlap_regions(hits):
+    """Disjoint boxes covering every voxel where two of the (id, slices) boxes overlap.
+
+    Pairwise intersections are merged into connected groups (union bbox of each
+    group); groups whose union boxes intersect are merged again, so the result is
+    a set of non-intersecting boxes.
+    """
+    boxes = []
+    for i in range(len(hits)):
+        for j in range(i + 1, len(hits)):
+            ii = _intersect(hits[i][1], hits[j][1])
+            if ii is not None:
+                boxes.append(ii)
+    merged = True
+    while merged:
+        merged = False
+        out = []
+        for b in boxes:
+            for k, o in enumerate(out):
+                if _intersect(b, o) is not None:
+                    out[k] = _union(o, b)
+                    merged = True
+                    break
+            else:
+                out.append(b)
+        boxes = out
+    return boxes
 
 
 def _region(a, b):
@@ -499,7 +540,11 @@ def run_classes(engine, img, seeds, df, classes, *, crop, image_key, roi=None, m
         run_mode, run_pts, run_init, warm = "scratch", pts, init, False
         if mode == "update":
             prev = store.get(c)
-            plan, added = plan_update(prev, key, engine.active == (engine_key, c), prompt_type=prompt_type,
+            # warm only if the engine still holds the very state this result came from
+            # (after a Revert the stored result is an older one)
+            active_ok = (engine.active == (engine_key, c) and prev is not None
+                         and getattr(engine, "state_token", None) == prev.state_token)
+            plan, added = plan_update(prev, key, active_ok, prompt_type=prompt_type,
                                       image_key=image_key, roi_desc=roi_desc, mask_key=mkey)
             if plan == "nothing":
                 yield ("skipped", c, "unchanged")
@@ -531,4 +576,5 @@ def run_classes(engine, img, seeds, df, classes, *, crop, image_key, roi=None, m
         yield result_from_buffer(c, buf, crop, roi_m, points_key=key, mode=run_mode, image_key=image_key,
                                  prompt_type=prompt_type, roi_desc=roi_desc,
                                  seconds=round(time.perf_counter() - t0, 3), n_points=len(run_pts),
-                                 n_dropped=n_dropped, mask_key=mkey)
+                                 n_dropped=n_dropped, mask_key=mkey,
+                                 state_token=getattr(engine, "state_token", None))

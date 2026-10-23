@@ -59,6 +59,9 @@ class PromptEngine:
     info : dict (at least 'version', 'device')
     active : (image_key, class_id) the model's interaction state currently belongs to,
              or None. Lets callers add prompts to the last class without a reset.
+    state_token : changes with every prediction; a result remembers the token of the
+             state it was read from, so a warm continuation is only used when the
+             engine still holds exactly that state (not after Revert, for example).
     """
 
     name = "abstract"
@@ -66,6 +69,7 @@ class PromptEngine:
 
     def __init__(self):
         self.active = None
+        self.state_token = 0
 
     # -- capabilities ------------------------------------------------------
     def supports(self, *caps):
