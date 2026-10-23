@@ -15,6 +15,8 @@ from napari.utils.notifications import show_info, show_error
 
 from ..utils.util_widget import (create_output_folder_row, GrowOptionalParamGroupBox,
                                  MainGrowParamWidget,apply_threshold_preview,ThresholdWidget)
+from ..utils.histogram_threshold_widget import HistogramThresholdWidget, append_threshold_row
+from ..utils.boundary_check import boundary_ok
 
 import yaml
 import sys
@@ -132,7 +134,8 @@ class SeedGrowthWidget(QWidget):
         
         self._init_ui()
         self._connect_signals()
-    
+        self.refresh_layers()   # pick up layers that were loaded before the panel opened
+
     def _init_ui(self):
         """Initialize the user interface."""
         layout = QVBoxLayout()
@@ -157,13 +160,15 @@ class SeedGrowthWidget(QWidget):
         layout.addWidget(input_group)
 
 
-        self.threshold_widget = ThresholdWidget()
+        self.threshold_widget = HistogramThresholdWidget(self.viewer)
         self.threshold_widget.preview_requested.connect(self.preview_threshold)
-        layout.addWidget(self.threshold_widget)        
+        layout.addWidget(self.threshold_widget)
 
-        
+
         self.main_param_widget = MainGrowParamWidget(title="Parameters",
                                                  image_combo=self.image_combo,viewer=self.viewer)
+        self.threshold_widget.add_to_table_requested.connect(
+            lambda lo, hi: append_threshold_row(self.main_param_widget, lo, hi))
         layout.addWidget(self.main_param_widget)
         
         # Progress bar
@@ -263,7 +268,7 @@ class SeedGrowthWidget(QWidget):
             layer = self.viewer.layers[self.image_combo.currentText()]
             if isinstance(layer, Image):
                 self.current_image = layer.data
-            self.threshold_widget.set_range_by_dtype(self.current_image.dtype)
+            self.threshold_widget.set_image(layer)
             
     def _toggle_grow_params_visibility(self, state):
         self.advanced_params_box.setVisible(state == Qt.Checked)  
@@ -271,25 +276,35 @@ class SeedGrowthWidget(QWidget):
     def refresh_layers(self):
         """Refresh the list of available layers."""
         current_image_name = self.image_combo.currentText()
-        
+        current_seeds_name = self.seeds_combo.currentText()
+        current_boundary_name = self.boundary_combo.currentText()
+
         self.image_combo.blockSignals(True)  # prevent triggering img_changed temporarily
         self.image_combo.clear()
         self.seeds_combo.clear()
         self.boundary_combo.clear()
         self.boundary_combo.addItem("None")
-        
+
         image_names = []
+        label_names = []
         for layer in self.viewer.layers:
             if isinstance(layer, Image):
                 image_names.append(layer.name)
                 self.image_combo.addItem(layer.name)
             elif isinstance(layer, Labels):
+                label_names.append(layer.name)
                 self.seeds_combo.addItem(layer.name)
                 self.boundary_combo.addItem(layer.name)
-        
+
         # Restore image selection if it still exists
         if current_image_name in image_names:
             self.image_combo.setCurrentText(current_image_name)
+        # Restore the seeds and boundary selections too: without this, adding
+        # any layer (e.g. the live Threshold Preview) silently reset them
+        if current_seeds_name in label_names:
+            self.seeds_combo.setCurrentText(current_seeds_name)
+        if current_boundary_name in label_names:
+            self.boundary_combo.setCurrentText(current_boundary_name)
         self.image_combo.blockSignals(False)
 
         # If current_text changed (e.g., setCurrentText fails), manually trigger img_changed
@@ -313,6 +328,8 @@ class SeedGrowthWidget(QWidget):
             self.current_boundary = None
             if self.boundary_combo.currentText() != "None":
                 self.current_boundary = self.viewer.layers[self.boundary_combo.currentText()].data
+            if not boundary_ok(self, self.boundary_combo.currentText(), self.current_boundary):
+                return
             
             # Get parameters
             # thresholds, upper_thresholds, dilate_iters = self._get_threshold_params()

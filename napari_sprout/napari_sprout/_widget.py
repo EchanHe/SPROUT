@@ -11,6 +11,7 @@ import numpy as np
 
 from .widgets.seed_widget import SeedGenerationWidget
 from .widgets.grow_widget import SeedGrowthWidget
+from .widgets.boundary_widget import BoundaryWidget
 from .utils.sprout_bridge import SPROUTBridge
 
 from .widgets.info_widget import LayerInfoWidget
@@ -65,10 +66,12 @@ class SPROUTWidget(QWidget):
         # Create widgets for each step
         self.seed_widget = SeedGenerationWidget(self.viewer)
         self.grow_widget = SeedGrowthWidget(self.viewer)
-        
+        self.boundary_widget = BoundaryWidget(self.viewer)
+
         # Add tabs
         self.tabs.addTab(self.seed_widget, "1. Generate Seeds")
         self.tabs.addTab(self.grow_widget, "2. Grow Seeds")
+        self.tabs.addTab(self.boundary_widget, "Boundary")
         
         layout.addWidget(self.tabs)
         
@@ -86,7 +89,13 @@ class SPROUTWidget(QWidget):
         # self.load_btn.clicked.connect(self.load_image)
         self.seed_widget.seeds_generated.connect(self._on_seeds_generated)
         self.grow_widget.growth_completed.connect(self._on_growth_completed)
-    
+        self.boundary_widget.boundary_created.connect(self._on_boundary_created)
+
+    def _on_boundary_created(self, name):
+        """Select a newly created boundary layer in the Seeds and Grow tabs."""
+        for w in (self.seed_widget, self.grow_widget):
+            w.boundary_combo.setCurrentText(name)
+
     def load_image(self):
         """Load an image file."""
         filename, _ = QFileDialog.getOpenFileName(
