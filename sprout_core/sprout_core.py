@@ -173,8 +173,35 @@ def get_sub_binary_image_by_pos(image_3d, margin):
     return subset_3d, max_min_ids
 
 
+# ---------------------------------------------------------------------------
+# Footprint size convention used throughout SPROUT
+#
+#   kernal_size / size is a RADIUS for every footprint shape:
+#     ball(r) / disk(r)              -> diameter 2r + 1
+#     cube_fp(r) / square_fp(r)      -> edge     2r + 1   (r = 1 -> 3x3x3 / 3x3)
+#
+# skimage's cube(n) / square(n) take the EDGE length instead, so cube(1) is a
+# single voxel and eroding with it does nothing. Always build cubes/squares
+# through cube_fp / square_fp, never with cube(kernal_size) directly.
+# The Boundary tab (sprout_core/boundary.py) uses the same radius convention,
+# which also matches Avizo's "Cube, neighbourhood 26, size s".
+# ---------------------------------------------------------------------------
+def cube_fp(radius):
+    """3D cube footprint of the given radius: edge 2*radius + 1."""
+    return cube(2 * int(radius) + 1)
+
+
+def square_fp(radius):
+    """2D square footprint of the given radius: edge 2*radius + 1."""
+    return square(2 * int(radius) + 1)
+
+
 def dilation_binary_img_on_sub(input, margin, kernal_size, is_round=True):
-    
+    """Binary dilation on the bounding box of the foreground.
+
+    kernal_size is a radius: ball/disk(kernal_size) if is_round, else a cube/square
+    with edge 2*kernal_size + 1.
+    """
     if margin <=kernal_size:
         margin = kernal_size + 1
     
@@ -190,7 +217,7 @@ def dilation_binary_img_on_sub(input, margin, kernal_size, is_round=True):
             if is_round:
                 subset_3d = binary_dilation(subset_3d, ball(kernal_size))
             else:
-                subset_3d = binary_dilation(subset_3d, cube(kernal_size))
+                subset_3d = binary_dilation(subset_3d, cube_fp(kernal_size))
 
 
             input[min_z:max_z+1, min_y:max_y+1, min_x:max_x+1] = subset_3d
@@ -201,13 +228,19 @@ def dilation_binary_img_on_sub(input, margin, kernal_size, is_round=True):
         if is_round:
             subset_2d = binary_dilation(subset_2d, disk(kernal_size))
         else:
-            subset_2d = binary_dilation(subset_2d, square(kernal_size))
+            subset_2d = binary_dilation(subset_2d, square_fp(kernal_size))
         input[min_y:max_y+1, min_x:max_x+1] = subset_2d
     
     return input
 
 def erosion_binary_img_on_sub(input, kernal_size = 1, footprint='ball'):
-    
+    """Binary erosion on the bounding box of the foreground.
+
+    kernal_size is a radius for 'ball'/'disk' and 'cube'/'square' alike: with the
+    default kernal_size=1, one call erodes by one voxel, using a 3x3x3 cross
+    ('ball', 6-neighbourhood) or a full 3x3x3 cube ('cube', 26-neighbourhood).
+    The other footprints ('ball_XY', 'X', ...) are fixed one-voxel footprints.
+    """
     if footprint == 'ball' or footprint == 'cube':
         assert type(kernal_size) is int
     
@@ -222,7 +255,7 @@ def erosion_binary_img_on_sub(input, kernal_size = 1, footprint='ball'):
             if footprint == 'ball':
                 subset_3d = binary_erosion(subset_3d, ball(kernal_size))
             elif footprint == 'cube':
-                subset_3d = binary_erosion(subset_3d, cube(kernal_size))
+                subset_3d = binary_erosion(subset_3d, cube_fp(kernal_size))
             elif footprint =='ball_XY':
                 subset_3d = binary_erosion(subset_3d, ball_fp_XY)
             elif footprint =='ball_XZ':
@@ -257,7 +290,7 @@ def erosion_binary_img_on_sub(input, kernal_size = 1, footprint='ball'):
         if footprint == 'disk' or footprint == 'ball':
             subset_2d = binary_erosion(subset_2d, disk(kernal_size))
         elif footprint == 'square' or footprint == 'cube':
-            subset_2d = binary_erosion(subset_2d, square(kernal_size))
+            subset_2d = binary_erosion(subset_2d, square_fp(kernal_size))
         elif footprint =='X':
             subset_2d = binary_erosion(subset_2d, fp_X_2d)
         elif footprint =='Y':
@@ -270,6 +303,7 @@ def erosion_binary_img_on_sub(input, kernal_size = 1, footprint='ball'):
 
 
 def closing_binary_img_on_sub(input, margin, kernal_size, is_round=True):
+    """Binary closing on the bounding box; kernal_size is a radius (see cube_fp)."""
     if margin <=kernal_size:
         margin = kernal_size + 1
         
@@ -285,7 +319,7 @@ def closing_binary_img_on_sub(input, margin, kernal_size, is_round=True):
             if is_round:
                 subset_3d = binary_closing(subset_3d, ball(kernal_size))
             else:
-                subset_3d = binary_closing(subset_3d, cube(kernal_size))
+                subset_3d = binary_closing(subset_3d, cube_fp(kernal_size))
 
             # subset_3d = binary_closing(subset_3d, cube(kernal_size))
             input[min_z:max_z+1, min_y:max_y+1, min_x:max_x+1] = subset_3d
@@ -295,7 +329,7 @@ def closing_binary_img_on_sub(input, margin, kernal_size, is_round=True):
         if is_round:
             subset_2d = binary_closing(subset_2d, disk(kernal_size))
         else:
-            subset_2d = binary_closing(subset_2d, square(kernal_size))
+            subset_2d = binary_closing(subset_2d, square_fp(kernal_size))
         input[min_y:max_y+1, min_x:max_x+1] = subset_2d
     
     return input
@@ -308,7 +342,7 @@ def closing_binary_img_on_sub_one_step_iter(input, iterations, footprint='ball')
         kernal_size=1
         is_round = True
     elif footprint =='cube':
-        kernal_size=3
+        kernal_size=1          # radius 1 -> 3x3x3 cube (was edge 3 before the radius convention)
         is_round = False
 
     if is_3d:
@@ -776,7 +810,8 @@ def find_seed_by_ero_custom(volume_array, threshold , segments, ero_iter,
         seed_file = os.path.join(output_dir, 
                     seed_name)
 
-        tifffile.imwrite(seed_file, seed.astype('uint16'),
+        # at least uint16 as before; wider only if there are more than 65535 seeds
+        tifffile.imwrite(seed_file, cast_labels(seed, np.uint16),
                          compression ='zlib')
         
         if is_return_seeds:
@@ -1087,6 +1122,35 @@ def check_files(file_list):
 
 # # Save the 4D array as a TIFF file
 # tifffile.imwrite('data/bones_suture/output_test_colour.tif', array_4d)
+
+
+_LABEL_DTYPES = (np.uint8, np.uint16, np.uint32, np.uint64)
+
+
+def label_dtype(max_id, min_dtype=np.uint8):
+    """Smallest unsigned dtype, not smaller than `min_dtype`, that holds label ids up to `max_id`.
+
+    Choose by the largest id, not by the number of labels: ids {7, 300} are only two
+    labels but 300 does not fit in uint8 (it would wrap to 44 and merge with label 44).
+    """
+    min_size = np.dtype(min_dtype).itemsize
+    for dt in _LABEL_DTYPES:
+        if np.dtype(dt).itemsize >= min_size and int(max_id) <= np.iinfo(dt).max:
+            return np.dtype(dt)
+    raise ValueError(f"label id {max_id} does not fit in any unsigned integer type")
+
+
+def cast_labels(labels, min_dtype=np.uint8, copy=True):
+    """Cast a label image to label_dtype(labels.max(), min_dtype) without losing any id."""
+    max_id = int(labels.max()) if labels.size else 0
+    return labels.astype(label_dtype(max_id, min_dtype), copy=copy)
+
+
+def ensure_label_capacity(labels, max_id):
+    """Return `labels`, promoted to a wider dtype only if `max_id` would not fit."""
+    if int(max_id) <= np.iinfo(labels.dtype).max:
+        return labels
+    return labels.astype(label_dtype(max_id, labels.dtype))
 
 
 def convert_seg_to_8bit(seg):

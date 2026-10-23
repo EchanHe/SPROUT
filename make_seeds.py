@@ -184,7 +184,10 @@ def make_seeds(**kwargs):
     num_threads : int, optional
         Number of threads for parallel processing. Defaults to half of CPU cores.
     footprints : list[str] or str, optional
-        Names of erosion footprints (e.g. 'cube', 'sphere'). Defaults to pre-defined ones.
+        Names of erosion footprints, one per erosion step (e.g. 'ball', 'cube', 'ball_XY', 'X';
+        see config_core.support_footprints). Each step erodes one voxel layer: 'ball' = 3x3x3
+        cross, 'cube' = full 3x3x3 cube (sizes are radii, see sprout_core.cube_fp).
+        Defaults to pre-defined ones.
     is_make_meshes : bool, optional
         If True, generate 3D meshes from seed masks. Defaults to False.
     downsample_scale : int, optional
@@ -307,10 +310,17 @@ def make_seeds(**kwargs):
     
 
     start_time = datetime.now()
+    # In napari the boundary arrives as an array (no path), so report that case too
+    if boundary_path:
+        boundary_desc = boundary_path
+    elif boundary is not None:
+        boundary_desc = f"array {boundary.shape}, {int((boundary != 0).sum()):,} boundary voxels"
+    else:
+        boundary_desc = "None"
     print(f"""{start_time.strftime("%Y-%m-%d %H:%M:%S")}
-    Making erosion seeds for 
+    Making erosion seeds for
         Img: {base_name}
-        boundary: {boundary_path if boundary_path else "None"}
+        boundary: {boundary_desc}
         Is 3D image: {is_3d}
         Threshold for Img {thresholds}
         Upper Thresholds for Img {upper_thresholds}
