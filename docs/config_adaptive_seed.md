@@ -37,8 +37,9 @@ Similar to the `--seeds` mode, it requires a configuration file with parameters 
 | `split_convex_hull_limit` | ❌        | `list[2]`       | Only split segments whose convex hull area/volume is within this range.                   |
 | `init_segments`           | ❌        | `int`           | Number of components used to initialize, can be used for skip small fragments in the first step.                     |
 | `last_segments`           | ❌        | `int`           | Optional constraint on number of segments in the final step.                         |
-| `footprints`              | ❌        | `str` or `list` | Erosion kernel(s): `"ball"`, `"cube"`, `"ball_XY"`, `"X"`, etc.       
+| `footprints`              | ❌        | `str` or `list` | Erosion kernel(s): `"ball"`, `"cube"`, `"ball_XY"`, `"X"`, etc. Each erosion step removes one voxel layer: `"ball"` = 3×3×3 cross (6-neighbourhood), `"cube"` = full 3×3×3 cube (26-neighbourhood). SPROUT sizes are radii (size 1 = 3×3×3), unlike skimage's `cube(n)` (edge length). Before Oct 2026, `"cube"` did not erode at all (a bug).       
 | `save_every_iter`         | ❌        | `bool`          | Whether to save segmentation results at every iteration. Default: `True`.                 |
+| `prune_every_iter`        | ❌        | `bool`          | After every intermediate step, remove regions smaller than `min_size`, keep the top-N and renumber the running seed. This changes the final result. If unset, it follows `save_every_iter`, which reproduces earlier versions (where saving implied pruning). Set it explicitly to make saving independent of the result. |
 | `base_name`               | ❌        | `str`           | Name of the subfolder in `output_folder/` to save results. Defaults to image file name.   |
                     |
 

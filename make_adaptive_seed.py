@@ -20,6 +20,15 @@ from multiprocessing import cpu_count
 max_threads = cpu_count()
 
 
+def describe_boundary(boundary, boundary_path):
+    """Human-readable boundary for logs. In napari the boundary is an array with no path."""
+    if boundary_path:
+        return boundary_path
+    if boundary is not None:
+        return f"array {boundary.shape}, {int(np.count_nonzero(boundary)):,} boundary voxels"
+    return "None"
+
+
 def split_size_check(mask, split_size_limit):
     split_size_lower = split_size_limit[0]
     split_size_upper = split_size_limit[1]
@@ -45,12 +54,12 @@ def split_convex_hull_check(mask, split_convex_hull_limit):
             convex_hull_volume = int(hull.volume)
         else:
             return False
-        if (lower is not None) and (convex_hull_volume < lower): 
-            split_size_condition = False 
-            print(f"convex hull only:{convex_hull_volume}, but lower is {lower}")
+        if (lower is not None) and (convex_hull_volume < lower):
+            split_size_condition = False
+            print(f"no split: convex hull volume {convex_hull_volume} is below the lower limit {lower}")
         if (upper is not None) and (convex_hull_volume > upper):
-            split_size_condition = False 
-            print(f"convex hull only:{convex_hull_volume}, but upper is {upper}")
+            split_size_condition = False
+            print(f"no split: convex hull volume {convex_hull_volume} is above the upper limit {upper}")
         
     return split_size_condition
 
@@ -124,6 +133,7 @@ def make_adaptive_seed_ero(
                         min_split_total_ratio = 0,
                         
                         save_every_iter = False,
+                        prune_every_iter = None,
 
                         base_name = None,
                         
@@ -156,6 +166,10 @@ def make_adaptive_seed_ero(
         min_split_total_ratio (float, optional): Minimum proportion of (sub-segments from next step)/(current segments)
             to consider a split. Defaults to 0. Range: 0 to 1
         save_every_iter (bool, optional): Save results at every iteration. Defaults to False.
+        prune_every_iter (bool, optional): After every intermediate iteration, remove regions
+            smaller than min_size, keep the top-N and renumber the running seed. This changes
+            the final result. None (default) = same as save_every_iter, which reproduces the
+            behaviour of earlier versions where saving implied pruning.
 
         name_prefix (str, optional): Prefix for output file names. Defaults to "Merged_seed".
         init_segments (int, optional): Number of segments for the first seed, defaults is None.
@@ -204,7 +218,12 @@ def make_adaptive_seed_ero(
 
     footprint_list = config_core.check_and_assign_footprint(footprints, erosion_steps)
     threshold,upper_threshold = config_core.check_and_assign_threshold(threshold, upper_threshold)
-    
+
+    # None keeps the legacy behaviour: saving intermediate results also pruned the
+    # running seed, so the final result depended on save_every_iter.
+    if prune_every_iter is None:
+        prune_every_iter = save_every_iter
+
     values_to_print = {
         "img_path": img_path,
         "Threshold": threshold,
@@ -215,10 +234,12 @@ def make_adaptive_seed_ero(
         "Segments for the first output": init_segments,
         "Segments for the final result": last_segments,
         "boundary_path": boundary_path,
+        "Boundary": describe_boundary(boundary, boundary_path),
         "Number of Threads": num_threads,
         "Sort": sort,
         "Background Value": background,
         "Save Every Iteration": save_every_iter,
+        "Prune Every Iteration": prune_every_iter,
         "Footprints": footprint_list,
         "No Split Limit for iters": no_split_max_iter,
         "Component Minimum Size": min_size,
@@ -266,7 +287,8 @@ def make_adaptive_seed_ero(
 
 
     combine_seed = init_seed.copy()
-    combine_seed = combine_seed.astype('uint16')
+    # at least uint16 as before; new ids from splits are checked with ensure_label_capacity
+    combine_seed = sprout_core.cast_labels(combine_seed, np.uint16)
 
 
     output_dict = {"total_id": {0: len(np.unique(combine_seed))-1},
@@ -298,13 +320,13 @@ def make_adaptive_seed_ero(
         
         img = sprout_core.erosion_binary_img_on_sub(img, kernal_size = 1,footprint=footprint_list[ero_iter-1])
         seed, _ = sprout_core.get_ccomps_with_size_order(img, segments_list[ero_iter])
-        seed = seed.astype('uint16')
+        seed = sprout_core.cast_labels(seed, np.uint16)
         
 
         
         if save_every_iter:
             output_img_name = f'INTER_thre_{threshold}_{upper_threshold}_ero_{ero_iter}.tif'
-            output_dict["cur_seed_name"][threshold] = output_img_name
+            output_dict["cur_seed_name"][ero_iter] = output_img_name
             save_seed(seed, output_folder, output_img_name, return_for_napari=return_for_napari, seeds_dict=seeds_dict)
 
 
@@ -344,6 +366,11 @@ def make_adaptive_seed_ero(
             # Wait for all threads to complete
             for thread in threads:
                 thread.join()
+            # Threads append ids in whatever order they finish; sort so that new ids are
+            # assigned in ascending order, exactly as with a single thread.
+            _order = np.argsort(inter_log["inter_ids"], kind="stable")
+            inter_log["inter_ids"] = inter_log["inter_ids"][_order]
+            inter_log["inter_props"] = inter_log["inter_props"][_order]
         
         
             ## if there are any intersection between seed and the init seed
@@ -360,7 +387,7 @@ def make_adaptive_seed_ero(
                 
                 
                 if not split_size_check(ccomp_combine_seed, split_size_limit):
-                    print(f"no split, as {combine_id} only has {np.sum(ccomp_combine_seed) }")             
+                    print(f"no split for region {combine_id}: size {int(np.sum(ccomp_combine_seed))} is outside split_size_limit {split_size_limit}")
 
                 split_condition =  (sum_inter_props>=min_split_total_ratio) and\
                     split_size_check(ccomp_combine_seed, split_size_limit) and \
@@ -377,7 +404,7 @@ def make_adaptive_seed_ero(
                     new_ids = []
                     for inter_id in filtered_inter_ids:
                         max_seed_id +=1
-                        
+                        combine_seed = sprout_core.ensure_label_capacity(combine_seed, max_seed_id)
                         combine_seed[seed == inter_id] = max_seed_id
                         # new_ids.append(max_seed_id)     
                         
@@ -401,12 +428,17 @@ def make_adaptive_seed_ero(
             no_consec_split_count+=1
             
         
-        # Only save merged result for intermediate iterations, not the last one
-        if save_every_iter and ero_iter != erosion_steps:
-            output_img_name = f'INTER_adaptive_thre_{threshold}_{upper_threshold}_ero_{ero_iter}.tif'
-            combine_seed,_ = reorder_segmentation(combine_seed, min_size=min_size, 
+        # Intermediate iterations only (the last one is finalised after the loop).
+        # Pruning (min_size / top-N / renumber) changes the running seed and therefore
+        # the final result; saving alone must not, so it saves a pruned copy.
+        if ero_iter != erosion_steps and (prune_every_iter or save_every_iter):
+            pruned_seed,_ = reorder_segmentation(combine_seed, min_size=min_size,
                               sort_ids=sort, top_n=segments_list[-1])
-            save_seed(combine_seed, output_folder, output_img_name, return_for_napari=return_for_napari, seeds_dict=seeds_dict)
+            if prune_every_iter:
+                combine_seed = pruned_seed
+            if save_every_iter:
+                output_img_name = f'INTER_adaptive_thre_{threshold}_{upper_threshold}_ero_{ero_iter}.tif'
+                save_seed(pruned_seed, output_folder, output_img_name, return_for_napari=return_for_napari, seeds_dict=seeds_dict)
             
         
         if no_consec_split_count>=no_split_max_iter:
@@ -471,6 +503,7 @@ def make_adaptive_seed_thre(
                         min_split_total_ratio = 0,
                         
                         save_every_iter = False,
+                        prune_every_iter = None,
                         base_name = None,
                        
                         init_segments = None,
@@ -527,6 +560,11 @@ def make_adaptive_seed_thre(
         Minimum total proportion of split segments required to perform a split.
     save_every_iter : bool, default=False
         If True, save the seed mask at every iteration.
+    prune_every_iter : bool or None, default=None
+        After every intermediate threshold, remove regions smaller than min_size, keep
+        the top-N and renumber the running seed. This changes the final result.
+        None = same as save_every_iter, which reproduces the behaviour of earlier
+        versions where saving implied pruning.
     name_prefix : str, default="Merged_seed"
         Prefix for output file names.
     init_segments : int, optional
@@ -593,9 +631,14 @@ def make_adaptive_seed_thre(
     footprint_list = config_core.check_and_assign_footprint(footprints, erosion_steps)
     thresholds, upper_thresholds = config_core.check_and_assign_thresholds(thresholds, upper_thresholds)
     
-    segments_list = config_core.check_and_assign_segment_list(segments, init_segments,  
+    segments_list = config_core.check_and_assign_segment_list(segments, init_segments,
                                                               last_segments, n_threhsolds=len(thresholds))
-    
+
+    # None keeps the legacy behaviour: saving intermediate results also pruned the
+    # running seed, so the final result depended on save_every_iter.
+    if prune_every_iter is None:
+        prune_every_iter = save_every_iter
+
     values_to_print = {
         "img_path": img_path,
         "Thresholds": thresholds,
@@ -606,10 +649,12 @@ def make_adaptive_seed_thre(
         "Segments for the first output": init_segments,
         "Segments for the final result": last_segments,
         "boundary_path": boundary_path,
+        "Boundary": describe_boundary(boundary, boundary_path),
         "Number of Threads": num_threads,
         "Sort": sort,
         "Background Value": background,
         "Save Every Iteration": save_every_iter,
+        "Prune Every Iteration": prune_every_iter,
         "Footprints": footprint_list,
         "No Split Limit for iters": no_split_max_iter,
         "Component Minimum Size": min_size,
@@ -624,16 +669,19 @@ def make_adaptive_seed_thre(
 
 
 
+    # The boundary is removed from every threshold mask, including this first one
+    # (Supplementary Algorithm 2b, step 2). It is never written into img: img can be
+    # the caller's array (e.g. a napari image layer), which must not be modified.
+    if boundary is not None:
+        boundary = config_core.check_and_cast_boundary(boundary)
+
     if upper_thresholds[0] is not None:
         mask = (img>=thresholds[0]) & (img<=upper_thresholds[0])
     else:
         mask = img>=thresholds[0]
-    
-    
     if boundary is not None:
-        boundary = config_core.check_and_cast_boundary(boundary)
-        img[boundary] = False
-    
+        mask[boundary] = False
+
     for ero_iter in range(1, erosion_steps+1):
         mask = sprout_core.erosion_binary_img_on_sub(mask, kernal_size = 1,
                                                      footprint=footprint_list[ero_iter-1])
@@ -654,7 +702,8 @@ def make_adaptive_seed_thre(
 
 
     combine_seed = init_seed.copy()
-    combine_seed = combine_seed.astype('uint16')
+    # at least uint16 as before; new ids from splits are checked with ensure_label_capacity
+    combine_seed = sprout_core.cast_labels(combine_seed, np.uint16)
 
     output_dict = {"total_id": {0: len(np.unique(combine_seed))-1},
                    "split_id" : {0: {}},
@@ -685,14 +734,14 @@ def make_adaptive_seed_thre(
             mask = (img>=threshold) & (img<=upper_threshold)
         else:
             mask = img>=threshold
+        if boundary is not None:
+            mask[boundary] = False
 
-        # mask = img>=threshold
-        
         for ero_iter in range(1, erosion_steps+1):
             mask = sprout_core.erosion_binary_img_on_sub(mask, kernal_size = 1,
                                                          footprint=footprint_list[ero_iter-1])
         seed, _ = sprout_core.get_ccomps_with_size_order(mask,segments_list[idx_threshold+1])
-        seed = seed.astype('uint16')
+        seed = sprout_core.cast_labels(seed, np.uint16)
         
 
         if save_every_iter:
@@ -739,6 +788,11 @@ def make_adaptive_seed_thre(
             # Wait for all threads to complete
             for thread in threads:
                 thread.join()
+            # Threads append ids in whatever order they finish; sort so that new ids are
+            # assigned in ascending order, exactly as with a single thread.
+            _order = np.argsort(inter_log["inter_ids"], kind="stable")
+            inter_log["inter_ids"] = inter_log["inter_ids"][_order]
+            inter_log["inter_props"] = inter_log["inter_props"][_order]
         
         
             ## if there are any intersection between seed and the init seed
@@ -756,7 +810,7 @@ def make_adaptive_seed_thre(
                 
 
                 if not split_size_check(ccomp_combine_seed, split_size_limit):
-                    print(f"no split, as {combine_id} only has {np.sum(ccomp_combine_seed) }")
+                    print(f"no split for region {combine_id}: size {int(np.sum(ccomp_combine_seed))} is outside split_size_limit {split_size_limit}")
                         
 
                 split_condition =  (sum_inter_props>=min_split_total_ratio) and\
@@ -779,6 +833,7 @@ def make_adaptive_seed_thre(
                     new_ids = []
                     for inter_id in filtered_inter_ids:
                         max_seed_id +=1
+                        combine_seed = sprout_core.ensure_label_capacity(combine_seed, max_seed_id)
                         combine_seed[seed == inter_id] = max_seed_id
                         
                         # TODO Compare use np.where or direct bool
@@ -829,12 +884,17 @@ def make_adaptive_seed_thre(
                 print(f"break loop at {threshold} threshold")
                 break
         
-        if save_every_iter and idx_threshold != len(thresholds)-2:
-            output_img_name = f'INTER_adaptive_thre_{threshold}_{upper_threshold}_ero_{erosion_steps}.tif'
-            combine_seed,_ = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort,
+        # Intermediate thresholds only (the last one is finalised after the loop).
+        # Pruning (min_size / top-N / renumber) changes the running seed and therefore
+        # the final result; saving alone must not, so it saves a pruned copy.
+        if idx_threshold != len(thresholds)-2 and (prune_every_iter or save_every_iter):
+            pruned_seed,_ = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort,
                                                   top_n=segments_list[-1])
-            
-            save_seed(combine_seed, output_folder, output_img_name, return_for_napari=return_for_napari, seeds_dict=seeds_dict)
+            if prune_every_iter:
+                combine_seed = pruned_seed
+            if save_every_iter:
+                output_img_name = f'INTER_adaptive_thre_{threshold}_{upper_threshold}_ero_{erosion_steps}.tif'
+                save_seed(pruned_seed, output_folder, output_img_name, return_for_napari=return_for_napari, seeds_dict=seeds_dict)
          
     combine_seed,_ = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort,
                                           top_n=segments_list[-1])
@@ -923,6 +983,8 @@ def run_make_adaptive_seed(file_path):
                                     
                                     save_every_iter = optional_params["save_every_iter"],
                                     
+                                    prune_every_iter = optional_params["prune_every_iter"],
+                                    
                                     init_segments = optional_params["init_segments"],
                                     last_segments = optional_params["last_segments"],
                                     footprints = optional_params["footprints"],
@@ -964,6 +1026,8 @@ def run_make_adaptive_seed(file_path):
                                     min_split_total_ratio = optional_params["min_split_total_ratio"],
                                     
                                     save_every_iter = optional_params["save_every_iter"],
+                                    
+                                    prune_every_iter = optional_params["prune_every_iter"],
                                                                         
                                     init_segments = optional_params["init_segments"],
                                     last_segments= optional_params["last_segments"],

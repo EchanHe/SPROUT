@@ -130,6 +130,8 @@ def run_batch_adaptive_seed(file_path):
                                     min_split_total_ratio = optional_params["min_split_total_ratio"],
                                     
                                     save_every_iter = optional_params["save_every_iter"],
+                                    
+                                    prune_every_iter = optional_params["prune_every_iter"],
 
                                                                         
                                     init_segments = optional_params["init_segments"],
@@ -166,6 +168,8 @@ def run_batch_adaptive_seed(file_path):
                                     min_split_total_ratio = optional_params["min_split_total_ratio"],
                                     
                                     save_every_iter = optional_params["save_every_iter"],
+                                    
+                                    prune_every_iter = optional_params["prune_every_iter"],
                                     
                                     init_segments = optional_params["init_segments"],
                                     footprints = optional_params["footprints"],

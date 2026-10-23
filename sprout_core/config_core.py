@@ -979,7 +979,16 @@ input_val_make_adaptive_seed = {
         "required": False,
         'default': True,
         "description": "Save results at every iteration. Defaults is False."
-    },            
+    },
+    "prune_every_iter": {
+        "type": bool,
+        "required": False,
+        "default": None,
+        "description": "After every intermediate step, remove small regions, keep the top-N and "
+                       "renumber the running seed (changes the result). Unset/None = same as "
+                       "save_every_iter, which reproduces earlier versions."
+    },
+
     "base_name": {
         "type": str,
         "required": False,
