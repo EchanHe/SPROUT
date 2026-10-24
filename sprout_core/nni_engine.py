@@ -31,7 +31,8 @@ from sprout_core.prompt_engine import EngineOutOfMemory, PromptEngine, PromptEng
 
 INSTALL_HINT = ("nnInteractive is not installed in this Python environment. Install: "
                 "`pip install nninteractive` (needs PyTorch; for a GPU install the CUDA build of torch "
-                "first, see pytorch.org). Prompts can still be generated and exported.")
+                "first, see pytorch.org). Prompts can still be generated and exported.\n"
+                f"Python in use: {sys.executable}")
 
 OOM_HINT = ("Out of GPU memory. Use an ROI (the model then runs on a smaller crop), close other "
             "programs that use the GPU, or switch to the CPU (very slow).")
