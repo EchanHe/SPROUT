@@ -15,6 +15,9 @@ Drop-in replacement for util_widget.ThresholdWidget (same public methods), with:
 A handle parked at an axis end means "no limit"; get_thresholds() then returns
 the dtype's min/max (what the old widget defaulted to), or +-inf for floats.
 """
+import threading
+import weakref
+
 import numpy as np
 from napari.layers import Image
 from napari.qt.threading import thread_worker
@@ -35,6 +38,43 @@ from .roi_widget import RoiReminder
 from .slice_preview import SlicePreview
 
 PREVIEW_NAME = "Threshold Preview"
+
+# Histogram + Otsu per image array (and per ROI snapshot), shared by the Seeds and Grow
+# widgets: switching back to an image, or showing it in the other tab, costs nothing.
+# Keyed by id(array) (arrays are not hashable); the entry is dropped when the array is
+# freed, and the weak reference guards against a recycled id.
+_HIST_CACHE = {}
+_HIST_CACHE_LOCK = threading.Lock()
+
+
+def _cached_histogram(img, roi):
+    """(counts, edges, otsu) of img (inside roi if given), computed once per array / ROI.
+
+    The Seeds and Grow widgets ask for the same image at the same time from two worker
+    threads; the per-image lock makes the second one wait for the first one's result.
+    """
+    with _HIST_CACHE_LOCK:
+        entry = _HIST_CACHE.get(id(img))
+        if entry is None or entry[0]() is not img:
+            try:
+                ref = weakref.ref(img)
+                weakref.finalize(img, _HIST_CACHE.pop, id(img), None)
+            except TypeError:               # not weak-referenceable: no caching
+                ref = None
+            entry = (ref, {}, threading.Lock())
+            if ref is not None:
+                _HIST_CACHE[id(img)] = entry
+    _, per_img, lock = entry
+    key = None if roi is None else roi.token
+    with lock:
+        if key not in per_img:
+            vals = img if roi is None else roi.sample_values(img)   # ROI: only voxels inside it
+            counts, edges = B.histogram(vals)
+            from skimage.filters import threshold_otsu
+            sub = B.subsample(vals)
+            otsu = float(threshold_otsu(sub)) if sub.size and sub.min() < sub.max() else None
+            per_img[key] = (counts, edges, otsu)
+        return per_img[key]
 
 
 def _is_default_full_range_row(param_widget, params):
@@ -108,6 +148,8 @@ class HistogramThresholdWidget(QGroupBox):
         self._job = 0
         self._pending = None
         self._last_slice = None
+        self._live_line = ""       # status lines: current slice / erosion-CC note / last created
+        self._created_line = ""
         self._workers = set()
         self._preview = SlicePreview(viewer, PREVIEW_NAME, opacity=0.5)
         # Histogram jobs start on the next event-loop turn: image switches that
@@ -130,7 +172,7 @@ class HistogramThresholdWidget(QGroupBox):
         lay = QVBoxLayout(self)
         self.hist = HistogramRangeWidget()
         lay.addWidget(self.hist)
-        self.live_cb = QCheckBox("Live preview on current slice")
+        self.live_cb = QCheckBox("Live preview on current slice (threshold only)")
         self.live_cb.setChecked(True)
         self.live_cb.setToolTip("While dragging, show the threshold on the displayed slice "
                                 f"(layer '{PREVIEW_NAME}'). Untick to remove it.")
@@ -158,8 +200,8 @@ class HistogramThresholdWidget(QGroupBox):
             row.addWidget(self.erosion_spin)
             row.addStretch()
             lay.addLayout(row)
-            self.use_connected_components_checkbox.toggled.connect(lambda *_: self._refresh_status())
-            self.erosion_spin.valueChanged.connect(lambda *_: self._refresh_status())
+            self.use_connected_components_checkbox.toggled.connect(lambda *_: self._show_status())
+            self.erosion_spin.valueChanged.connect(lambda *_: self._show_status())
 
         self.roi_reminder = RoiReminder(viewer, "Preview inside ROI",
                                         shape=lambda: None if self._img is None else self._img.shape)
@@ -200,7 +242,8 @@ class HistogramThresholdWidget(QGroupBox):
         self._last_slice = None
         self._job += 1
         self._set_enabled(False)
-        self.status.setText("")
+        self._created_line = ""
+        self._set_live_line("")
         if layer is None:
             self.hist.show_message("Select an image")
             return
@@ -214,11 +257,7 @@ class HistogramThresholdWidget(QGroupBox):
         roi = self._hist_roi = self._roi_model.display_roi(img.shape)
 
         def work():
-            vals = img if roi is None else roi.sample_values(img)   # ROI: only voxels inside it
-            counts, edges = B.histogram(vals)
-            from skimage.filters import threshold_otsu
-            sub = B.subsample(vals)
-            return counts, edges, float(threshold_otsu(sub)) if sub.size and sub.min() < sub.max() else None
+            return _cached_histogram(img, roi)
 
         def done(res):
             if job != self._job or roi is not self._hist_roi:
@@ -232,7 +271,7 @@ class HistogramThresholdWidget(QGroupBox):
                 self._roi_refresh = False
                 self._on_dims()        # redraw the live slice if it is shown
             self._set_enabled(True)
-            self.status.setText("Drag the range to preview the current slice"
+            self._set_live_line("Drag the range to preview the current slice"
                                 if self.live_cb.isChecked() else "")
 
         self._run(work, done)
@@ -296,7 +335,7 @@ class HistogramThresholdWidget(QGroupBox):
         else:
             self._preview.remove()
             self._last_slice = None
-            self.status.setText("Live preview off")
+            self._set_live_line("Live preview off")
 
     def _on_dims(self):
         if self.live_cb.isChecked() and self._preview.active():
@@ -323,7 +362,7 @@ class HistogramThresholdWidget(QGroupBox):
         m = self._preview.show_slice(mask)
         if m is None:
             self._last_slice = None
-            self.status.setText("Live preview: switch to a 2D view")
+            self._set_live_line("Live preview: switch to a 2D view")
             return
         self._last_slice = (int(m.sum()), m.size)
         self._slice_roi = roi is not None
@@ -332,17 +371,26 @@ class HistogramThresholdWidget(QGroupBox):
         self._refresh_status()
 
     def _refresh_status(self):
-        if not self.live_cb.isChecked() or self._last_slice is None:
-            return
-        n, size = self._last_slice
-        if self._slice_roi:
-            text = f"Current slice, inside the ROI: {n:,} voxels ({n / max(size, 1):.2%})"
-        else:
-            text = f"Current slice: {n:,} voxels ({n / size:.2%})"
+        if self.live_cb.isChecked() and self._last_slice is not None:
+            n, size = self._last_slice
+            if self._slice_roi:
+                self._live_line = f"Current slice, inside the ROI: {n:,} voxels ({n / max(size, 1):.2%})"
+            else:
+                self._live_line = f"Current slice: {n:,} voxels ({n / size:.2%})"
+        self._show_status()
+
+    def _set_live_line(self, text):
+        self._live_line = text
+        self._show_status()
+
+    def _show_status(self):
+        """Status, one line per topic: current slice, the erosion / CC note, last created."""
+        lines = [self._live_line] if self._live_line else []
         if self._uses_3d_ops():
-            text += (". Live preview shows the threshold only; "
-                     "Create Preview Layer to see erosion / connected components.")
-        self.status.setText(text)
+            lines.append("Erosion / connected components: whole volume only, see Create Preview Layer")
+        if self._created_line:
+            lines.append(self._created_line)
+        self.status.setText("\n".join(lines))
 
     # ---- whole-volume result as a new layer
     def _create_preview_layer(self):
@@ -390,7 +438,8 @@ class HistogramThresholdWidget(QGroupBox):
             extra = f", {int(result.max())} components" if cc_n else ""
             msg = f"Created '{name}': {n:,} voxels ({n / result.size:.2%}){extra}"
             show_info(msg)
-            self.status.setText(msg)
+            self._created_line = f"Created: {name}\n{n:,} voxels ({n / result.size:.2%}){extra}"
+            self._show_status()
 
         def finished():
             self.create_btn.setText("Create Preview Layer")
