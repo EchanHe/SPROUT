@@ -1,34 +1,32 @@
-"""One region of interest (ROI) per napari viewer, shared by every SPROUT tab.
+"""The current region of interest (ROI) of a napari viewer, shared by the SPROUT tabs.
 
-The model holds what the user chose (on/off, Box or Mask, the box, the mask
-layer and label) and hands out immutable sprout_core.roi.Roi snapshots:
+There is exactly one *current ROI* per viewer (or none). The ROI Manager edits a
+*draft* (a box, or a Labels layer + ids used as a mask or as its bounding box) and
+`apply()` ("Set as current ROI") turns the draft into the current ROI; `clear()`
+("Clear ROI") sets it to none. Nothing is computed while the draft is edited: a
+mask is snapshot only by apply() / update(), in the background.
+
+Tabs opt in one by one ("Use current ROI", roi_widget.RoiUse) and read
+`model.current`:
 
     model = get_roi_model(viewer)        # created on first use, works headless
-    roi = model.roi_for(image.shape)     # for a RUN: None if off, else a usable
-                                         # Roi, else RoiError with the reason
-    roi = model.display_roi(shape)       # for a DISPLAY: None instead of raising
-    model.changed.connect(...)           # after any state change
+    model.current                        # sprout_core.roi.Roi or None
+    model.changed.connect(...)           # the current ROI was set / cleared / updated
 
-`changed` only fires when the user (or a test) touches the ROI, so tabs that
-listen to it behave exactly as before while the ROI is never used.
-
-A run keeps the Roi it got: later edits make a new snapshot and never change a
-running job. Mask snapshots are computed in the background (pending meanwhile,
-one at a time) and recomputed, debounced, when the mask layer is painted or
-replaced. While the ROI is off (or a box), edits of the mask layer only mark the
-snapshot stale; it is recomputed when the mask is in use again.
+A run keeps the Roi it got: Roi objects are immutable, a new Set makes a new one.
 
 The model lives as long as its viewer and owns the napari event connections the
 ROI widgets need; it re-emits them as Qt signals (layer_inserted, layer_removed,
 dims_changed), so a closed SPROUT panel leaves no callbacks behind in napari.
+Layers are only held by weak reference.
 """
 import weakref
 
 import numpy as np
 from napari.qt.threading import thread_worker
-from qtpy.QtCore import QObject, QTimer, Signal
+from qtpy.QtCore import QObject, Signal
 
-from sprout_core.roi import Roi, RoiError
+from sprout_core.roi import Roi, RoiError, parse_ids
 
 _MODELS = weakref.WeakKeyDictionary()      # viewer -> RoiModel
 
@@ -41,238 +39,252 @@ def get_roi_model(viewer):
     return model
 
 
+def _weak(obj):
+    return None if obj is None else weakref.ref(obj)
+
+
 def _deref(ref):
-    return ref() if ref is not None else None
+    return None if ref is None else ref()
 
 
 class RoiModel(QObject):
-    changed = Signal()
+    changed = Signal()            # the current ROI was set / cleared / updated
+    draft_changed = Signal()      # the manager's draft was edited
+    status_changed = Signal()     # busy / error / "source edited since Set"
+    show_requested = Signal()     # a tab asks to show the ROI Manager
     layer_inserted = Signal(object)    # napari events, re-emitted for widgets
     layer_removed = Signal(object)
     dims_changed = Signal()
 
-    MASK_DEBOUNCE_MS = 300
-
     def __init__(self, viewer):
         super().__init__()
         self._viewer = weakref.ref(viewer)
-        self._enabled = False
-        self._kind = "box"
-        self._ref = None             # weakref to the image layer the box is drawn on
-        self._box_roi = None         # Roi snapshot of the box
-        self._mask_ref = None        # weakref to the Labels layer
-        self._mask_name = None
-        self._label = None
-        self._mask_roi = None
-        self._mask_error = None
-        self._pending = False
-        self._stale = False          # mask edited while not in use: recompute when used
-        self._running = False        # a snapshot is being computed
-        self._rerun = False          # ...and another one was asked for meanwhile
+        # current ROI
+        self._current = None
+        self._current_spec = None
+        self._source = None              # weakref: Labels layer the current ROI was made from
+        self._source_name = None
+        self.source_edited = False       # ...edited since Set
+        self.source_removed = False
+        self.busy = False                # a Set / Update is computing
+        self.error = None                # why the last Set / Update failed
         self._job = 0
         self._workers = set()
+        # draft
+        self.draft_kind = "box"
+        self.draft_box = None            # Roi.box in the voxel grid of draft_ref
+        self._draft_ref = None           # weakref: image layer giving coordinates / shape
+        self.draft_ref_name = None
+        self._draft_labels = None        # weakref: Labels layer
+        self.draft_ids_text = None       # None = all non-zero, else e.g. "3,5-7"
+        self.draft_use = "mask"          # 'mask' | 'bbox'
+        self.draft_margin = 0
         self.version = 0
 
-        self._mask_timer = QTimer(self)
-        self._mask_timer.setSingleShot(True)
-        self._mask_timer.setInterval(self.MASK_DEBOUNCE_MS)
-        self._mask_timer.timeout.connect(self._start_mask_snapshot)
         viewer.layers.events.inserted.connect(self._on_layer_inserted)
         viewer.layers.events.removed.connect(self._on_layer_removed)
         for name in ("current_step", "order", "ndisplay"):
             getattr(viewer.dims.events, name).connect(self._on_dims)
 
-    # ------------------------------------------------------------ state
+    # ------------------------------------------------------------ current
     @property
     def viewer(self):
         return self._viewer()
 
     @property
-    def enabled(self):
-        return self._enabled
+    def current(self):
+        """The current ROI (sprout_core.roi.Roi) or None."""
+        return self._current
 
     @property
-    def kind(self):
-        return self._kind
+    def source_layer(self):
+        return _deref(self._source)
 
-    @property
-    def box(self):
-        """(lo, hi) of the box (half-open, clipped), or None."""
-        r = self._box_roi
-        return None if r is None else (r.lo, r.hi)
-
-    @property
-    def box_shape(self):
-        r = self._box_roi
-        return None if r is None else r.shape
-
-    @property
-    def reference(self):
-        return _deref(self._ref)
-
-    @property
-    def mask_layer(self):
-        return _deref(self._mask_ref)
-
-    @property
-    def label(self):
-        return self._label
-
-    @property
-    def pending(self):
-        return self._pending
-
-    def _emit(self):
+    def _set_current(self, roi, spec, source=None):
+        if source is not self.source_layer:
+            self._watch_source(source)
+        self.source_edited = self.source_removed = False
+        if roi is self._current and spec == self._current_spec:
+            self.status_changed.emit()
+            return
+        self._current, self._current_spec = roi, spec
         self.version += 1
         self.changed.emit()
+        self.status_changed.emit()
+        self.draft_changed.emit()        # the "edited" note depends on the current ROI
 
-    def _mask_in_use(self):
-        return self._enabled and self._kind == "mask"
+    def clear(self):
+        """'Clear ROI': no current ROI."""
+        self._job += 1
+        self.busy, self.error = False, None
+        self._set_current(None, None)
 
-    def _refresh_if_stale(self):
-        if self._stale and self._mask_in_use() and self.mask_layer is not None:
-            self._start_mask_snapshot(emit=False)
+    def request_show(self):
+        self.show_requested.emit()
 
-    # ------------------------------------------------------------ setters
-    def set_enabled(self, on):
-        on = bool(on)
-        if on != self._enabled:
-            self._enabled = on
-            self._refresh_if_stale()
-            self._emit()
+    # ------------------------------------------------------------ draft
+    @property
+    def draft_ref(self):
+        return _deref(self._draft_ref)
 
-    def set_kind(self, kind):
-        if kind not in ("box", "mask"):
-            raise ValueError("kind must be 'box' or 'mask'")
-        if kind != self._kind:
-            self._kind = kind
-            self._refresh_if_stale()
-            self._emit()
+    @property
+    def draft_labels(self):
+        return _deref(self._draft_labels)
 
-    def set_reference(self, layer):
-        """Image layer the box is drawn on (the user picked it). A box of another
-        shape is cleared. The reference is not part of the ROI itself, so `changed`
-        only fires when the box is cleared. The editor does not call this for its
-        automatic image choice, so removing the reference image keeps the box.
-        """
-        if layer is self.reference:
-            return
-        self._ref = None if layer is None else weakref.ref(layer)
-        if layer is not None and self._box_roi is not None \
-                and tuple(np.shape(layer.data)) != self._box_roi.shape:
-            self._box_roi = None
-            self._emit()
+    def _draft_edited(self):
+        self.draft_changed.emit()
 
-    def set_box(self, shape, lo, hi):
+    def set_draft_kind(self, kind):
+        if kind not in ("box", "labels"):
+            raise ValueError("kind must be 'box' or 'labels'")
+        if kind != self.draft_kind:
+            self.draft_kind = kind
+            self._draft_edited()
+
+    def set_draft_box(self, shape, lo, hi, ref=None):
+        """Box [lo, hi) in the voxel grid of `ref` (an image layer of this shape)."""
         roi = Roi.box(shape, lo, hi)
-        old = self._box_roi
+        if ref is not None:
+            self._draft_ref, self.draft_ref_name = _weak(ref), ref.name
+        old = self.draft_box
         if old is not None and (old.shape, old.lo, old.hi) == (roi.shape, roi.lo, roi.hi):
             return
-        self._box_roi = roi
-        self._emit()
+        self.draft_box = roi
+        self._draft_edited()
 
-    def clear_box(self):
-        if self._box_roi is not None:
-            self._box_roi = None
-            self._emit()
+    def clear_draft_box(self):
+        if self.draft_box is not None:
+            self.draft_box = None
+            self._draft_edited()
 
-    def set_mask(self, layer, label=None):
-        """Labels layer (all non-zero voxels if label is None, else == label), or None."""
-        label = None if label is None else int(label)
-        if layer is self.mask_layer and label == self._label and layer is not None:
-            return
-        old = self.mask_layer
-        if old is not None and old is not layer:
-            self._disconnect_mask(old)
-        self._mask_ref = None if layer is None else weakref.ref(layer)
-        self._mask_name = None if layer is None else layer.name
-        self._label = label
-        self._mask_roi = None
-        self._mask_error = None
-        self._mask_timer.stop()
-        self._stale = False
-        if layer is None:
+    def set_draft_labels(self, layer=..., ids_text=..., use=..., margin=...):
+        """Labels draft: layer, ids_text (None = all non-zero), use 'mask' | 'bbox', margin."""
+        if layer is not ...:
+            self._draft_labels = _weak(layer)
+        if ids_text is not ...:
+            self.draft_ids_text = None if ids_text is None else str(ids_text)
+        if use is not ...:
+            if use not in ("mask", "bbox"):
+                raise ValueError("use must be 'mask' or 'bbox'")
+            self.draft_use = use
+        if margin is not ...:
+            self.draft_margin = int(margin)
+        self._draft_edited()
+
+    def draft_spec(self):
+        """Hashable description of the draft, or None while it is incomplete."""
+        if self.draft_kind == "box":
+            b = self.draft_box
+            return None if b is None else ("box", b.shape, b.lo, b.hi)
+        lay = self.draft_labels
+        if lay is None:
+            return None
+        return ("labels", weakref.ref(lay), self.draft_ids_text,
+                self.draft_use, self.draft_margin if self.draft_use == "bbox" else 0)
+
+    @property
+    def draft_edited(self):
+        """True if the draft is complete and differs from the current ROI."""
+        spec = self.draft_spec()
+        return spec is not None and spec != self._current_spec
+
+    # ------------------------------------------------------------ Set / Update
+    def apply(self):
+        """'Set as current ROI'. A box is set at once; a Labels draft is snapshot in the
+        background (busy meanwhile). Returns False if the draft cannot be used (error)."""
+        spec = self.draft_spec()
+        if spec is None:
+            self._fail("draw a box or click Full extent first" if self.draft_kind == "box"
+                       else "choose a Labels layer first")
+            return False
+        if spec[0] == "box":
             self._job += 1
-            self._pending = self._rerun = False
-        else:
-            if old is not layer:
-                layer.events.data.connect(self._on_mask_edited)
-                if hasattr(layer.events, "paint"):
-                    layer.events.paint.connect(self._on_mask_edited)
-            self._start_mask_snapshot(emit=False)
-        self._emit()
+            self.busy, self.error = False, None
+            roi = self.draft_box
+            if roi.empty:
+                self._fail(roi._empty_reason())
+                return False
+            self._set_current(roi, spec)
+            return True
+        return self._snapshot(spec)
 
-    def _disconnect_mask(self, layer):
-        for name in ("data", "paint"):
-            ev = getattr(layer.events, name, None)
-            if ev is not None:
-                try:
-                    ev.disconnect(self._on_mask_edited)
-                except Exception:
-                    pass
+    def update(self):
+        """Re-snapshot the current ROI from its (edited) Labels layer."""
+        if self._current_spec is None or self._current_spec[0] != "labels":
+            return False
+        return self._snapshot(self._current_spec)
 
-    # ------------------------------------------------------- mask snapshot
-    def _on_mask_edited(self, event=None):
-        if not self._mask_in_use():       # nobody uses the mask now: compute it when they do
-            self._mask_timer.stop()
-            self._job += 1
-            self._pending = self._rerun = False
-            self._stale = True
-            return
-        self._mask_timer.start()          # debounce painting
-        if not self._pending:
-            self._pending = True
-            self._emit()
+    def _fail(self, msg):
+        self.busy, self.error = False, msg
+        self.status_changed.emit()
 
-    def _start_mask_snapshot(self, emit=True):
-        layer = self.mask_layer
-        if layer is None:
-            return
-        if not self._mask_in_use():
-            self._stale = True
-            self._pending = False
-            return
-        self._stale = False
-        was_pending, self._pending = self._pending, True
+    def _snapshot(self, spec):
+        _, lref, ids_text, use, margin = spec
+        layer = lref()
+        if layer is None or self.viewer is None or layer not in self.viewer.layers:
+            self._fail("the Labels layer was removed")
+            return False
+        try:
+            ids = None if ids_text is None else sorted(parse_ids(ids_text))
+        except ValueError:
+            self._fail(f"ids: enter numbers like 3,5-7 (got '{ids_text}')")
+            return False
+        if ids is not None and not ids:
+            self._fail("ids: enter at least one id, e.g. 3,5-7")
+            return False
         self._job += 1
-        if self._running:                 # one full-size snapshot at a time
-            self._rerun = True
-            if emit and not was_pending:
-                self._emit()
-            return
-        job, data, label, name = self._job, layer.data, self._label, layer.name
+        job, data, name = self._job, layer.data, layer.name
+        self.busy, self.error = True, None
+        self.status_changed.emit()
 
         def work():
-            return Roi.from_mask(np.asarray(data), label=label, name=name)
+            roi = Roi.from_mask(np.asarray(data), ids=ids, name=name)
+            if roi.empty:
+                raise RoiError(roi._empty_reason())
+            return roi.as_box(margin) if use == "bbox" else roi
 
         def done(roi):
-            if job == self._job:
-                self._mask_roi, self._mask_error, self._pending = roi, None, False
-                self._emit()
+            if job == self._job and self.busy:
+                self.busy = False
+                self._set_current(roi, spec, source=lref())
 
         def failed(e):
             if job == self._job:
-                self._mask_roi, self._pending = None, False
-                self._mask_error = f"cannot use mask '{name}': {type(e).__name__}: {e}"
-                self._emit()
-
-        def finished():
-            self._workers.discard(w)
-            self._running = False
-            if self._rerun:
-                self._rerun = False
-                self._start_mask_snapshot(emit=False)
+                msg = str(e) if isinstance(e, RoiError) else f"cannot use '{name}': {type(e).__name__}: {e}"
+                self._fail(msg)
 
         w = thread_worker(work, ignore_errors=True)()
         w.returned.connect(done)
         w.errored.connect(failed)
         self._workers.add(w)
-        w.finished.connect(finished)
-        self._running = True
+        w.finished.connect(lambda: self._workers.discard(w))
         w.start()
-        if emit and not was_pending:
-            self._emit()
+        return True
 
+    # ------------------------------------------------------------ source watch
+    def _watch_source(self, layer):
+        old = self.source_layer
+        if old is not None:
+            for name in ("data", "paint"):
+                ev = getattr(old.events, name, None)
+                if ev is not None:
+                    try:
+                        ev.disconnect(self._on_source_edited)
+                    except Exception:
+                        pass
+        self._source = _weak(layer)
+        self._source_name = None if layer is None else layer.name
+        if layer is not None:
+            layer.events.data.connect(self._on_source_edited)
+            if hasattr(layer.events, "paint"):
+                layer.events.paint.connect(self._on_source_edited)
+
+    def _on_source_edited(self, event=None):
+        if not self.source_edited:       # nothing is recomputed: the user clicks Update
+            self.source_edited = True
+            self.status_changed.emit()
+
+    # ------------------------------------------------------------ napari events
     def _on_layer_inserted(self, event):
         self.layer_inserted.emit(event.value)
 
@@ -281,81 +293,19 @@ class RoiModel(QObject):
 
     def _on_layer_removed(self, event):
         lay = event.value
-        if lay is self.mask_layer:
-            self._job += 1
-            self._mask_timer.stop()
-            self._pending = self._rerun = False
-            if self._mask_in_use():
-                self._emit()
-        elif lay is self.reference:
-            self._ref = None             # the box itself stays valid
+        if lay is not None and lay is self.source_layer:
+            self.source_removed = True   # the current ROI is a snapshot: it stays valid
+            self.status_changed.emit()
         self.layer_removed.emit(lay)
 
-    def _mask_present(self):
-        lay, viewer = self.mask_layer, self.viewer
-        return lay is not None and viewer is not None and lay in viewer.layers
-
-    # ------------------------------------------------------------ snapshots
-    def _current(self):
-        """The Roi for the current choice; RoiError if it cannot be used (ignores on/off)."""
-        if self._kind == "box":
-            roi = self._box_roi
-            if roi is None:
-                raise RoiError("no box drawn yet")
-        else:
-            if self._mask_ref is None:
-                raise RoiError("no mask layer chosen")
-            if not self._mask_present():
-                raise RoiError(f"mask layer '{self._mask_name}' was removed")
-            if self._pending or self._stale:
-                raise RoiError("ROI mask is still being computed")
-            if self._mask_error:
-                raise RoiError(self._mask_error)
-            roi = self._mask_roi
-            if roi is None:
-                raise RoiError("ROI mask is still being computed")
-        if roi.empty:
-            raise RoiError(roi._empty_reason())
-        return roi
-
-    @property
-    def roi(self):
-        """Roi, or None if off OR unusable. Never raises."""
-        if not self._enabled:
-            return None
-        try:
-            return self._current()
-        except RoiError:
-            return None
-
-    def roi_for(self, shape):
-        """For a run: None if off; the Roi if usable on this shape; else RoiError."""
-        if not self._enabled:
-            return None
-        return self._current().check_shape(shape)
-
-    def display_roi(self, shape):
-        """For a display: like roi_for, but None instead of raising."""
-        try:
-            return self.roi_for(shape)
-        except RoiError:
-            return None
-
-    @property
-    def error(self):
-        """Why the ROI cannot be used, or None (also None when off)."""
-        if not self._enabled:
-            return None
-        try:
-            self._current()
-        except RoiError as e:
-            return str(e)
-        return None
-
+    # ------------------------------------------------------------ text
     def summary(self):
-        if not self._enabled:
-            return "ROI: off (whole image)"
-        try:
-            return "ROI: " + self._current().describe()
-        except RoiError as e:
-            return f"ROI: {e}"
+        return "none" if self._current is None else self._current.describe()
+
+    def source_note(self):
+        """'' or a note about the Labels layer the current ROI was made from."""
+        if self.source_removed:
+            return f"layer '{self._source_name}' was removed since the ROI was set (the ROI is kept)"
+        if self.source_edited:
+            return "mask layer changed since the ROI was set"
+        return ""

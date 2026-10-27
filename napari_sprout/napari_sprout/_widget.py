@@ -14,7 +14,7 @@ from .widgets.grow_widget import SeedGrowthWidget
 from .widgets.boundary_widget import BoundaryWidget
 from .widgets.prompt_tab import PromptTab
 from .utils.sprout_bridge import SPROUTBridge
-from .utils.roi_widget import RoiWidget
+from .utils.roi_widget import RoiManager
 
 from .widgets.info_widget import LayerInfoWidget
 from .widgets.edit_widget import QtLabelSelector
@@ -63,10 +63,6 @@ class SPROUTWidget(QWidget):
         # info_label.setStyleSheet("QLabel { color: #666; }")
         # layout.addWidget(info_label)
         
-        # One region of interest for every tab (off by default)
-        self.roi_widget = RoiWidget(self.viewer)
-        layout.addWidget(self.roi_widget)
-        
         # Tab widget for workflow steps
         self.tabs = QTabWidget()
         
@@ -83,6 +79,10 @@ class SPROUTWidget(QWidget):
         self.tabs.addTab(self.boundary_widget, "Boundary")
         
         layout.addWidget(self.tabs)
+
+        # The one current ROI, used by the tabs that tick "Use current ROI" (collapsed)
+        self.roi_manager = RoiManager(self.viewer)
+        layout.addWidget(self.roi_manager)
         
         # Help text
         help_text = QLabel(

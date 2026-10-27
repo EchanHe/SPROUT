@@ -4,7 +4,7 @@ Paper Fig. 1d: instead of threshold-guided growing, the seeds are turned into
 prompts (points, scribbles, an initial mask) for a promptable model
 (nnInteractive now). Workflow, top to bottom:
 
-    1. Input     image + seeds (the ROI, if on, limits sampling and the run)
+    1. Input     image + seeds ("Use current ROI": sampling and the run stay inside the ROI)
     2. Classes   which seed classes to work on (checked) and the current class
     3. Prompts   input type (only what the model supports), Generate points for
                  the checked classes into one Points layer "{seeds}_prompts"
@@ -40,10 +40,10 @@ from sprout_core import roi as R
 from sprout_core.boundary import Cancelled
 from sprout_core.nni_engine import NniEngine, nninteractive_status
 from sprout_core.prompt_engine import is_oom
-from sprout_core.roi import RoiError
+from sprout_core.roi import RoiError, parse_ids  # noqa: F401  (parse_ids: also importable from here)
 
 from ..utils.roi_model import get_roi_model
-from ..utils.roi_widget import RoiReminder
+from ..utils.roi_widget import RoiReminder, RoiUse
 
 META_KEY = "sprout_prompt"
 SETTINGS = ("SPROUT", "napari-sprout")
@@ -97,19 +97,7 @@ def _shutdown_engine(engine):
         pass
 
 
-def parse_ids(text):
-    """'3, 5-9' -> {3, 5, 6, 7, 8, 9}."""
-    out = set()
-    for part in text.replace(";", ",").split(","):
-        part = part.strip()
-        if not part:
-            continue
-        if "-" in part:
-            a, b = part.split("-", 1)
-            out.update(range(int(a), int(b) + 1))
-        else:
-            out.add(int(part))
-    return out
+# parse_ids now lives in sprout_core.roi (shared with the ROI Manager); imported above.
 
 
 class PromptTab(QWidget):
@@ -186,8 +174,9 @@ class PromptTab(QWidget):
         self.seeds_combo = QComboBox()
         f1.addRow("Image:", self.image_combo)
         f1.addRow("Seeds:", self.seeds_combo)
-        self.input_reminder = RoiReminder(self.viewer, "Samples and runs inside ROI", shape=self._shape)
-        f1.addRow(self.input_reminder)
+        self.roi_use = RoiUse(self.viewer, self._shape,
+                              "Sample points and run the model only inside the ROI")
+        f1.addRow(self.roi_use)
         layout.addWidget(g1)
 
         # 2. Classes
@@ -301,7 +290,7 @@ class PromptTab(QWidget):
         row.addWidget(QLabel("Random seed:"))
         row.addWidget(self.seed_spin)
         fs.addRow(row)
-        self.gen_reminder = RoiReminder(self.viewer, "Samples inside ROI", shape=self._shape)
+        self.gen_reminder = RoiReminder(self.roi_use, "Samples inside ROI")
         fs.addRow(self.gen_reminder)
         row = QHBoxLayout()
         self.gen_btn = QPushButton("Generate for checked classes")
@@ -392,7 +381,7 @@ class PromptTab(QWidget):
         self.margin_spin.setValue(32)
         self.margin_spin.setToolTip("Image context around the ROI the model sees (voxels).")
         f5.addRow("ROI margin:", self.margin_spin)
-        self.run_reminder = RoiReminder(self.viewer, "Runs inside ROI", shape=self._shape)
+        self.run_reminder = RoiReminder(self.roi_use, "Runs inside ROI")
         f5.addRow(self.run_reminder)
         row = QHBoxLayout()
         self.run_btn = QPushButton("Run checked")
@@ -444,7 +433,7 @@ class PromptTab(QWidget):
         self._roi_model.layer_removed.connect(self._schedule_refresh)
         self.image_combo.currentTextChanged.connect(lambda *_: self._on_inputs_changed())
         self.seeds_combo.currentTextChanged.connect(lambda *_: self._on_inputs_changed())
-        self._roi_model.changed.connect(self._roi_timer.start)
+        self.roi_use.changed.connect(self._roi_timer.start)
 
         self.table.itemChanged.connect(self._on_item_changed)
         self.table.itemSelectionChanged.connect(self._on_selection)
@@ -561,7 +550,7 @@ class PromptTab(QWidget):
 
     def _display_roi(self):
         shape = self._shape()
-        return None if shape is None else self._roi_model.display_roi(shape)
+        return None if shape is None else self.roi_use.roi_for_display(shape)
 
     def input_type(self):
         """(key, prompt_type, scribble source)."""
@@ -657,8 +646,7 @@ class PromptTab(QWidget):
         self._connect_points_layer()
         self._on_type_changed()
         self._update_output_label()
-        for r in (self.input_reminder, self.gen_reminder, self.run_reminder):
-            r.refresh()                  # shows an ROI / image shape mismatch
+        self.roi_use.refresh()           # shows an ROI / image shape mismatch
         self.compute_stats()
         self._update_buttons()
 
@@ -936,9 +924,9 @@ class PromptTab(QWidget):
             show_error("Check at least one class")
             return
         try:
-            roi = self._roi_model.roi_for(np.shape(img.data))
+            roi = self.roi_use.roi_for_run(np.shape(img.data))
         except RoiError as e:
-            show_error(f"ROI: {e}")
+            show_error(str(e))
             return
         opts = dict(default_n_pos=self.npos_spin.value(), default_n_neg=self.nneg_spin.value(),
                     default_method=self.method_combo.currentText(), negative_from_bg=self.neg_bg_cb.isChecked(),
@@ -1164,9 +1152,9 @@ class PromptTab(QWidget):
             return None
         shape = tuple(np.shape(img.data))
         try:
-            roi = self._roi_model.roi_for(shape)
+            roi = self.roi_use.roi_for_run(shape)
         except RoiError as e:
-            show_error(f"ROI: {e}")
+            show_error(str(e))
             return None
         key, ptype, src = self.input_type()
         if not self.engine.supports_prompt_type(ptype):

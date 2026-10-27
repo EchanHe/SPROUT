@@ -33,7 +33,6 @@ from sprout_core.roi import RoiError
 from sprout_core.sprout_core import erosion_binary_img_on_sub, get_ccomps_with_size_order
 
 from .histogram_widget import HistogramRangeWidget
-from .roi_model import get_roi_model
 from .roi_widget import RoiReminder
 from .slice_preview import SlicePreview
 
@@ -139,7 +138,7 @@ class HistogramThresholdWidget(QGroupBox):
     preview_requested = Signal(float, float)       # kept for compatibility; not emitted
     add_to_table_requested = Signal(float, float)
 
-    def __init__(self, viewer, title="Threshold Preview", add_connected_components=False):
+    def __init__(self, viewer, title="Threshold Preview", add_connected_components=False, roi_use=None):
         super().__init__(title)
         self.viewer = viewer
         self.add_connected_components = add_connected_components
@@ -158,12 +157,14 @@ class HistogramThresholdWidget(QGroupBox):
         self._hist_timer = QTimer(self)
         self._hist_timer.setSingleShot(True)
         self._hist_timer.timeout.connect(self._start_histogram)
-        # ROI: histogram, live slice and Create Preview Layer only look inside it
-        self._roi_model = get_roi_model(viewer)
+        # ROI: follows the host tab's "Use current ROI" (roi_use; None = never an ROI).
+        # When ticked, the histogram, live slice and Create Preview Layer only look inside it.
+        self._roi_use = roi_use
         self._roi_timer = QTimer(self)          # next event-loop turn, like the histogram
         self._roi_timer.setSingleShot(True)
         self._roi_timer.timeout.connect(self._on_roi_changed)
-        self._roi_model.changed.connect(self._roi_timer.start)
+        if roi_use is not None:
+            roi_use.changed.connect(self._roi_timer.start)
         self._hist_roi = None
         self._auto_range = None
         self._roi_refresh = False
@@ -203,9 +204,10 @@ class HistogramThresholdWidget(QGroupBox):
             self.use_connected_components_checkbox.toggled.connect(lambda *_: self._show_status())
             self.erosion_spin.valueChanged.connect(lambda *_: self._show_status())
 
-        self.roi_reminder = RoiReminder(viewer, "Preview inside ROI",
-                                        shape=lambda: None if self._img is None else self._img.shape)
-        lay.addWidget(self.roi_reminder)
+        self.roi_reminder = None
+        if roi_use is not None:
+            self.roi_reminder = RoiReminder(roi_use, "Preview inside ROI")
+            lay.addWidget(self.roi_reminder)
         row = QHBoxLayout()
         self.create_btn = QPushButton("Create Preview Layer")
         self.create_btn.setToolTip(
@@ -237,7 +239,6 @@ class HistogramThresholdWidget(QGroupBox):
             return
         self._layer = layer
         self._img = None if layer is None else np.asarray(layer.data)
-        self.roi_reminder.refresh()
         self._preview.set_reference(layer)
         self._last_slice = None
         self._job += 1
@@ -254,7 +255,7 @@ class HistogramThresholdWidget(QGroupBox):
         if self._img is None:
             return
         job, img = self._job, self._img
-        roi = self._hist_roi = self._roi_model.display_roi(img.shape)
+        roi = self._hist_roi = self._display_roi(img)
 
         def work():
             return _cached_histogram(img, roi)
@@ -280,13 +281,16 @@ class HistogramThresholdWidget(QGroupBox):
         """New ROI: recompute the histogram inside it; redraw the live slice."""
         if self._img is None:
             return
-        if self._roi_model.display_roi(self._img.shape) is self._hist_roi:
-            return                     # same ROI for this image (e.g. off -> still off)
+        if self._display_roi(self._img) is self._hist_roi:
+            return                     # same ROI for this image (e.g. unticked -> still none)
         if self.hist._ready() and self._pending is None and self.hist.get_range() != self._auto_range:
             self._pending = self.hist.get_bounds()   # keep the user's range ("no limit" stays)
         self._roi_refresh = True
         self._hist_timer.start(0)
         self._on_dims()                # redraw the live slice if it is shown
+
+    def _display_roi(self, img):
+        return None if self._roi_use is None else self._roi_use.roi_for_display(img.shape)
 
     def set_range_by_dtype(self, dtype):
         """Compatibility no-op: the range now comes from the data (see set_image)."""
@@ -346,7 +350,7 @@ class HistogramThresholdWidget(QGroupBox):
             return
         lo, hi = self.hist.get_bounds()
         img = self._img
-        roi = self._roi_model.display_roi(img.shape)
+        roi = self._display_roi(img)
         inside = []
 
         def mask(sl):
@@ -398,9 +402,9 @@ class HistogramThresholdWidget(QGroupBox):
             show_error("Please select an image first")
             return
         try:
-            roi = self._roi_model.roi_for(self._img.shape)
+            roi = None if self._roi_use is None else self._roi_use.roi_for_run(self._img.shape)
         except RoiError as e:
-            show_error(f"ROI: {e}")
+            show_error(str(e))
             return
         lo_b, hi_b = self.hist.get_bounds()
         lo, hi = self.get_thresholds()

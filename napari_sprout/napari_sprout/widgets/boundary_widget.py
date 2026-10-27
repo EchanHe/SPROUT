@@ -31,8 +31,7 @@ from sprout_core import roi as R
 from sprout_core.roi import RoiError
 
 from ..utils.histogram_widget import HistogramRangeWidget
-from ..utils.roi_model import get_roi_model
-from ..utils.roi_widget import RoiReminder
+from ..utils.roi_widget import RoiReminder, RoiUse
 from ..utils.slice_preview import SlicePreview
 
 PREVIEW_NAME = "Boundary preview"
@@ -159,7 +158,6 @@ class BoundaryWidget(QWidget):
         self._pending_threshold = None
         # ROI: the response is computed on its bbox + halo; _resp_roi is the ROI the
         # current response was computed for (None = the whole image)
-        self._roi_model = get_roi_model(napari_viewer)
         self._resp_roi = None
         self._input_roi = None       # the ROI the input histogram was computed for
 
@@ -188,6 +186,9 @@ class BoundaryWidget(QWidget):
         self.image_combo = QComboBox()
         form.addRow("Image:", self.image_combo)
         l1.addLayout(form)
+        self.roi_use = RoiUse(self.viewer, lambda: None if self._img is None else self._img.shape,
+                              "Compute and Create only inside the ROI; Create keeps the rest of the layer")
+        l1.addWidget(self.roi_use)
         self.input_hist = HistogramRangeWidget(
             "Original intensity: only voxels in this range can become boundary")
         self.input_hist.setToolTip("A zero background is excluded by default.")
@@ -230,8 +231,7 @@ class BoundaryWidget(QWidget):
         form.addRow(self.response_layer_cb)
         l2.addLayout(form)
 
-        img_shape = lambda: None if self._img is None else self._img.shape  # noqa: E731
-        self.compute_roi_reminder = RoiReminder(self.viewer, "Computes inside ROI", shape=img_shape)
+        self.compute_roi_reminder = RoiReminder(self.roi_use, "Computes inside ROI")
         l2.addWidget(self.compute_roi_reminder)
         row = QHBoxLayout()
         self.compute_btn = QPushButton("Compute")
@@ -269,7 +269,7 @@ class BoundaryWidget(QWidget):
         self.use_cb.setChecked(True)
         form.addRow(self.use_cb)
         self.create_roi_reminder = RoiReminder(
-            self.viewer, "Creates inside ROI (the rest of an existing layer is kept)", shape=img_shape)
+            self.roi_use, "Creates inside ROI (the rest of an existing layer is kept)")
         form.addRow(self.create_roi_reminder)
         row = QHBoxLayout()
         self.create_btn = QPushButton("Create Boundary Layer")
@@ -311,7 +311,7 @@ class BoundaryWidget(QWidget):
         self.input_hist.range_committed.connect(lambda *_: self._on_intensity_range_committed())
         self.resp_hist.range_changed.connect(lambda *_: self._update_preview())
 
-        self._roi_model.changed.connect(self._roi_timer.start)
+        self.roi_use.changed.connect(self._roi_timer.start)
         self.compute_btn.clicked.connect(self._compute)
         self.stop_btn.clicked.connect(self._stop)
         self.create_btn.clicked.connect(self._create)
@@ -411,8 +411,7 @@ class BoundaryWidget(QWidget):
 
         self._img_layer = layer
         self._img = np.asarray(layer.data)
-        for r in (self.compute_roi_reminder, self.create_roi_reminder):
-            r.refresh()
+        self.roi_use.refresh()
         self.name_edit.setText(f"{name}_boundary")
         self.input_hist.show_message("Computing...")
         self._compute_input_histogram()
@@ -445,7 +444,7 @@ class BoundaryWidget(QWidget):
 
     # ----------------------------------------------------------------- ROI
     def _display_roi(self):
-        return None if self._img is None else self._roi_model.display_roi(self._img.shape)
+        return None if self._img is None else self.roi_use.roi_for_display(self._img.shape)
 
     def _resp_valid_for(self, roi):
         """A response is valid for an ROI whose bbox lies inside the bbox it was computed on
@@ -456,8 +455,8 @@ class BoundaryWidget(QWidget):
         if self._img is None:
             return
         roi = self._display_roi()
-        if roi is None and self._roi_model.enabled:
-            return   # on but not usable yet (e.g. no box drawn): keep what is shown
+        if roi is None and self.roi_use.checked:
+            return   # ticked but not usable (no current ROI / other shape): keep what is shown
         if roi is self._input_roi:
             return   # nothing changed for this image (e.g. off -> still off)
         self._compute_input_histogram(keep_range=True)
@@ -498,9 +497,9 @@ class BoundaryWidget(QWidget):
             show_error("Select an image first")
             return
         try:
-            roi = self._roi_model.roi_for(self._img.shape)
+            roi = self.roi_use.roi_for_run(self._img.shape)
         except RoiError as e:
-            show_error(f"ROI: {e}")
+            show_error(str(e))
             return
         self._stop()
         self._job["compute"] += 1
@@ -552,7 +551,7 @@ class BoundaryWidget(QWidget):
                 self._reset_response("Parameters changed during computing: click Compute")
                 return
             now = self._display_roi()
-            usable = now is not None or not self._roi_model.enabled
+            usable = now is not None or not self.roi_use.checked
             if roi is not None and usable and not _bbox_inside(now, roi):
                 self._reset_response("ROI changed during computing: click Compute")
                 return
@@ -678,9 +677,9 @@ class BoundaryWidget(QWidget):
             show_error("Compute first")
             return
         try:
-            roi = self._roi_model.roi_for(self._img.shape)
+            roi = self.roi_use.roi_for_run(self._img.shape)
         except RoiError as e:
-            show_error(f"ROI: {e}")
+            show_error(str(e))
             return
         if not self._resp_valid_for(roi):
             show_error("ROI changed since Compute: click Compute")

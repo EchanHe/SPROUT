@@ -16,8 +16,7 @@ from ..utils.util_widget import (create_output_folder_row, SeedOptionalParamGrou
                                  MainSeedParamWidget, ThresholdWidget,apply_threshold_preview)
 from ..utils.histogram_threshold_widget import HistogramThresholdWidget, append_threshold_row
 from ..utils.boundary_check import boundary_ok
-from ..utils.roi_model import get_roi_model
-from ..utils.roi_widget import RoiReminder
+from ..utils.roi_widget import RoiReminder, RoiUse
 
 import yaml
 import sys
@@ -219,6 +218,10 @@ class SeedGenerationWidget(QWidget):
         
         image_layout.addRow("Input Image:", self.image_combo)
         image_layout.addRow("Boundary Mask (optional):", self.boundary_combo)
+        self.roi_use = RoiUse(
+            self.viewer, lambda: None if self.current_image is None else np.shape(self.current_image),
+            "Seeds only inside the ROI (0 outside)")
+        image_layout.addRow(self.roi_use)
         
         self.refresh_btn = QPushButton("Refresh Layers")
         image_layout.addRow(self.refresh_btn)
@@ -266,7 +269,8 @@ class SeedGenerationWidget(QWidget):
         ###
         
         
-        self.threshold_widget = HistogramThresholdWidget(self.viewer, add_connected_components=True)
+        self.threshold_widget = HistogramThresholdWidget(self.viewer, add_connected_components=True,
+                                                         roi_use=self.roi_use)
         self.threshold_widget.preview_requested.connect(self.preview_threshold)
         layout.addWidget(self.threshold_widget)
 
@@ -344,8 +348,7 @@ class SeedGenerationWidget(QWidget):
         output_group.setLayout(output_layout)
         layout.addWidget(output_group)
         
-        self.roi_reminder = RoiReminder(
-            self.viewer, shape=lambda: None if self.current_image is None else np.shape(self.current_image))
+        self.roi_reminder = RoiReminder(self.roi_use)
         layout.addWidget(self.roi_reminder)
         
         # Execute buttons
@@ -480,7 +483,7 @@ class SeedGenerationWidget(QWidget):
             if isinstance(layer, Image):
                 self.current_image = layer.data
                 self.threshold_widget.set_image(layer)
-                self.roi_reminder.refresh()
+                self.roi_use.refresh()
        
 
     
@@ -567,9 +570,9 @@ class SeedGenerationWidget(QWidget):
             if not boundary_ok(self, self.boundary_combo.currentText(), boundary):
                 return
             try:
-                roi = get_roi_model(self.viewer).roi_for(np.shape(self.current_image))
+                roi = self.roi_use.roi_for_run(np.shape(self.current_image))
             except RoiError as e:
-                show_error(f"ROI: {e}")
+                show_error(str(e))
                 return
             image_layer = self.viewer.layers[current_name]
             self._run_roi = roi

@@ -17,8 +17,7 @@ from ..utils.util_widget import (create_output_folder_row, GrowOptionalParamGrou
                                  MainGrowParamWidget,apply_threshold_preview,ThresholdWidget)
 from ..utils.histogram_threshold_widget import HistogramThresholdWidget, append_threshold_row
 from ..utils.boundary_check import boundary_ok
-from ..utils.roi_model import get_roi_model
-from ..utils.roi_widget import RoiReminder
+from ..utils.roi_widget import RoiReminder, RoiUse
 
 import yaml
 import sys
@@ -171,6 +170,10 @@ class SeedGrowthWidget(QWidget):
         input_layout.addRow("Original Image:", self.image_combo)
         input_layout.addRow("Seeds Layer:", self.seeds_combo)
         input_layout.addRow("Boundary Mask (optional):", self.boundary_combo)
+        self.roi_use = RoiUse(
+            self.viewer, lambda: None if self.current_image is None else np.shape(self.current_image),
+            "Grow only inside the ROI (seeds outside stay as they are)")
+        input_layout.addRow(self.roi_use)
         
         self.refresh_btn = QPushButton("Refresh Layers")
         input_layout.addRow(self.refresh_btn)
@@ -179,7 +182,7 @@ class SeedGrowthWidget(QWidget):
         layout.addWidget(input_group)
 
 
-        self.threshold_widget = HistogramThresholdWidget(self.viewer)
+        self.threshold_widget = HistogramThresholdWidget(self.viewer, roi_use=self.roi_use)
         self.threshold_widget.preview_requested.connect(self.preview_threshold)
         layout.addWidget(self.threshold_widget)
 
@@ -216,8 +219,7 @@ class SeedGrowthWidget(QWidget):
         output_dir_layout, self.output_folder_line = create_output_folder_row()
         layout.addLayout(output_dir_layout)
 
-        self.roi_reminder = RoiReminder(
-            self.viewer, shape=lambda: None if self.current_image is None else np.shape(self.current_image))
+        self.roi_reminder = RoiReminder(self.roi_use)
         layout.addWidget(self.roi_reminder)
 
         # Control buttons
@@ -292,7 +294,7 @@ class SeedGrowthWidget(QWidget):
             if isinstance(layer, Image):
                 self.current_image = layer.data
             self.threshold_widget.set_image(layer)
-            self.roi_reminder.refresh()
+            self.roi_use.refresh()
             
     def _toggle_grow_params_visibility(self, state):
         self.advanced_params_box.setVisible(state == Qt.Checked)  
@@ -355,9 +357,9 @@ class SeedGrowthWidget(QWidget):
             if not boundary_ok(self, self.boundary_combo.currentText(), self.current_boundary):
                 return
             try:
-                roi = get_roi_model(self.viewer).roi_for(np.shape(self.current_image))
+                roi = self.roi_use.roi_for_run(np.shape(self.current_image))
             except RoiError as e:
-                show_error(f"ROI: {e}")
+                show_error(str(e))
                 return
             image_layer = self.viewer.layers[self.image_combo.currentText()]
             self._run_roi = roi

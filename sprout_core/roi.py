@@ -63,7 +63,9 @@ class Roi:
     lo, hi   : bounding box, half-open, clipped to shape
     sub_mask : bool array of shape hi - lo, or None for a solid box
     kind     : 'box' | 'mask'
-    source   : box: {'clipped': bool}; mask: {'layer': name, 'label': int | None}
+    source   : box: {'clipped': bool}, plus {'from_mask': <mask source>, 'margin': m}
+               for the bounding box of a mask (as_box); mask: {'layer': name,
+               'label': int | None} (+ 'ids': [int, ...] for several ids)
     token    : unique per snapshot
     """
     shape: tuple
@@ -94,22 +96,36 @@ class Roi:
         return cls(shape, lo_c, hi_c, None, "box", {"clipped": bool(clipped)})
 
     @classmethod
-    def from_mask(cls, labels, label=None, name=None):
-        """Voxels != 0 (label None) or == label of a label image; may be empty."""
+    def from_mask(cls, labels, label=None, name=None, ids=None):
+        """Voxels of a label image that are != 0 (default), == label, or in ids
+        (several label ids); may be empty."""
         labels = np.asarray(labels)
-        m = labels != 0 if label is None else labels == label
+        if ids is not None:
+            ids = sorted({int(i) for i in ids})
+            if len(ids) == 1:
+                label, ids = ids[0], None
+        if ids is not None:
+            m = np.isin(labels, ids)
+        else:
+            m = labels != 0 if label is None else labels == label
         shape = tuple(int(s) for s in labels.shape)
-        lo, hi = [], []
-        for ax in range(m.ndim):
-            idx = np.flatnonzero(np.any(m, axis=tuple(a for a in range(m.ndim) if a != ax)))
-            if idx.size == 0:
-                lo, hi = [0] * m.ndim, [0] * m.ndim
-                break
-            lo.append(int(idx[0]))
-            hi.append(int(idx[-1]) + 1)
+        lo, hi = bbox_of_mask(m)
         sub = m[tuple(slice(l, h) for l, h in zip(lo, hi))].copy()
         source = {"layer": name, "label": None if label is None else int(label)}
+        if ids is not None:
+            source["ids"] = ids
         return cls(shape, tuple(lo), tuple(hi), sub, "mask", source)
+
+    def as_box(self, margin=0):
+        """The bounding box of this ROI grown by margin voxels (clipped to the image),
+        as a box ROI. Empty stays empty."""
+        if self.empty:
+            return Roi(self.shape, self.lo, self.lo, None, "box",
+                       {"clipped": False, "from_mask": dict(self.source), "margin": int(margin)})
+        m = _margins(margin, self.ndim)
+        box = Roi.box(self.shape, [l - k for l, k in zip(self.lo, m)], [h + k for h, k in zip(self.hi, m)])
+        src = dict(box.source, from_mask=dict(self.source) if self.kind == "mask" else None, margin=int(margin))
+        return Roi(box.shape, box.lo, box.hi, None, "box", src)
 
     # ---------------------------------------------------------- properties
     @property
@@ -130,8 +146,11 @@ class Roi:
         return self._n_voxels / total if total else 0.0
 
     def _empty_reason(self):
-        if self.kind == "mask":
-            name, label = self.source.get("layer"), self.source.get("label")
+        src = self.source.get("from_mask") or (self.source if self.kind == "mask" else None)
+        if src:
+            name, label, ids = src.get("layer"), src.get("label"), src.get("ids")
+            if ids:
+                return f"none of the ids {format_ids(ids)} occurs in '{name}'"
             if label is not None:
                 return f"label {label} does not occur in '{name}'"
             return f"'{name}' has no non-zero voxel"
@@ -299,10 +318,14 @@ class Roi:
         if self.empty:
             return self._empty_reason()
         if self.kind == "box":
+            src = self.source.get("from_mask")
+            if src:
+                margin = self.source.get("margin") or 0
+                extra = f" + margin {margin}" if margin else ""
+                return (f"bbox of '{src.get('layer')}' {_which(src)}{extra}: {self._extent_text()} "
+                        f"({self._count_text()})")
             return f"box {self._extent_text()} ({self._count_text()})"
-        label = self.source.get("label")
-        which = f"label {label}" if label is not None else "non-zero"
-        return f"mask '{self.source.get('layer')}' {which} ({self._count_text()}) in {self._extent_text()}"
+        return f"mask '{self.source.get('layer')}' {_which(self.source)} ({self._count_text()}) in {self._extent_text()}"
 
     def to_metadata(self):
         """JSON-able description (bbox_stop exclusive)."""
@@ -315,6 +338,55 @@ class Roi:
 # ----------------------------------------------------------------------
 # helpers
 # ----------------------------------------------------------------------
+def bbox_of_mask(mask):
+    """(lo, hi) half-open bounding box of the True voxels; zeros for an empty mask."""
+    mask = np.asarray(mask, bool)
+    lo, hi = [], []
+    for ax in range(mask.ndim):
+        idx = np.flatnonzero(np.any(mask, axis=tuple(a for a in range(mask.ndim) if a != ax)))
+        if idx.size == 0:
+            return [0] * mask.ndim, [0] * mask.ndim
+        lo.append(int(idx[0]))
+        hi.append(int(idx[-1]) + 1)
+    return lo, hi
+
+
+def parse_ids(text):
+    """'3, 5-9' -> {3, 5, 6, 7, 8, 9} (shared by the ROI Manager and the Prompt tab).
+    ValueError if a part is not a number or a range."""
+    out = set()
+    for part in str(text).replace(";", ",").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            a, b = part.split("-", 1)
+            out.update(range(int(a), int(b) + 1))
+        else:
+            out.add(int(part))
+    return out
+
+
+def format_ids(ids):
+    """[3, 5, 6, 7] -> '3,5-7'."""
+    ids = sorted({int(i) for i in ids})
+    parts, i = [], 0
+    while i < len(ids):
+        j = i
+        while j + 1 < len(ids) and ids[j + 1] == ids[j] + 1:
+            j += 1
+        parts.append(str(ids[i]) if i == j else f"{ids[i]}-{ids[j]}")
+        i = j + 1
+    return ",".join(parts)
+
+
+def _which(src):
+    ids, label = src.get("ids"), src.get("label")
+    if ids:
+        return f"ids {format_ids(ids)}"
+    return f"label {label}" if label is not None else "non-zero"
+
+
 _EXT = re.compile(r"(\.(?:tif|tiff|png|jpg|jpeg|npy|nii|nii\.gz|h5|zarr))$", re.IGNORECASE)
 
 
