@@ -4,10 +4,11 @@
                     (a box, or a Labels layer + ids used as a mask or as its bounding
                     box); "Set as current ROI" applies it, "Clear ROI" removes it.
                     Nothing is computed while the draft is edited.
-    RoiBoxOverlay   the "SPROUT ROI" Shapes layer showing the draft box on the current
-                    slice: yellow inside the box's range on the third axis, grey outside
-    RoiUse          a tab's "Use current ROI" checkbox (off by default) + status line +
-                    [Show ROI Manager]; resolves the ROI for that tab's runs / displays
+    RoiBoxOverlay   the "SPROUT ROI" Shapes layer: the current ROI's bounding box on the
+                    current slice (yellow inside its range on the third axis, grey
+                    outside), plus an edited draft box in cyan while the Manager is open
+    RoiUse          a tab's "Use current ROI" checkbox (off by default) + status line;
+                    resolves the ROI for that tab's runs / displays
     RoiReminder     a line above a run button, shown only while the tab runs inside an ROI
 
 All ROI state lives in the viewer's RoiModel (roi_model.py); the widgets connect only
@@ -23,7 +24,7 @@ from napari.utils.notifications import show_info
 from qtpy.QtCore import Qt, QTimer, Signal
 from qtpy.QtWidgets import (
     QButtonGroup, QCheckBox, QComboBox, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QRadioButton, QScrollArea, QSizePolicy, QSpinBox, QStackedWidget, QToolButton,
+    QPushButton, QRadioButton, QSizePolicy, QSpinBox, QStackedWidget, QToolButton,
     QVBoxLayout, QWidget,
 )
 
@@ -34,6 +35,8 @@ from .roi_model import get_roi_model
 OVERLAY_NAME = "SPROUT ROI"
 YELLOW = "yellow"
 GREY = "#99999999"           # (0.6, 0.6, 0.6, 0.6)
+DRAFT = "cyan"               # a draft box that is not applied yet
+DRAFT_DIM = "#00ffff66"      # ...outside its range on the non-displayed axis
 OK_STYLE = "color: gray"
 ERROR_STYLE = "color: #d9534f"
 ROI_STYLE = "color: #e08a00"
@@ -73,21 +76,32 @@ def shape_mismatch_text(roi, shape):
 
 # --------------------------------------------------------------------------
 class RoiBoxOverlay:
-    """The draft box as a Shapes rectangle on the current 2D slice.
+    """The "SPROUT ROI" Shapes layer: rectangles on the displayed 2D slice.
 
-    The layer gets the image's scale / translate / rotate / shear / affine, so its
-    data coordinates are the image's voxel indices (anisotropic images included).
-    Every programmatic change of the layer runs under `_syncing`, so that only the
-    user's own drawing / editing / deleting reaches the model. Other layers (the
-    image, the previously active layer) are only held by weak reference.
+        current ROI   its bounding box, whenever there is a current ROI: yellow while the
+                      slice is inside its range on the non-displayed axis, grey outside
+        draft box     only while the Manager is open on Box and the draft differs from the
+                      current ROI: cyan (dim cyan outside its range)
+
+    Purely visual: nothing is computed here. The layer gets the reference layer's scale /
+    translate / rotate / shear / affine, so its data coordinates are voxel indices
+    (anisotropic images included): for the current ROI the image it was drawn on, or
+    the labels layer it was made from (else an Image layer of the same shape, else
+    identity); while a draft is shown, the draft's image. A rectangle in another
+    frame is not drawn. Every programmatic change of the layer runs under `_syncing`,
+    so that only the user's own drawing / editing / deleting reaches the model (as a
+    draft edit: the current ROI only changes with Set / Clear). Other layers are only
+    held by weak reference.
     """
 
-    def __init__(self, viewer, model, shown=lambda: True):
+    def __init__(self, viewer, model, draft_shown=lambda: True):
         self.viewer = viewer
         self.model = model
-        self.shown = shown           # callable: may the draft box be shown now?
+        self.draft_shown = draft_shown   # callable: may the draft box be shown now?
         self.layer = None
-        self._ref = None
+        self._ref = None                 # image the user draws on
+        self._frame = None               # (weakref to the layer giving the frame, shape) of the last sync
+        self._kinds = []                 # what each rectangle is: 'current' | 'draft'
         self._syncing = False
         self._prev = None
         self._deleted_by_user = False
@@ -108,18 +122,38 @@ class RoiBoxOverlay:
     def _prev_active(self, layer):
         self._prev = _weak(layer)
 
+    # ---- frames
+    @staticmethod
+    def _transform(ref, ndim):
+        if ref is None:
+            return np.ones(ndim), np.zeros(ndim), np.eye(ndim + 1)
+        return np.asarray(ref.scale), np.asarray(ref.translate), np.asarray(ref.affine.affine_matrix)
+
+    def _same_frame(self, a, b, ndim):
+        ta, tb = self._transform(a, ndim), self._transform(b, ndim)
+        return all(x.shape == y.shape and np.allclose(x, y) for x, y in zip(ta, tb))
+
+    def _current_ref(self):
+        """Layer whose transform places the current ROI: its own reference, else an Image
+        layer of the same shape, else None (identity)."""
+        roi = self.model.current
+        ref = self.model.current_ref
+        if ref is not None and ref in self.viewer.layers and tuple(np.shape(ref.data)) == roi.shape:
+            return ref
+        return next((l for l in self.viewer.layers
+                     if _usable_image(l) and tuple(np.shape(l.data)) == roi.shape), None)
+
     # ---- layer
     def _alive(self):
         return self.layer is not None and self.layer in self.viewer.layers
 
-    def _matches(self, ref):
-        lay = self.layer
-        return (lay.ndim == ref.ndim and np.allclose(lay.scale, ref.scale)
-                and np.allclose(lay.translate, ref.translate)
-                and np.allclose(lay.affine.affine_matrix, ref.affine.affine_matrix))
+    def _matches(self, ref, ndim):
+        return self.layer.ndim == ndim and self._same_frame(self.layer, ref, ndim)
 
-    def ensure_layer(self, ref):
-        if self._alive() and self._matches(ref):
+    def ensure_layer(self, ref, shape=None):
+        shape = tuple(ref.data.shape) if shape is None else tuple(shape)
+        ndim = len(shape)
+        if self._alive() and self._matches(ref, ndim):
             return self.layer
         if self._alive():
             self._syncing = True
@@ -127,15 +161,18 @@ class RoiBoxOverlay:
                 self.viewer.layers.remove(self.layer)
             finally:
                 self._syncing = False
-        shape = np.asarray(ref.data.shape)
-        width = max(1.0, 0.004 * float(shape[_displayed_axes(self.viewer, ref)].max()))
+        scale, translate, affine = self._transform(ref, ndim)
+        kw = {} if ref is None else {"rotate": ref.rotate, "shear": ref.shear}
+        offset = self.viewer.dims.ndim - ndim
+        shown = [a - offset for a in self.viewer.dims.displayed if a >= offset] or list(range(ndim))
+        width = max(1.0, 0.004 * float(max(shape[a] for a in shown)))
         active = self.viewer.layers.selection.active
         self._syncing = True
         try:
             self.layer = self.viewer.add_shapes(
-                ndim=ref.ndim, name=OVERLAY_NAME, shape_type="rectangle", edge_color=YELLOW,
-                face_color="transparent", edge_width=width, scale=ref.scale, translate=ref.translate,
-                rotate=ref.rotate, shear=ref.shear, affine=ref.affine.affine_matrix)
+                ndim=ndim, name=OVERLAY_NAME, shape_type="rectangle", edge_color=YELLOW,
+                face_color="transparent", edge_width=width, scale=scale, translate=translate,
+                affine=affine, **kw)
         finally:
             self._syncing = False
         self.layer.events.data.connect(self._on_data)
@@ -153,6 +190,10 @@ class RoiBoxOverlay:
         if layer is self._prev_active:
             self._prev_active = None
 
+    def allow_again(self):
+        """A new Set / Clear / Draw: a layer the user deleted may come back."""
+        self._deleted_by_user = False
+
     def remove_layer(self):
         """Take the overlay out of the viewer (the panel is closing)."""
         lay, self.layer = self.layer, None
@@ -167,7 +208,7 @@ class RoiBoxOverlay:
 
     # ---- drawing
     def start_draw(self, ref):
-        """Let the user drag a rectangle on the displayed slice."""
+        """Let the user drag a rectangle on the displayed slice (it becomes the draft box)."""
         if ref is None:
             show_info("Load an image first: the box is drawn in its voxel grid")
             return False
@@ -175,16 +216,19 @@ class RoiBoxOverlay:
             show_info("Switch to the 2D view to draw")
             return False
         self.ref = ref
+        self.allow_again()
         prev = self.viewer.layers.selection.active
         lay = self.ensure_layer(ref)
         self._prev_active = prev if prev is not lay else None
         self._syncing = True
         try:
             lay.data = []
-            lay.edge_color = YELLOW
+            lay.edge_color = DRAFT
             lay.visible = True
         finally:
             self._syncing = False
+        self._kinds = []
+        self._frame = (weakref.ref(ref), tuple(ref.data.shape))
         self.viewer.layers.selection.active = lay
         lay.mode = "add_rectangle"
         return True
@@ -195,25 +239,44 @@ class RoiBoxOverlay:
         action = str(getattr(event, "action", ""))
         if action not in ("added", "changed", "removed"):
             return
+        idx = getattr(event, "data_indices", None)
+        idx = [int(i) for i in idx] if idx is not None and len(idx) and int(idx[0]) >= 0 else None
         # ADDED fires inside napari's mouse-release handler: change the layer later
-        QTimer.singleShot(0, lambda: self._apply_from_shapes(action))
+        QTimer.singleShot(0, lambda: self._apply_from_shapes(action, idx))
 
-    def _apply_from_shapes(self, action):
-        lay, ref = self.layer, self.ref if self.ref is not None else self.model.draft_ref
-        if not self._alive() or ref is None:
+    def _apply_from_shapes(self, action, idx=None):
+        """The user drew / edited / deleted a rectangle: that is a draft edit."""
+        lay = self.layer
+        if not self._alive():
             return
-        if len(lay.data) == 0:
-            if action == "removed":
-                self.model.clear_draft_box()
+        drawing = str(lay.mode).startswith("add")
+        if drawing:
+            ref, shape = self.ref, (tuple(self.ref.data.shape) if self.ref is not None else None)
+        else:
+            fref, shape = self._frame if self._frame else (None, None)
+            ref = fref() if fref is not None else None
+        if shape is None:
             self._finish_drawing()
             return
-        verts = np.asarray(lay.data[-1], float)
-        shape = tuple(ref.data.shape)
+        if action == "removed":
+            gone = [self._kinds[i] for i in (idx or []) if i < len(self._kinds)] or ["draft"]
+            if "draft" in gone:
+                self.model.clear_draft_box()
+            self._finish_drawing()
+            self.sync()
+            return
+        if len(lay.data) == 0:
+            self._finish_drawing()
+            return
+        i = len(lay.data) - 1
+        if action == "changed" and idx:
+            i = min(idx[0], i)
+        verts = np.asarray(lay.data[i], float)
         old = self.model.draft_box
         old = old if old is not None and old.shape == shape else None
         lo = list(old.lo) if old else [0] * len(shape)
         hi = list(old.hi) if old else list(shape)
-        for ax in _displayed_axes(self.viewer, ref):
+        for ax in _displayed_axes(self.viewer, lay):
             # a voxel is inside if its centre is (pixel-centre rule; idempotent on our corners)
             lo[ax] = min(max(int(math.ceil(verts[:, ax].min())), 0), shape[ax])
             hi[ax] = min(max(int(math.floor(verts[:, ax].max())) + 1, lo[ax]), shape[ax])
@@ -230,49 +293,79 @@ class RoiBoxOverlay:
                 self.viewer.layers.selection.active = prev
 
     # ---- display
-    def sync(self):
-        """Show the draft box on the current slice (or hide it)."""
-        m = self.model
-        ref, box = m.draft_ref, m.draft_box
-        show = (self.shown() and m.draft_kind == "box" and box is not None and ref is not None
-                and box.shape == tuple(ref.data.shape) and self.viewer.dims.ndisplay == 2)
-        if not self._alive() or (show and not self._matches(ref)):
-            if not show or self._deleted_by_user:
-                return
-            self.ensure_layer(ref)
+    def _rect(self, lo, hi):
+        """(corners, inside) of the box [lo, hi) on the displayed slice, or None."""
         lay = self.layer
-        if str(lay.mode).startswith("add"):
-            return   # the user is drawing
-        if not show:
-            if lay.visible:
-                self._syncing = True
-                try:
-                    lay.visible = False
-                finally:
-                    self._syncing = False
-            return
-        self.ref = ref
-        lo, hi = box.lo, box.hi
-        shown = _displayed_axes(self.viewer, ref)
+        shown = _displayed_axes(self.viewer, lay)
         if len(shown) != 2:
-            return
+            return None
         a, b = shown
-        p = np.zeros(ref.ndim)
+        p = np.zeros(lay.ndim)
         inside = True
-        for ax in range(ref.ndim):
+        coord = lay.world_to_data(self.viewer.dims.point)
+        for ax in range(lay.ndim):
             if ax not in shown:
-                p[ax] = _current_index(self.viewer, ref, ax)
+                p[ax] = int(round(coord[ax]))
                 inside &= lo[ax] <= p[ax] < hi[ax]
         verts = np.repeat(p[None], 4, axis=0)
         verts[:, a] = [lo[a] - 0.5, lo[a] - 0.5, hi[a] - 0.5, hi[a] - 0.5]
         verts[:, b] = [lo[b] - 0.5, hi[b] - 0.5, hi[b] - 0.5, lo[b] - 0.5]
+        return verts, inside or lay.ndim == 2
+
+    def _hide(self):
+        if self._alive() and (self.layer.visible or len(self.layer.data)):
+            self._syncing = True
+            try:
+                self.layer.data = []
+                self.layer.visible = False
+            finally:
+                self._syncing = False
+        self._kinds = []
+
+    def sync(self):
+        """Draw the current ROI (and an edited draft box) on the current slice, or hide."""
+        if self._syncing:
+            return   # re-entered from napari events while the layer is being added / changed
+        m = self.model
+        if self._alive() and str(self.layer.mode).startswith("add"):
+            return   # the user is drawing
+        cur = m.current
+        draft, dref = m.draft_box, m.draft_ref
+        if not (self.draft_shown() and m.draft_kind == "box" and draft is not None and m.draft_edited
+                and dref is not None and dref in self.viewer.layers and tuple(dref.data.shape) == draft.shape):
+            draft = None
+        if self.viewer.dims.ndisplay != 2 or (cur is None and draft is None):
+            self._hide()
+            return
+        cref = self._current_ref() if cur is not None else None
+        # the layer's frame: the draft's while it is edited, else the current ROI's
+        fref, fshape = (dref, draft.shape) if draft is not None else (cref, cur.shape)
+        if not self._alive() or not self._matches(fref, len(fshape)):
+            if self._deleted_by_user:
+                return
+            self.ensure_layer(fref, fshape)
+        self._frame = (None if fref is None else weakref.ref(fref), tuple(fshape))
+        rects, colors, kinds = [], [], []
+        if cur is not None and cur.ndim == len(fshape) and (draft is None or self._same_frame(cref, fref, cur.ndim)):
+            r = self._rect(cur.lo, cur.hi)
+            if r is not None:
+                rects.append(r[0]), colors.append(YELLOW if r[1] else GREY), kinds.append("current")
+        if draft is not None:
+            r = self._rect(draft.lo, draft.hi)
+            if r is not None:
+                rects.append(r[0]), colors.append(DRAFT if r[1] else DRAFT_DIM), kinds.append("draft")
+        if not rects:
+            self._hide()
+            return
+        lay = self.layer
         self._syncing = True
         try:
-            lay.data = [(verts, "rectangle")]
-            lay.edge_color = YELLOW if inside or ref.ndim == 2 else GREY
+            lay.data = [(v, "rectangle") for v in rects]
+            lay.edge_color = colors
             lay.visible = True
         finally:
             self._syncing = False
+        self._kinds = kinds
 
 
 # --------------------------------------------------------------------------
@@ -283,10 +376,14 @@ class RoiManager(QWidget):
         super().__init__(parent)
         self.viewer = napari_viewer
         self.model = get_roi_model(napari_viewer)
-        self.overlay = RoiBoxOverlay(napari_viewer, self.model, shown=lambda: self.expanded)
+        self.overlay = RoiBoxOverlay(napari_viewer, self.model, draft_shown=lambda: self.expanded)
         self._refresh_timer = QTimer(self)
         self._refresh_timer.setSingleShot(True)
         self._refresh_timer.timeout.connect(self.refresh_layers)
+        # dims events also fire while napari adds a layer: redraw on the next turn
+        self._dims_timer = QTimer(self)
+        self._dims_timer.setSingleShot(True)
+        self._dims_timer.timeout.connect(self._on_dims_settled)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -358,7 +455,6 @@ class RoiManager(QWidget):
         self.model.changed.connect(self._on_current_changed)
         self.model.draft_changed.connect(self._on_draft_changed)
         self.model.status_changed.connect(self._on_status_changed)
-        self.model.show_requested.connect(self.show_manager)
         self.model.layer_inserted.connect(self._on_layer_inserted)
         self.model.layer_removed.connect(self._on_layer_removed)
         self.model.dims_changed.connect(self._on_dims)
@@ -505,16 +601,6 @@ class RoiManager(QWidget):
         self._refresh_timer.start(0)
 
     # ------------------------------------------------------------- actions
-    def show_manager(self):
-        """Expand and bring the manager into view (from a tab's [Show ROI Manager])."""
-        self.header.setChecked(True)
-        w = self.parentWidget()
-        while w is not None and not isinstance(w, QScrollArea):
-            w = w.parentWidget()
-        if w is not None:
-            w.ensureWidgetVisible(self)
-        self.set_btn.setFocus(Qt.OtherFocusReason)
-
     def _on_expanded(self, on):
         self.body.setVisible(on)
         self.header.setArrowType(Qt.DownArrow if on else Qt.RightArrow)
@@ -583,6 +669,9 @@ class RoiManager(QWidget):
 
     # ------------------------------------------------------------- display
     def _on_dims(self):
+        self._dims_timer.start(0)
+
+    def _on_dims_settled(self):
         if self.expanded:
             self._update_box_page()
         self.overlay.sync()
@@ -620,6 +709,8 @@ class RoiManager(QWidget):
 
     def _on_current_changed(self):
         self.header.setText(f"ROI Manager — Current ROI: {self.model.summary()}")
+        self.overlay.allow_again()
+        self.overlay.sync()
 
     def _on_draft_changed(self):
         m = self.model
@@ -672,16 +763,10 @@ class RoiUse(QWidget):
         row.addWidget(self.use_cb)
         row.addWidget(self.desc, 1)
         lay.addLayout(row)
-        row = QHBoxLayout()
         self.status = QLabel("")
         self.status.setWordWrap(True)
-        self.show_btn = QPushButton("Show ROI Manager")
-        self.show_btn.setToolTip("Open the ROI Manager at the bottom of the panel")
-        row.addWidget(self.status, 1)
-        row.addWidget(self.show_btn)
-        lay.addLayout(row)
+        lay.addWidget(self.status)
         self.use_cb.toggled.connect(self._on_toggled)
-        self.show_btn.clicked.connect(self.model.request_show)
         self.model.changed.connect(self._on_current_changed)
         self.refresh()
 
@@ -734,7 +819,6 @@ class RoiUse(QWidget):
 
     def refresh(self):
         st = self.state()
-        self.show_btn.setVisible(st == "none")
         if st == "off":
             self.status.setVisible(False)
         else:

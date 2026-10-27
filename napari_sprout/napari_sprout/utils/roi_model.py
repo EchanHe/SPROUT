@@ -51,7 +51,6 @@ class RoiModel(QObject):
     changed = Signal()            # the current ROI was set / cleared / updated
     draft_changed = Signal()      # the manager's draft was edited
     status_changed = Signal()     # busy / error / "source edited since Set"
-    show_requested = Signal()     # a tab asks to show the ROI Manager
     layer_inserted = Signal(object)    # napari events, re-emitted for widgets
     layer_removed = Signal(object)
     dims_changed = Signal()
@@ -63,6 +62,7 @@ class RoiModel(QObject):
         self._current = None
         self._current_spec = None
         self._source = None              # weakref: Labels layer the current ROI was made from
+        self._current_ref = None         # weakref: layer whose transform places the current ROI
         self._source_name = None
         self.source_edited = False       # ...edited since Set
         self.source_removed = False
@@ -100,7 +100,13 @@ class RoiModel(QObject):
     def source_layer(self):
         return _deref(self._source)
 
-    def _set_current(self, roi, spec, source=None):
+    @property
+    def current_ref(self):
+        """The image a box was drawn on / the labels layer a mask came from (or None)."""
+        return _deref(self._current_ref)
+
+    def _set_current(self, roi, spec, source=None, ref=None):
+        self._current_ref = _weak(ref if ref is not None else source)
         if source is not self.source_layer:
             self._watch_source(source)
         self.source_edited = self.source_removed = False
@@ -118,9 +124,6 @@ class RoiModel(QObject):
         self._job += 1
         self.busy, self.error = False, None
         self._set_current(None, None)
-
-    def request_show(self):
-        self.show_requested.emit()
 
     # ------------------------------------------------------------ draft
     @property
@@ -204,7 +207,7 @@ class RoiModel(QObject):
             if roi.empty:
                 self._fail(roi._empty_reason())
                 return False
-            self._set_current(roi, spec)
+            self._set_current(roi, spec, ref=self.draft_ref)
             return True
         return self._snapshot(spec)
 
