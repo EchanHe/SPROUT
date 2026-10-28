@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 META_KEY = "sprout_roi"
+TIMES = " × "            # ' x ' between sizes in display texts
 WALL_MARGIN = 1
 
 _tokens = itertools.count(1)
@@ -310,8 +311,30 @@ class Roi:
     def _count_text(self):
         n = self._n_voxels
         count = f"{n / 1e6:.2f} M voxels" if n >= 1_000_000 else f"{n:,} voxels"
-        pct = 100 * self.fraction
-        return f"{count}, {pct:.0f}%" if pct >= 1 or pct == 0 else f"{count}, {pct:.2g}%"
+        return f"{count}, {format_percent(self.fraction)}"
+
+    # ---- short texts for displays (numbers of the bounding box)
+    @property
+    def sizes(self):
+        """Bounding-box size per axis (hi - lo)."""
+        return tuple(int(h - l) for l, h in zip(self.lo, self.hi))
+
+    @property
+    def axis_names(self):
+        return _axis_names(self.ndim)
+
+    @property
+    def kind_word(self):
+        """'box' | 'mask' | 'bbox' (the bounding box of a mask)."""
+        if self.kind == "mask":
+            return "mask"
+        return "bbox" if self.source.get("from_mask") else "box"
+
+    def short(self):
+        """'box 201 × 71 × 72 (8%)': kind, bbox size, share of the image."""
+        if self.empty:
+            return self._empty_reason()
+        return f"{self.kind_word} {TIMES.join(str(s) for s in self.sizes)} ({format_percent(self.fraction)})"
 
     def describe(self):
         """One line for logs and status: ends are INCLUSIVE in the text."""
@@ -365,6 +388,12 @@ def parse_ids(text):
         else:
             out.add(int(part))
     return out
+
+
+def format_percent(fraction):
+    """0.08 -> '8%', 0.0005 -> '0.05%', 0 -> '0%'."""
+    pct = 100 * fraction
+    return f"{pct:.0f}%" if pct >= 1 or pct == 0 else f"{pct:.2g}%"
 
 
 def format_ids(ids):

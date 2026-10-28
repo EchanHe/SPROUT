@@ -15,6 +15,12 @@ Tabs opt in one by one ("Use current ROI", roi_widget.RoiUse) and read
 
 A run keeps the Roi it got: Roi objects are immutable, a new Set makes a new one.
 
+Labels draft preview: while the ROI Manager is open on its Labels page it asks
+compute_preview() (debounced) for the draft's mask snapshot: bbox, size and voxel
+count to show and draw. The result is cached per (layer, data version, ids) and a
+Set with the same key reuses it instead of computing again; a job counter drops
+stale results. Nothing here ever makes a tab recompute.
+
 The model lives as long as its viewer and owns the napari event connections the
 ROI widgets need; it re-emits them as Qt signals (layer_inserted, layer_removed,
 dims_changed), so a closed SPROUT panel leaves no callbacks behind in napari.
@@ -39,6 +45,19 @@ def get_roi_model(viewer):
     return model
 
 
+def _parse_ids(ids_text):
+    """None (all non-zero) or sorted ids; ValueError with a message for the user."""
+    if ids_text is None:
+        return None
+    try:
+        ids = sorted(parse_ids(ids_text))
+    except ValueError:
+        raise ValueError(f"ids: enter numbers like 3,5-7 (got '{ids_text}')") from None
+    if not ids:
+        raise ValueError("ids: enter at least one id, e.g. 3,5-7")
+    return ids
+
+
 def _weak(obj):
     return None if obj is None else weakref.ref(obj)
 
@@ -54,6 +73,7 @@ class RoiModel(QObject):
     layer_inserted = Signal(object)    # napari events, re-emitted for widgets
     layer_removed = Signal(object)
     dims_changed = Signal()
+    preview_changed = Signal()    # the Labels draft preview started / finished
 
     def __init__(self, viewer):
         super().__init__()
@@ -64,6 +84,7 @@ class RoiModel(QObject):
         self._source = None              # weakref: Labels layer the current ROI was made from
         self._current_ref = None         # weakref: layer whose transform places the current ROI
         self._source_name = None
+        self.current_ref_name = None
         self.source_edited = False       # ...edited since Set
         self.source_removed = False
         self.busy = False                # a Set / Update is computing
@@ -80,6 +101,12 @@ class RoiModel(QObject):
         self.draft_use = "mask"          # 'mask' | 'bbox'
         self.draft_margin = 0
         self.version = 0
+        # Labels draft preview (cached mask snapshot), data versions of watched Labels layers
+        self.preview = None              # {'key', 'state': 'computing'|'ok'|'error', 'roi', 'error'}
+        self._pjob = 0
+        self._after_preview = None       # (job, spec) of a Set waiting for the running preview
+        self._versions = weakref.WeakKeyDictionary()
+        self._tracked = weakref.WeakSet()
 
         viewer.layers.events.inserted.connect(self._on_layer_inserted)
         viewer.layers.events.removed.connect(self._on_layer_removed)
@@ -106,7 +133,9 @@ class RoiModel(QObject):
         return _deref(self._current_ref)
 
     def _set_current(self, roi, spec, source=None, ref=None):
-        self._current_ref = _weak(ref if ref is not None else source)
+        ref = ref if ref is not None else source
+        self._current_ref = _weak(ref)
+        self.current_ref_name = None if ref is None else ref.name
         if source is not self.source_layer:
             self._watch_source(source)
         self.source_edited = self.source_removed = False
@@ -164,6 +193,7 @@ class RoiModel(QObject):
         """Labels draft: layer, ids_text (None = all non-zero), use 'mask' | 'bbox', margin."""
         if layer is not ...:
             self._draft_labels = _weak(layer)
+            self._track(layer)
         if ids_text is not ...:
             self.draft_ids_text = None if ids_text is None else str(ids_text)
         if use is not ...:
@@ -228,13 +258,27 @@ class RoiModel(QObject):
             self._fail("the Labels layer was removed")
             return False
         try:
-            ids = None if ids_text is None else sorted(parse_ids(ids_text))
-        except ValueError:
-            self._fail(f"ids: enter numbers like 3,5-7 (got '{ids_text}')")
+            ids = _parse_ids(ids_text)
+        except ValueError as e:
+            self._fail(str(e))
             return False
-        if ids is not None and not ids:
-            self._fail("ids: enter at least one id, e.g. 3,5-7")
-            return False
+        key = self._labels_key(layer, ids)
+        p = self.preview
+        if p is not None and p["key"] == key and p["state"] in ("ok", "error"):   # reuse the preview
+            self._job += 1
+            self.busy, self.error = False, None
+            if p["state"] == "error":
+                self._fail(p["error"])
+                return False
+            roi = p["roi"]
+            self._set_current(roi.as_box(margin) if use == "bbox" else roi, spec, source=layer)
+            return True
+        if p is not None and p["key"] == key and p["state"] == "computing":   # wait for it
+            self._job += 1
+            self._after_preview = (self._job, spec)
+            self.busy, self.error = True, None
+            self.status_changed.emit()
+            return True
         self._job += 1
         job, data, name = self._job, layer.data, layer.name
         self.busy, self.error = True, None
@@ -244,12 +288,16 @@ class RoiModel(QObject):
             roi = Roi.from_mask(np.asarray(data), ids=ids, name=name)
             if roi.empty:
                 raise RoiError(roi._empty_reason())
-            return roi.as_box(margin) if use == "bbox" else roi
+            return roi
 
         def done(roi):
+            if self._pjob_key() != key:      # also serves as the preview of this key
+                self._pjob += 1
+                self.preview = {"key": key, "state": "ok", "roi": roi, "error": None}
+                self.preview_changed.emit()
             if job == self._job and self.busy:
                 self.busy = False
-                self._set_current(roi, spec, source=lref())
+                self._set_current(roi.as_box(margin) if use == "bbox" else roi, spec, source=lref())
 
         def failed(e):
             if job == self._job:
@@ -277,6 +325,7 @@ class RoiModel(QObject):
                         pass
         self._source = _weak(layer)
         self._source_name = None if layer is None else layer.name
+        self._track(layer)
         if layer is not None:
             layer.events.data.connect(self._on_source_edited)
             if hasattr(layer.events, "paint"):
@@ -286,6 +335,106 @@ class RoiModel(QObject):
         if not self.source_edited:       # nothing is recomputed: the user clicks Update
             self.source_edited = True
             self.status_changed.emit()
+
+    # ------------------------------------------------------------ Labels draft preview
+    def _track(self, layer):
+        """Count edits of a Labels layer (its data version: part of the preview cache key)."""
+        if layer is None or layer in self._tracked:
+            return
+        self._tracked.add(layer)
+        layer.events.data.connect(self._on_labels_edited)
+        if hasattr(layer.events, "paint"):
+            layer.events.paint.connect(self._on_labels_edited)
+
+    def _on_labels_edited(self, event=None):
+        layer = getattr(event, "source", None)
+        if layer is None:
+            return
+        self._versions[layer] = self._versions.get(layer, 0) + 1
+        if layer is self.draft_labels:
+            self.draft_changed.emit()        # the preview is stale now (no computing here)
+
+    def _labels_key(self, layer, ids):
+        return (weakref.ref(layer), self._versions.get(layer, 0), None if ids is None else tuple(ids))
+
+    def _pjob_key(self):
+        p = self.preview
+        return None if p is None else p["key"]
+
+    def draft_labels_key(self):
+        """Cache key of the Labels draft; ValueError (user text) if it cannot be made."""
+        layer = self.draft_labels
+        if layer is None or self.viewer is None or layer not in self.viewer.layers:
+            raise ValueError("choose a Labels layer")
+        return self._labels_key(layer, _parse_ids(self.draft_ids_text))
+
+    def draft_preview(self):
+        """The preview of the current Labels draft (state 'computing' / 'ok' / 'error'), or
+        None if there is none for it yet (stale or never computed)."""
+        try:
+            key = self.draft_labels_key()
+        except ValueError:
+            return None
+        p = self.preview
+        return p if p is not None and p["key"] == key else None
+
+    def compute_preview(self):
+        """Snapshot the Labels draft's mask in the background (no-op if cached / running)."""
+        try:
+            key = self.draft_labels_key()
+            ids = _parse_ids(self.draft_ids_text)
+        except ValueError:
+            return False
+        if self._pjob_key() == key:
+            return False
+        layer = self.draft_labels
+        self._pjob += 1
+        job, data, name = self._pjob, layer.data, layer.name
+        self.preview = {"key": key, "state": "computing", "roi": None, "error": None}
+        self.preview_changed.emit()
+
+        def work():
+            return Roi.from_mask(np.asarray(data), ids=ids, name=name)
+
+        def done(roi):
+            if job == self._pjob:
+                err = roi._empty_reason() if roi.empty else None
+                self.preview = {"key": key, "state": "error" if err else "ok", "roi": roi, "error": err}
+                self.preview_changed.emit()
+                self._finish_after_preview()
+
+        def failed(e):
+            if job == self._pjob:
+                self.preview = {"key": key, "state": "error", "roi": None,
+                                "error": f"cannot use '{name}': {type(e).__name__}: {e}"}
+                self.preview_changed.emit()
+                self._finish_after_preview()
+
+        w = thread_worker(work, ignore_errors=True)()
+        w.returned.connect(done)
+        w.errored.connect(failed)
+        self._workers.add(w)
+        w.finished.connect(lambda: self._workers.discard(w))
+        w.start()
+        return True
+
+    def _finish_after_preview(self):
+        """A Set clicked while the same preview was computing: finish it with the preview."""
+        pending, self._after_preview = self._after_preview, None
+        if pending is not None and pending[0] == self._job and self.busy:
+            self.busy = False
+            self._snapshot(pending[1])
+
+    def draft_roi(self):
+        """(Roi, layer giving its coordinates) of the draft for display, or None: the Box
+        draft, or the previewed Labels draft (its mask, or its bounding box + margin)."""
+        if self.draft_kind == "box":
+            return None if self.draft_box is None else (self.draft_box, self.draft_ref)
+        p = self.draft_preview()
+        if p is None or p["state"] != "ok":
+            return None
+        roi = p["roi"]
+        return (roi.as_box(self.draft_margin) if self.draft_use == "bbox" else roi), self.draft_labels
 
     # ------------------------------------------------------------ napari events
     def _on_layer_inserted(self, event):

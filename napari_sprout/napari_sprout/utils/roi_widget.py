@@ -1,12 +1,14 @@
 """ROI Manager (bottom of the SPROUT panel), its box overlay, and the per-tab opt-in.
 
-    RoiManager      collapsible "ROI Manager — Current ROI: ..." section. Edits a draft
-                    (a box, or a Labels layer + ids used as a mask or as its bounding
-                    box); "Set as current ROI" applies it, "Clear ROI" removes it.
-                    Nothing is computed while the draft is edited.
+    RoiManager      collapsible "ROI Manager — box 201 × 71 × 72 (8%)" section: details of
+                    the current ROI and of the draft; edits the draft (a box, or a Labels
+                    layer + ids used as a mask or as its bounding box); "Set as current
+                    ROI" applies it, "Clear ROI" removes it. Only a Labels draft is
+                    previewed (debounced, while the Manager is open on Labels).
     RoiBoxOverlay   the "SPROUT ROI" Shapes layer: the current ROI's bounding box on the
-                    current slice (yellow inside its range on the third axis, grey
-                    outside), plus an edited draft box in cyan while the Manager is open
+                    current slice (yellow + "ROI 201×71×72" inside its range on the
+                    paging axis, orange-red + "outside ROI (z 250–450)" outside), plus an
+                    edited draft in cyan ("draft …") while the Manager is open
     RoiUse          a tab's "Use current ROI" checkbox (off by default) + status line;
                     resolves the ROI for that tab's runs / displays
     RoiReminder     a line above a run button, shown only while the tab runs inside an ROI
@@ -16,6 +18,7 @@ to its Qt signals. napari 0.6.1 limits: a Shapes rectangle lives on one slice, a
 nothing can be drawn in the 3D view.
 """
 import math
+import warnings
 import weakref
 
 import numpy as np
@@ -28,18 +31,20 @@ from qtpy.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from sprout_core.roi import RoiError
+from sprout_core.roi import TIMES, RoiError, format_ids, format_percent, parse_ids
 
 from .roi_model import get_roi_model
 
 OVERLAY_NAME = "SPROUT ROI"
-YELLOW = "yellow"
-GREY = "#99999999"           # (0.6, 0.6, 0.6, 0.6)
-DRAFT = "cyan"               # a draft box that is not applied yet
-DRAFT_DIM = "#00ffff66"      # ...outside its range on the non-displayed axis
+YELLOW = "yellow"            # the current ROI, slice inside its range
+DRAFT = "cyan"               # a draft that is not applied yet, slice inside its range
+OUTSIDE = "#ff5a36"          # either, slice outside its range on the paging axis
 OK_STYLE = "color: gray"
 ERROR_STYLE = "color: #d9534f"
 ROI_STYLE = "color: #e08a00"
+DRAFT_STYLE = "color: cyan"
+DASH = "\u2013"              # en dash in ranges
+TEXT = {"string": "{label}", "anchor": "upper_left", "size": 10, "color": {"feature": "tcolor"}}
 # SPROUT's own live-preview Labels layers are never offered as an ROI mask
 _PREVIEW_LAYERS = ("Threshold Preview", "Boundary preview")
 
@@ -70,6 +75,44 @@ def _usable_image(layer):
     return isinstance(layer, Image) and not layer.rgb and not layer.multiscale
 
 
+def elide(name, n=32):
+    """Middle-elide a long layer name: 'very_long…_name'."""
+    name = str(name)
+    return name if len(name) <= n else name[: (n - 1) // 2] + "\u2026" + name[-(n // 2):]
+
+
+def range_text(roi, sep=" \u00b7 "):
+    """'z 250–450 · y 90–160 · x 50–121' (inclusive)."""
+    return sep.join(f"{a} {l}{DASH}{h - 1}" for a, l, h in zip(roi.axis_names, roi.lo, roi.hi))
+
+
+def size_text(roi):
+    """'201 × 71 × 72 voxels (z × y × x)'."""
+    return f"{TIMES.join(str(v) for v in roi.sizes)} voxels ({TIMES.join(roi.axis_names)})"
+
+
+def which_text(src):
+    """'ids 3,5-7' / 'all non-zero' from a mask source."""
+    ids = src.get("ids") or ([src["label"]] if src.get("label") is not None else None)
+    return f"ids {format_ids(ids)}" if ids else "all non-zero"
+
+
+def origin_text(roi, ref_name=None):
+    """'box, coords from dog_img' / "mask of 'cells' ids 5" / "bbox of 'cells' ids 3,5 + margin 5"."""
+    if roi.kind == "mask":
+        return f"mask of '{elide(roi.source.get('layer'))}' {which_text(roi.source)}"
+    src = roi.source.get("from_mask")
+    if src:
+        margin = roi.source.get("margin") or 0
+        return f"bbox of '{elide(src.get('layer'))}' {which_text(src)}" + (f" + margin {margin}" if margin else "")
+    return f"box, coords from {elide(ref_name)}" if ref_name else "box"
+
+
+def voxels_text(roi):
+    """'1,027,512 (8% of 691 × 161 × 122)'."""
+    return f"{roi.n_voxels:,} ({format_percent(roi.fraction)} of {TIMES.join(str(s) for s in roi.shape)})"
+
+
 def shape_mismatch_text(roi, shape):
     return f"ROI is for shape {tuple(roi.shape)}; this image is {tuple(int(s) for s in shape)}"
 
@@ -78,10 +121,13 @@ def shape_mismatch_text(roi, shape):
 class RoiBoxOverlay:
     """The "SPROUT ROI" Shapes layer: rectangles on the displayed 2D slice.
 
-        current ROI   its bounding box, whenever there is a current ROI: yellow while the
-                      slice is inside its range on the non-displayed axis, grey outside
-        draft box     only while the Manager is open on Box and the draft differs from the
-                      current ROI: cyan (dim cyan outside its range)
+        current ROI   its bounding box, whenever there is a current ROI: yellow and
+                      "ROI 201×71×72" while the slice is inside its range on the paging
+                      axis; orange-red and "outside ROI (z 250–450)" outside
+        draft         only while the Manager is open and the draft differs from the current
+                      ROI: a Box draft, or the previewed Labels draft's bbox (in the labels
+                      layer's frame): cyan and "draft 253×24×22"; orange-red and
+                      "draft: outside (z 202–454)" outside its range
 
     Purely visual: nothing is computed here. The layer gets the reference layer's scale /
     translate / rotate / shear / affine, so its data coordinates are voxel indices
@@ -99,6 +145,7 @@ class RoiBoxOverlay:
         self.model = model
         self.draft_shown = draft_shown   # callable: may the draft box be shown now?
         self.layer = None
+        self.labels = []                 # the text label of each rectangle (for checks)
         self._ref = None                 # image the user draws on
         self._frame = None               # (weakref to the layer giving the frame, shape) of the last sync
         self._kinds = []                 # what each rectangle is: 'current' | 'draft'
@@ -169,10 +216,12 @@ class RoiBoxOverlay:
         active = self.viewer.layers.selection.active
         self._syncing = True
         try:
-            self.layer = self.viewer.add_shapes(
-                ndim=ndim, name=OVERLAY_NAME, shape_type="rectangle", edge_color=YELLOW,
-                face_color="transparent", edge_width=width, scale=scale, translate=translate,
-                affine=affine, **kw)
+            with warnings.catch_warnings():      # the text encoding has no features yet
+                warnings.simplefilter("ignore", RuntimeWarning)
+                self.layer = self.viewer.add_shapes(
+                    ndim=ndim, name=OVERLAY_NAME, shape_type="rectangle", edge_color=YELLOW,
+                    face_color="transparent", edge_width=width, scale=scale, translate=translate,
+                    affine=affine, text=TEXT, features={"label": [], "tcolor": []}, **kw)
         finally:
             self._syncing = False
         self.layer.events.data.connect(self._on_data)
@@ -258,6 +307,9 @@ class RoiBoxOverlay:
         if shape is None:
             self._finish_drawing()
             return
+        if not drawing and self.model.draft_kind != "box":
+            self.sync()          # a Labels draft / the current ROI: not editable here
+            return
         if action == "removed":
             gone = [self._kinds[i] for i in (idx or []) if i < len(self._kinds)] or ["draft"]
             if "draft" in gone:
@@ -293,34 +345,43 @@ class RoiBoxOverlay:
                 self.viewer.layers.selection.active = prev
 
     # ---- display
-    def _rect(self, lo, hi):
-        """(corners, inside) of the box [lo, hi) on the displayed slice, or None."""
+    def _rect(self, roi, what):
+        """(corners, colour, label) of roi's bbox on the displayed slice, or None.
+        what: 'current' | 'draft'."""
         lay = self.layer
+        lo, hi = roi.lo, roi.hi
         shown = _displayed_axes(self.viewer, lay)
         if len(shown) != 2:
             return None
         a, b = shown
         p = np.zeros(lay.ndim)
-        inside = True
+        outside = []
         coord = lay.world_to_data(self.viewer.dims.point)
+        names = roi.axis_names
         for ax in range(lay.ndim):
             if ax not in shown:
                 p[ax] = int(round(coord[ax]))
-                inside &= lo[ax] <= p[ax] < hi[ax]
+                if not lo[ax] <= p[ax] < hi[ax]:
+                    outside.append(f"{names[ax]} {lo[ax]}{DASH}{hi[ax] - 1}")
         verts = np.repeat(p[None], 4, axis=0)
         verts[:, a] = [lo[a] - 0.5, lo[a] - 0.5, hi[a] - 0.5, hi[a] - 0.5]
         verts[:, b] = [lo[b] - 0.5, hi[b] - 0.5, hi[b] - 0.5, lo[b] - 0.5]
-        return verts, inside or lay.ndim == 2
+        size = "\u00d7".join(str(v) for v in roi.sizes)
+        if outside:
+            where = ", ".join(outside)
+            return verts, OUTSIDE, (f"outside ROI ({where})" if what == "current" else f"draft: outside ({where})")
+        return verts, (YELLOW if what == "current" else DRAFT), (f"ROI {size}" if what == "current" else f"draft {size}")
 
     def _hide(self):
         if self._alive() and (self.layer.visible or len(self.layer.data)):
             self._syncing = True
             try:
                 self.layer.data = []
+                self.layer.features = {"label": [], "tcolor": []}
                 self.layer.visible = False
             finally:
                 self._syncing = False
-        self._kinds = []
+        self._kinds, self.labels = [], []
 
     def sync(self):
         """Draw the current ROI (and an edited draft box) on the current slice, or hide."""
@@ -330,10 +391,12 @@ class RoiBoxOverlay:
         if self._alive() and str(self.layer.mode).startswith("add"):
             return   # the user is drawing
         cur = m.current
-        draft, dref = m.draft_box, m.draft_ref
-        if not (self.draft_shown() and m.draft_kind == "box" and draft is not None and m.draft_edited
-                and dref is not None and dref in self.viewer.layers and tuple(dref.data.shape) == draft.shape):
-            draft = None
+        draft = dref = None
+        if self.draft_shown() and m.draft_edited:
+            d = m.draft_roi()
+            if d is not None and d[1] is not None and d[1] in self.viewer.layers \
+                    and tuple(np.shape(d[1].data)) == d[0].shape:
+                draft, dref = d
         if self.viewer.dims.ndisplay != 2 or (cur is None and draft is None):
             self._hide()
             return
@@ -345,15 +408,15 @@ class RoiBoxOverlay:
                 return
             self.ensure_layer(fref, fshape)
         self._frame = (None if fref is None else weakref.ref(fref), tuple(fshape))
-        rects, colors, kinds = [], [], []
+        rects, colors, labels, kinds = [], [], [], []
         if cur is not None and cur.ndim == len(fshape) and (draft is None or self._same_frame(cref, fref, cur.ndim)):
-            r = self._rect(cur.lo, cur.hi)
+            r = self._rect(cur, "current")
             if r is not None:
-                rects.append(r[0]), colors.append(YELLOW if r[1] else GREY), kinds.append("current")
+                rects.append(r[0]), colors.append(r[1]), labels.append(r[2]), kinds.append("current")
         if draft is not None:
-            r = self._rect(draft.lo, draft.hi)
+            r = self._rect(draft, "draft")
             if r is not None:
-                rects.append(r[0]), colors.append(DRAFT if r[1] else DRAFT_DIM), kinds.append("draft")
+                rects.append(r[0]), colors.append(r[1]), labels.append(r[2]), kinds.append("draft")
         if not rects:
             self._hide()
             return
@@ -361,16 +424,92 @@ class RoiBoxOverlay:
         self._syncing = True
         try:
             lay.data = [(v, "rectangle") for v in rects]
+            lay.features = {"label": labels, "tcolor": colors}
             lay.edge_color = colors
             lay.visible = True
         finally:
             self._syncing = False
-        self._kinds = kinds
+        self._kinds, self.labels = kinds, labels
 
 
 # --------------------------------------------------------------------------
+class _InfoBlock(QWidget):
+    """A compact grid: bold labels left, values right (the current ROI or the draft)."""
+
+    ROWS = ("Range", "Size", "Voxels")
+
+    def __init__(self, first, title=None, style="", parent=None):
+        super().__init__(parent)
+        grid = QGridLayout(self)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(1)
+        grid.setColumnStretch(1, 1)
+        row = 0
+        self.title = None
+        if title:
+            self.title = QLabel(title)
+            f = self.title.font()
+            f.setBold(True)
+            self.title.setFont(f)
+            self.title.setStyleSheet(style)
+            grid.addWidget(self.title, row, 0, 1, 2)
+            row += 1
+        self.keys, self.values = {}, {}
+        for name in (first,) + self.ROWS:
+            k, v = QLabel(name), QLabel("")
+            f = k.font()
+            f.setBold(True)
+            k.setFont(f)
+            v.setWordWrap(True)
+            v.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            if style:
+                k.setStyleSheet(style)
+                v.setStyleSheet(style)
+            grid.addWidget(k, row, 0, Qt.AlignLeft | Qt.AlignTop)
+            grid.addWidget(v, row, 1)
+            self.keys[name], self.values[name] = k, v
+            row += 1
+        self.first = first
+
+    def show_roi(self, origin, roi):
+        """origin text + the roi's Range / Size / Voxels; roi None: only origin, other rows hidden."""
+        self.values[self.first].setText(origin)
+        self.values[self.first].setToolTip(roi.describe() if roi is not None else "")
+        for name in self.ROWS:
+            self.keys[name].setVisible(roi is not None)
+            self.values[name].setVisible(roi is not None)
+        if roi is not None:
+            self.values["Range"].setText(range_text(roi))
+            self.values["Size"].setText(size_text(roi))
+            self.values["Voxels"].setText(voxels_text(roi))
+
+    def text(self, name):
+        return self.values[name].text()
+
+
+class _Combo(QComboBox):
+    """A layer combo showing middle-elided names; the full name is the item data and tooltip."""
+
+    def set_names(self, names, current=None):
+        self.blockSignals(True)
+        self.clear()
+        for n in names:
+            self.addItem(elide(n), n)
+            self.setItemData(self.count() - 1, n, Qt.ToolTipRole)
+        if current in names:
+            self.setCurrentIndex(names.index(current))
+        self.blockSignals(False)
+        self.setToolTip(self.name() or "")
+
+    def name(self):
+        return self.currentData()
+
+
 class RoiManager(QWidget):
     """'ROI Manager': defines the one current ROI of this viewer (collapsed by default)."""
+
+    PREVIEW_DEBOUNCE_MS = 500
 
     def __init__(self, napari_viewer, parent=None):
         super().__init__(parent)
@@ -384,6 +523,11 @@ class RoiManager(QWidget):
         self._dims_timer = QTimer(self)
         self._dims_timer.setSingleShot(True)
         self._dims_timer.timeout.connect(self._on_dims_settled)
+        # Labels draft preview: after the user stops editing, only while it is shown
+        self._preview_timer = QTimer(self)
+        self._preview_timer.setSingleShot(True)
+        self._preview_timer.setInterval(self.PREVIEW_DEBOUNCE_MS)
+        self._preview_timer.timeout.connect(self._compute_preview)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -394,12 +538,32 @@ class RoiManager(QWidget):
         self.header.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.header.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.header.setStyleSheet("QToolButton { border: none; text-align: left; }")
-        self.header.setToolTip("One current ROI for every tab that ticks 'Use current ROI'")
         outer.addWidget(self.header)
 
         self.body = QFrame()
         self.body.setFrameShape(QFrame.StyledPanel)
         body = QVBoxLayout(self.body)
+        body.setSpacing(4)
+        self.current_block = _InfoBlock("Current ROI")
+        body.addWidget(self.current_block)
+        self.draft_block = _InfoBlock("Draft", title="Draft (not applied)", style=DRAFT_STYLE)
+        body.addWidget(self.draft_block)
+        self.edited_note = QLabel(EDITED_NOTE)
+        self.edited_note.setStyleSheet(DRAFT_STYLE)
+        body.addWidget(self.edited_note)
+        row = QHBoxLayout()
+        self.source_note = QLabel("")
+        self.source_note.setStyleSheet(ROI_STYLE)
+        self.source_note.setWordWrap(True)
+        self.update_btn = QPushButton("Update")
+        self.update_btn.setToolTip("Make the current ROI again from the edited layer")
+        row.addWidget(self.source_note, 1)
+        row.addWidget(self.update_btn)
+        body.addLayout(row)
+
+        line = QFrame()
+        line.setFrameShape(QFrame.HLine)
+        body.addWidget(line)
         row = QHBoxLayout()
         self.box_rb = QRadioButton("Box")
         self.labels_rb = QRadioButton("Labels")
@@ -415,6 +579,7 @@ class RoiManager(QWidget):
         self.stack = QStackedWidget()
         self.stack.addWidget(self._build_box_page())
         self.stack.addWidget(self._build_labels_page())
+        self.stack.currentChanged.connect(self._fit_stack)
         body.addWidget(self.stack)
 
         row = QHBoxLayout()
@@ -426,24 +591,16 @@ class RoiManager(QWidget):
         row.addWidget(self.clear_btn)
         row.addStretch()
         body.addLayout(row)
-        self.edited_note = QLabel(EDITED_NOTE)
-        self.edited_note.setStyleSheet(OK_STYLE)
-        body.addWidget(self.edited_note)
-        row = QHBoxLayout()
-        self.source_note = QLabel("")
-        self.source_note.setStyleSheet(ROI_STYLE)
-        self.source_note.setWordWrap(True)
-        self.update_btn = QPushButton("Update")
-        self.update_btn.setToolTip("Make the current ROI again from the edited layer")
-        row.addWidget(self.source_note, 1)
-        row.addWidget(self.update_btn)
-        body.addLayout(row)
         self.error_label = QLabel("")
         self.error_label.setStyleSheet(ERROR_STYLE)
         self.error_label.setWordWrap(True)
         body.addWidget(self.error_label)
         outer.addWidget(self.body)
         self.body.setVisible(False)
+        self._fit_stack(0)
+        # only as tall as its content: the tabs above get the rest of the panel
+        self.stack.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
 
         self.header.toggled.connect(self._on_expanded)
         self.box_rb.toggled.connect(self._on_kind)
@@ -455,6 +612,7 @@ class RoiManager(QWidget):
         self.model.changed.connect(self._on_current_changed)
         self.model.draft_changed.connect(self._on_draft_changed)
         self.model.status_changed.connect(self._on_status_changed)
+        self.model.preview_changed.connect(self._on_preview_changed)
         self.model.layer_inserted.connect(self._on_layer_inserted)
         self.model.layer_removed.connect(self._on_layer_removed)
         self.model.dims_changed.connect(self._on_dims)
@@ -470,6 +628,7 @@ class RoiManager(QWidget):
         page = QWidget()
         lay = QVBoxLayout(page)
         lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(4)
         row = QHBoxLayout()
         self.draw_btn = QPushButton("Draw box")
         self.draw_btn.setToolTip("Drag a rectangle on the 2D view: it sets the two displayed axes. "
@@ -487,6 +646,7 @@ class RoiManager(QWidget):
         lay.addWidget(self.coords_note)
 
         grid = QGridLayout()
+        grid.setVerticalSpacing(2)
         grid.addWidget(QLabel("From"), 0, 1)
         grid.addWidget(QLabel("To"), 0, 3)
         self.axis_rows = []
@@ -505,6 +665,7 @@ class RoiManager(QWidget):
                 grid.addWidget(w, i, c)
             self.axis_rows.append((lab, lo, lo_cur, hi, hi_cur))
         lay.addLayout(grid)
+        lay.addStretch()
 
         self.draw_btn.clicked.connect(self._draw)
         self.full_btn.clicked.connect(self._full_extent)
@@ -512,9 +673,15 @@ class RoiManager(QWidget):
 
     def _build_labels_page(self):
         page = QWidget()
-        grid = QGridLayout(page)
-        grid.setContentsMargins(0, 0, 0, 0)
-        self.labels_combo = QComboBox()
+        lay = QVBoxLayout(page)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(4)
+        grid = QGridLayout()
+        grid.setVerticalSpacing(2)
+        grid.setColumnStretch(3, 1)
+        self.labels_combo = _Combo()
+        self.labels_combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.labels_combo.setMinimumContentsLength(12)
         grid.addWidget(QLabel("Labels layer:"), 0, 0)
         grid.addWidget(self.labels_combo, 0, 1, 1, 3)
         self.all_rb = QRadioButton("all non-zero")
@@ -531,7 +698,7 @@ class RoiManager(QWidget):
         grid.addWidget(self.ids_rb, 1, 2)
         grid.addWidget(self.ids_edit, 1, 3)
         self.mask_rb = QRadioButton("mask")
-        self.bbox_rb = QRadioButton("bounding box, with margin")
+        self.bbox_rb = QRadioButton("bounding box, margin")
         self.mask_rb.setChecked(True)
         grp = QButtonGroup(self)
         grp.addButton(self.mask_rb)
@@ -542,22 +709,36 @@ class RoiManager(QWidget):
         self.margin_spin.setSuffix(" voxels")
         grid.addWidget(QLabel("Use as:"), 2, 0)
         grid.addWidget(self.mask_rb, 2, 1)
-        row = QHBoxLayout()
-        row.addWidget(self.bbox_rb)
-        row.addWidget(self.margin_spin)
-        row.addStretch()
-        grid.addLayout(row, 2, 2, 1, 2)
-        self.labels_combo.currentTextChanged.connect(lambda *_: self._labels_to_draft())
+        grid.addWidget(self.bbox_rb, 2, 2)
+        grid.addWidget(self.margin_spin, 2, 3)
+        lay.addLayout(grid)
+        self.preview_label = QLabel("")
+        self.preview_label.setWordWrap(True)
+        self.preview_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        lay.addWidget(self.preview_label)
+        lay.addStretch()
+        self.labels_combo.currentIndexChanged.connect(lambda *_: self._labels_to_draft())
         self.all_rb.toggled.connect(lambda *_: self._labels_to_draft())
         self.ids_edit.textChanged.connect(lambda *_: self._labels_to_draft())
         self.mask_rb.toggled.connect(lambda *_: self._labels_to_draft())
         self.margin_spin.valueChanged.connect(lambda *_: self._labels_to_draft())
         return page
 
+    def _fit_stack(self, index):
+        """The stack is as tall as the page shown (no empty space under the shorter one)."""
+        for i in range(self.stack.count()):
+            pol = QSizePolicy.Preferred if i == index else QSizePolicy.Ignored
+            self.stack.widget(i).setSizePolicy(pol, pol)
+        self.stack.updateGeometry()
+
     # ------------------------------------------------------------- helpers
     @property
     def expanded(self):
         return self.header.isChecked()
+
+    @property
+    def on_labels_page(self):
+        return self.expanded and self.model.draft_kind == "labels"
 
     def _pick_ref(self):
         """The image the user works on: the active Image layer, else the first one."""
@@ -572,23 +753,18 @@ class RoiManager(QWidget):
         return ref if ref is not None and ref in self.viewer.layers else self._pick_ref()
 
     def _labels_layer(self):
-        name = self.labels_combo.currentText()
+        name = self.labels_combo.name()
         lay = self.viewer.layers[name] if name and name in self.viewer.layers else None
         return lay if isinstance(lay, Labels) else None
 
     def refresh_layers(self):
         labs = [l.name for l in self.viewer.layers
                 if isinstance(l, Labels) and not l.name.startswith(_PREVIEW_LAYERS)]
-        cur = self.model.draft_labels.name if self.model.draft_labels is not None else self.labels_combo.currentText()
+        cur = self.model.draft_labels.name if self.model.draft_labels is not None else self.labels_combo.name()
         active = self.viewer.layers.selection.active
         if cur not in labs and isinstance(active, Labels) and active.name in labs:
             cur = active.name
-        self.labels_combo.blockSignals(True)
-        self.labels_combo.clear()
-        self.labels_combo.addItems(labs)
-        if cur in labs:
-            self.labels_combo.setCurrentText(cur)
-        self.labels_combo.blockSignals(False)
+        self.labels_combo.set_names(labs, cur)
         if self._labels_layer() is not self.model.draft_labels:
             self._labels_to_draft()
         self._update_box_page()
@@ -604,6 +780,9 @@ class RoiManager(QWidget):
     def _on_expanded(self, on):
         self.body.setVisible(on)
         self.header.setArrowType(Qt.DownArrow if on else Qt.RightArrow)
+        self._schedule_preview()
+        self._update_preview_info()
+        self._show_draft()
         self.overlay.sync()
 
     def _on_kind(self, *_):
@@ -615,6 +794,7 @@ class RoiManager(QWidget):
     def _labels_to_draft(self):
         self.ids_edit.setEnabled(self.ids_rb.isChecked())
         self.margin_spin.setEnabled(self.bbox_rb.isChecked())
+        self.labels_combo.setToolTip(self.labels_combo.name() or "")
         self.model.set_draft_labels(
             layer=self._labels_layer(),
             ids_text=None if self.all_rb.isChecked() else self.ids_edit.text().strip(),
@@ -622,6 +802,7 @@ class RoiManager(QWidget):
             margin=self.margin_spin.value())
 
     def _set(self):
+        self._preview_timer.stop()
         self.model.apply()
 
     def _draw(self):
@@ -667,6 +848,66 @@ class RoiManager(QWidget):
                 spin.setValue(_current_index(self.viewer, ref, ax))
         self._commit_spins(force=True)
 
+    # ------------------------------------------------------------- Labels preview
+    def _schedule_preview(self):
+        """Debounce: the preview is computed only while the Labels page is shown."""
+        if self.on_labels_page and self.model.draft_preview() is None:
+            self._preview_timer.start()
+        elif not self.on_labels_page:
+            self._preview_timer.stop()
+
+    def _compute_preview(self):
+        if self.on_labels_page:
+            self.model.compute_preview()
+
+    def _which_draft(self, single="label"):
+        """'label 5' (single='label') or 'ids 5', 'ids 3,5-7', 'all non-zero'; + ' + margin m'."""
+        m = self.model
+        which = "all non-zero" if m.draft_ids_text is None else f"ids {m.draft_ids_text}"
+        if m.draft_ids_text is not None:
+            try:
+                ids = sorted(parse_ids(m.draft_ids_text))
+                which = f"{single} {ids[0]}" if len(ids) == 1 else f"ids {format_ids(ids)}"
+            except ValueError:
+                pass
+        if m.draft_use == "bbox" and m.draft_margin:
+            which += f" + margin {m.draft_margin}"
+        return which
+
+    def _update_preview_info(self):
+        """'Draft  label 5 → bbox z 202–454, y 130–153, x 81–102' + sizes, or the reason why not."""
+        m = self.model
+        style, text = OK_STYLE, ""
+        try:
+            m.draft_labels_key()
+        except ValueError as e:
+            text, style = f"Draft  {e}", (OK_STYLE if m.draft_labels is None else ERROR_STYLE)
+        else:
+            p = m.draft_preview()
+            if p is None or p["state"] == "computing":
+                text = "Draft  computing…" if self.expanded else ""
+            elif p["state"] == "error":
+                text, style = f"Draft  {p['error']}", ERROR_STYLE
+            else:
+                roi = p["roi"]
+                box = roi.as_box(m.draft_margin) if m.draft_use == "bbox" else roi
+                rng = range_text(box, sep=", ")
+                vol = int(np.prod(box.sizes, dtype=np.int64))
+                text = (f"Draft  {self._which_draft()} → bbox {rng}\n"
+                        f"{TIMES.join(str(v) for v in box.sizes)} voxels ({TIMES.join(box.axis_names)})"
+                        f" · {vol:,} voxels")
+                if m.draft_use == "mask":
+                    text += f" · mask {roi.n_voxels:,} voxels"
+                style = DRAFT_STYLE
+        self.preview_label.setText(text)
+        self.preview_label.setStyleSheet(style)
+        self.preview_label.setVisible(bool(text))
+
+    def _on_preview_changed(self):
+        self._update_preview_info()
+        self._show_draft()
+        self.overlay.sync()
+
     # ------------------------------------------------------------- display
     def _on_dims(self):
         self._dims_timer.start(0)
@@ -682,9 +923,11 @@ class RoiManager(QWidget):
         if box is not None and (ref is None or box.shape != tuple(ref.data.shape)):
             box = None
         if self.model.draft_box is not None and self.model.draft_ref_name:
-            self.coords_note.setText(f"coords from: {self.model.draft_ref_name}")
+            self.coords_note.setText(f"coords from: {elide(self.model.draft_ref_name)}")
+            self.coords_note.setToolTip(self.model.draft_ref_name)
         elif ref is not None:
-            self.coords_note.setText(f"coords from: {ref.name}")
+            self.coords_note.setText(f"coords from: {elide(ref.name)}")
+            self.coords_note.setToolTip(ref.name)
         else:
             self.coords_note.setText("coords from: (no image layer yet)")
         rows = dict(self._rows(ref))
@@ -708,9 +951,40 @@ class RoiManager(QWidget):
             w.setEnabled(ref is not None)
 
     def _on_current_changed(self):
-        self.header.setText(f"ROI Manager — Current ROI: {self.model.summary()}")
+        cur = self.model.current
+        if cur is None:
+            self.header.setText("ROI Manager — none")
+            self.header.setToolTip("No current ROI: every tab works on the whole image")
+            self.current_block.show_roi("none", None)
+        else:
+            self.header.setText(f"ROI Manager — {cur.short()}")
+            self.header.setToolTip(cur.describe())
+            self.current_block.show_roi(origin_text(cur, self.model.current_ref_name), cur)
+        self._show_draft()
         self.overlay.allow_again()
         self.overlay.sync()
+
+    def _show_draft(self):
+        """The 'Draft (not applied)' block, while the draft differs from the current ROI."""
+        m = self.model
+        show = m.draft_edited
+        self.draft_block.setVisible(show)
+        self.edited_note.setVisible(show)
+        if not show:
+            return
+        d = m.draft_roi()
+        if m.draft_kind == "box":
+            self.draft_block.show_roi(f"box, coords from {elide(m.draft_ref_name)}" if m.draft_ref_name else "box",
+                                      d[0] if d else None)
+            return
+        lay = m.draft_labels
+        kind = "bbox" if m.draft_use == "bbox" else "mask"
+        which = self._which_draft(single="ids")
+        origin = f"{kind} of '{elide(lay.name if lay is not None else '')}' {which}"
+        if d is None:
+            p = m.draft_preview()
+            origin += "  (" + (p["error"] if p is not None and p["state"] == "error" else "computing…") + ")"
+        self.draft_block.show_roi(origin, d[0] if d else None)
 
     def _on_draft_changed(self):
         m = self.model
@@ -719,8 +993,10 @@ class RoiManager(QWidget):
             (self.box_rb if m.draft_kind == "box" else self.labels_rb).setChecked(True)
             self.box_rb.blockSignals(False)
             self.stack.setCurrentIndex(0 if m.draft_kind == "box" else 1)
-        self.edited_note.setVisible(m.draft_edited)
         self._update_box_page()
+        self._schedule_preview()
+        self._update_preview_info()
+        self._show_draft()
         self.overlay.sync()
 
     def _on_status_changed(self):
@@ -827,8 +1103,9 @@ class RoiUse(QWidget):
             elif st == "mismatch":
                 text, style = shape_mismatch_text(self.model.current, self._shape()), ERROR_STYLE
             else:
-                text, style = f"Runs inside ROI: {self.model.current.describe()}", ROI_STYLE
+                text, style = f"Runs inside ROI: {self.model.current.short()}", ROI_STYLE
             self.status.setText(text)
+            self.status.setToolTip(self.model.current.describe() if st == "ok" else "")
             self.status.setStyleSheet(style)
             self.status.setVisible(True)
         self.refreshed.emit()
@@ -850,5 +1127,7 @@ class RoiReminder(QLabel):
         if self.use.state() != "ok":
             self.setVisible(False)
             return
-        self.setText(f"{self.text_}: {self.use.model.current.describe()}")
+        cur = self.use.model.current
+        self.setText(f"{self.text_}: {cur.short()}")
+        self.setToolTip(cur.describe())
         self.setVisible(True)
