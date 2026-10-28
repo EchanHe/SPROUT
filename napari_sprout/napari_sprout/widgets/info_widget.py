@@ -1,11 +1,60 @@
 from qtpy.QtWidgets import QWidget, QVBoxLayout, QLabel, QTextEdit, QPushButton
-from napari.layers import Labels, Image
+from napari.layers import Labels, Image, Shapes
 import numpy as np
+
+from sprout_core.roi import RoiError, format_percent
+
+from ..utils.roi_layers import DASH, get_roi_hub, is_roi_layer, layer_meta, roi_from_layer
 
 try:
     from napari.qt import thread_worker
 except ImportError:
     from napari.utils import thread_worker
+
+
+TIMES = " × "
+
+
+def roi_layer_summary(layer, viewer=None):
+    """Lines describing an ROI layer (one box; z range in its metadata)."""
+    md = layer_meta(layer)
+    shape = tuple(int(s) for s in md.get("shape", ()))
+    lines = [f"Name: {layer.name}", "Layer type: ROI (Shapes)"]
+    try:
+        roi = roi_from_layer(layer)
+    except RoiError as e:
+        roi = None
+        lines.append(str(e))
+    if roi is not None:
+        axes = roi.axis_names
+        lines += [
+            "Range " + " · ".join(f"{a} {l}{DASH}{h - 1}" for a, l, h in zip(axes, roi.lo, roi.hi)),
+            f"Size {TIMES.join(str(v) for v in roi.sizes)} voxels ({TIMES.join(axes)})",
+            f"Voxels {roi.n_voxels:,} ({format_percent(roi.fraction)} of the reference shape)",
+        ]
+    ref = md.get("ref")
+    lines.append(f"Reference image: {ref if ref else '(unknown)'}"
+                 + (f" ({TIMES.join(str(v) for v in shape)})" if shape else ""))
+    if viewer is not None:
+        users = get_roi_hub(viewer).used_by(layer)
+        lines.append(f"Used by: {', '.join(users) if users else 'no tab'}")
+    if len(shape) == 3 and md.get("z_all"):
+        lines.append("z: all slices (not set)")
+    return lines
+
+
+def shapes_summary(layer):
+    """Number of shapes and their overall bounding box (data coordinates of the layer)."""
+    n = len(layer.data)
+    lines = [f"Name: {layer.name}", "Layer type: Shapes", f"Shapes: {n}"]
+    if n:
+        pts = np.concatenate([np.asarray(d, float) for d in layer.data], axis=0)
+        lo, hi = pts.min(0), pts.max(0)
+        nd = pts.shape[1]
+        names = ["z", "y", "x"][-nd:] if nd <= 3 else [f"axis {i}" for i in range(nd)]
+        lines.append("Bounding box " + " · ".join(f"{a} {l:.1f}{DASH}{h:.1f}"
+                                                        for a, l, h in zip(names, lo, hi)) + " (data coordinates)")
+    return lines
 
 
 class LayerInfoWidget(QWidget):
@@ -48,8 +97,17 @@ class LayerInfoWidget(QWidget):
 
     def update_info(self):
         layer = self.current_layer
+        # a result of an older request (another layer) must not overwrite this one
+        self._job = getattr(self, "_job", 0) + 1
+        job = self._job
         if layer is None:
             self.info_box.setPlainText("No valid layer selected.")
+            return
+        if is_roi_layer(layer):
+            self.info_box.setPlainText(chr(10).join(roi_layer_summary(layer, self.viewer)))
+            return
+        if isinstance(layer, Shapes):
+            self.info_box.setPlainText(chr(10).join(shapes_summary(layer)))
             return
         print(f"Updating info for layer: {layer.name}")
         self.info_box.setPlainText("Calculating layer info...")
@@ -102,10 +160,12 @@ class LayerInfoWidget(QWidget):
             return summary
 
         def on_return(summary):
-            self.info_box.setPlainText("\n".join(summary))
+            if job == self._job:
+                self.info_box.setPlainText("\n".join(summary))
 
         def on_error(e):
-            self.info_box.setPlainText(f"[Error] Failed to calculate info:\n{str(e)}")
+            if job == self._job:
+                self.info_box.setPlainText(f"[Error] Failed to calculate info:\n{str(e)}")
 
         self.worker = compute_info()
         self.worker.returned.connect(on_return)
