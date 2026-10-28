@@ -16,7 +16,7 @@ from ..utils.util_widget import (create_output_folder_row, SeedOptionalParamGrou
                                  MainSeedParamWidget, ThresholdWidget,apply_threshold_preview)
 from ..utils.histogram_threshold_widget import HistogramThresholdWidget, append_threshold_row
 from ..utils.boundary_check import boundary_ok
-from ..utils.roi_widget import RoiReminder, RoiUse
+from ..utils.roi_widget import RoiSelect
 
 import yaml
 import sys
@@ -218,10 +218,9 @@ class SeedGenerationWidget(QWidget):
         
         image_layout.addRow("Input Image:", self.image_combo)
         image_layout.addRow("Boundary Mask (optional):", self.boundary_combo)
-        self.roi_use = RoiUse(
-            self.viewer, lambda: None if self.current_image is None else np.shape(self.current_image),
-            "Seeds only inside the ROI (0 outside)")
-        image_layout.addRow(self.roi_use)
+        self.roi_select = RoiSelect(
+            self.viewer, lambda: None if self.current_image is None else np.shape(self.current_image), "Seeds")
+        image_layout.addRow("ROI:", self.roi_select)
         
         self.refresh_btn = QPushButton("Refresh Layers")
         image_layout.addRow(self.refresh_btn)
@@ -270,7 +269,7 @@ class SeedGenerationWidget(QWidget):
         
         
         self.threshold_widget = HistogramThresholdWidget(self.viewer, add_connected_components=True,
-                                                         roi_use=self.roi_use)
+                                                         roi_use=self.roi_select)
         self.threshold_widget.preview_requested.connect(self.preview_threshold)
         layout.addWidget(self.threshold_widget)
 
@@ -348,8 +347,6 @@ class SeedGenerationWidget(QWidget):
         output_group.setLayout(output_layout)
         layout.addWidget(output_group)
         
-        self.roi_reminder = RoiReminder(self.roi_use)
-        layout.addWidget(self.roi_reminder)
         
         # Execute buttons
         btn_layout = QHBoxLayout()
@@ -375,6 +372,7 @@ class SeedGenerationWidget(QWidget):
 
         btn_layout.addWidget(self.generate_btn)
         btn_layout.addWidget(self.stop_btn)
+        self.roi_select.set_run_button(self.generate_btn, "Generate Seeds")
         # btn_layout.addWidget(self.save_btn)
         layout.addLayout(btn_layout)
         
@@ -483,7 +481,7 @@ class SeedGenerationWidget(QWidget):
             if isinstance(layer, Image):
                 self.current_image = layer.data
                 self.threshold_widget.set_image(layer)
-                self.roi_use.refresh()
+                self.roi_select.refresh()
        
 
     
@@ -541,7 +539,7 @@ class SeedGenerationWidget(QWidget):
         for seed_name, seed in seeds_dict.items():
             kwargs = dict(layer_kwargs or {})   # the image's scale / translate
             if roi is not None:
-                seed_name = R.roi_name(seed_name)
+                seed_name = R.roi_name(seed_name, roi.name or "roi")
                 kwargs["metadata"] = {R.META_KEY: roi.to_metadata()}
             print(f"Adding seed layer: {seed_name}")
             self.seeds_layer = self.viewer.add_labels(
@@ -570,7 +568,7 @@ class SeedGenerationWidget(QWidget):
             if not boundary_ok(self, self.boundary_combo.currentText(), boundary):
                 return
             try:
-                roi = self.roi_use.roi_for_run(np.shape(self.current_image))
+                roi = self.roi_select.roi_for_run(np.shape(self.current_image))
             except RoiError as e:
                 show_error(str(e))
                 return
@@ -618,7 +616,7 @@ class SeedGenerationWidget(QWidget):
                 output_folder=output_folder,
                 
                 footprints=main_params['footprints'],
-                base_name= R.roi_name(current_name) if roi is not None else current_name,
+                base_name= R.roi_name(current_name, roi.name or "roi") if roi is not None else current_name,
                 
                 sort=advance_params['sort'],
                 no_split_max_iter=advance_params['no_split_max_iter'],

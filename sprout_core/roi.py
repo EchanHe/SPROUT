@@ -23,6 +23,7 @@ ROI edge erode exactly like a boundary.  -> wall_inputs, seeds_in_roi, grow_in_r
 Results are always image-sized: Seeds outside the ROI = 0, Grow outside the ROI
 = the input seeds unchanged.
 """
+import hashlib
 import itertools
 import json
 import os
@@ -68,6 +69,7 @@ class Roi:
                for the bounding box of a mask (as_box); mask: {'layer': name,
                'label': int | None} (+ 'ids': [int, ...] for several ids)
     token    : unique per snapshot
+    name     : optional display name (e.g. the ROI layer 'ROI_1'); not used in computations
     """
     shape: tuple
     lo: tuple
@@ -76,6 +78,7 @@ class Roi:
     kind: str = "box"
     source: dict = field(default_factory=dict)
     token: int = field(default_factory=lambda: next(_tokens))
+    name: object = None
 
     def __post_init__(self):
         if self.sub_mask is None:
@@ -86,7 +89,7 @@ class Roi:
 
     # ------------------------------------------------------------ creation
     @classmethod
-    def box(cls, shape, lo, hi):
+    def box(cls, shape, lo, hi, name=None):
         """Box [lo, hi) clipped to shape; may be empty."""
         shape = tuple(int(s) for s in shape)
         if len(lo) != len(shape) or len(hi) != len(shape):
@@ -94,7 +97,35 @@ class Roi:
         lo_c = tuple(int(min(max(int(l), 0), n)) for l, n in zip(lo, shape))
         hi_c = tuple(int(min(max(int(h), l), n)) for h, l, n in zip(hi, lo_c, shape))
         clipped = lo_c != tuple(int(v) for v in lo) or hi_c != tuple(int(v) for v in hi)
-        return cls(shape, lo_c, hi_c, None, "box", {"clipped": bool(clipped)})
+        return cls(shape, lo_c, hi_c, None, "box", {"clipped": bool(clipped)}, name=name)
+
+    @classmethod
+    def from_metadata(cls, md):
+        """A box ROI from to_metadata() / a roi.json sidecar / a save_rois entry."""
+        if md.get("kind", "box") != "box":
+            raise RoiError(f"only box ROIs can be loaded (this one is a {md.get('kind')})")
+        try:
+            shape, lo, hi = md["shape"], md["bbox_start"], md["bbox_stop"]
+        except KeyError as e:
+            raise RoiError(f"not an ROI description: no '{e.args[0]}'") from None
+        return cls.box(shape, lo, hi, name=md.get("name"))
+
+    def with_name(self, name):
+        """The same ROI under another display name (same token: same computations)."""
+        return Roi(self.shape, self.lo, self.hi, self.sub_mask, self.kind, dict(self.source), self.token, name)
+
+    @property
+    def key(self):
+        """Value key: equal for equal boxes (the token tells masks apart)."""
+        if self.kind == "box":
+            return ("box", self.shape, self.lo, self.hi)
+        return ("mask", self.shape, self.lo, self.hi, self.token)
+
+    @property
+    def key_hash(self):
+        """sha1 of shape / lo / hi (a short id for files and logs)."""
+        txt = json.dumps([list(self.shape), list(self.lo), list(self.hi), self.kind])
+        return hashlib.sha1(txt.encode()).hexdigest()[:16]
 
     @classmethod
     def from_mask(cls, labels, label=None, name=None, ids=None):
@@ -338,6 +369,11 @@ class Roi:
 
     def describe(self):
         """One line for logs and status: ends are INCLUSIVE in the text."""
+        if self.name:
+            return f"{self.name}: {self._describe()}"
+        return self._describe()
+
+    def _describe(self):
         if self.empty:
             return self._empty_reason()
         if self.kind == "box":
@@ -352,10 +388,13 @@ class Roi:
 
     def to_metadata(self):
         """JSON-able description (bbox_stop exclusive)."""
-        return {"kind": self.kind, "shape": [int(s) for s in self.shape],
-                "bbox_start": [int(v) for v in self.lo], "bbox_stop": [int(v) for v in self.hi],
-                "n_voxels": int(self._n_voxels), "source": json.loads(json.dumps(self.source, default=str)),
-                "description": self.describe()}
+        md = {"kind": self.kind, "shape": [int(s) for s in self.shape],
+              "bbox_start": [int(v) for v in self.lo], "bbox_stop": [int(v) for v in self.hi],
+              "n_voxels": int(self._n_voxels), "source": json.loads(json.dumps(self.source, default=str)),
+              "description": self.describe(), "key_hash": self.key_hash, "wall_margin": WALL_MARGIN}
+        if self.name:
+            md["name"] = str(self.name)
+        return md
 
 
 # ----------------------------------------------------------------------
@@ -419,17 +458,65 @@ def _which(src):
 _EXT = re.compile(r"(\.(?:tif|tiff|png|jpg|jpeg|npy|nii|nii\.gz|h5|zarr))$", re.IGNORECASE)
 
 
-def roi_name(name):
-    """'x.tif' -> 'x_roi.tif', 'x' -> 'x_roi'; unchanged if the stem already ends in '_roi'.
+def roi_name(name, suffix="roi"):
+    """'x.tif' -> 'x_roi.tif', 'x' -> 'x_roi' (suffix 'ROI_1': 'x_ROI_1.tif'); unchanged if
+    the stem already ends in '_<suffix>'.
 
     Only a trailing '_roi' counts: 'sample_roi1' -> 'sample_roi1_roi', so an ROI run
     never writes to the folder / layer name of a whole-image run.
     """
+    suffix = safe_name(suffix)
     m = _EXT.search(name)
     stem, ext = (name[: m.start()], m.group(1)) if m else (name, "")
-    if stem.endswith("_roi"):
+    if stem.endswith("_" + suffix):
         return name
-    return stem + "_roi" + ext
+    return stem + "_" + suffix + ext
+
+
+def safe_name(name):
+    """A name usable in file names: spaces, slashes and other odd characters -> '_'."""
+    out = re.sub(r"[^A-Za-z0-9_.\-]+", "_", str(name)).strip("_.")
+    return out or "roi"
+
+
+SCHEMA = 1
+
+
+def save_rois(path, entries):
+    """Write ROIs as JSON: entries = [(Roi, {'ref_image', 'scale', 'translate'}), ...]."""
+    out = []
+    for roi, extra in entries:
+        if roi.kind != "box":
+            raise RoiError("only box ROIs can be saved")
+        rec = {"schema": SCHEMA, "name": roi.name, "kind": "box", "shape": [int(s) for s in roi.shape],
+               "bbox_start": [int(v) for v in roi.lo], "bbox_stop": [int(v) for v in roi.hi]}
+        for k in ("ref_image", "scale", "translate"):
+            v = (extra or {}).get(k)
+            rec[k] = None if v is None else (list(map(float, v)) if k != "ref_image" else str(v))
+        out.append(rec)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({"schema": SCHEMA, "rois": out}, f, indent=1)
+    return path
+
+
+def load_rois(path):
+    """[(Roi, extra dict), ...] from a save_rois file, a single ROI record, or a run's roi.json."""
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    if isinstance(data, dict) and "rois" in data:
+        recs = data["rois"]
+    elif isinstance(data, list):
+        recs = data
+    else:
+        recs = [data]                    # one record, e.g. a run's roi.json sidecar
+    out = []
+    for i, rec in enumerate(recs):
+        if not isinstance(rec, dict):
+            raise RoiError(f"entry {i + 1} is not an ROI description")
+        roi = Roi.from_metadata(rec)
+        extra = {k: rec.get(k) for k in ("ref_image", "scale", "translate")}
+        out.append((roi, extra))
+    return out
 
 
 def write_sidecar(roi, folder, margin=WALL_MARGIN, name="roi.json"):

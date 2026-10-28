@@ -17,7 +17,8 @@ from ..utils.util_widget import (create_output_folder_row, GrowOptionalParamGrou
                                  MainGrowParamWidget,apply_threshold_preview,ThresholdWidget)
 from ..utils.histogram_threshold_widget import HistogramThresholdWidget, append_threshold_row
 from ..utils.boundary_check import boundary_ok
-from ..utils.roi_widget import RoiReminder, RoiUse
+from ..utils.roi_layers import is_roi_layer
+from ..utils.roi_widget import RoiSelect, range_text
 
 import yaml
 import sys
@@ -170,10 +171,23 @@ class SeedGrowthWidget(QWidget):
         input_layout.addRow("Original Image:", self.image_combo)
         input_layout.addRow("Seeds Layer:", self.seeds_combo)
         input_layout.addRow("Boundary Mask (optional):", self.boundary_combo)
-        self.roi_use = RoiUse(
-            self.viewer, lambda: None if self.current_image is None else np.shape(self.current_image),
-            "Grow only inside the ROI (seeds outside stay as they are)")
-        input_layout.addRow(self.roi_use)
+        self.roi_select = RoiSelect(
+            self.viewer, lambda: None if self.current_image is None else np.shape(self.current_image), "Grow")
+        input_layout.addRow("ROI:", self.roi_select)
+        # seeds made in an ROI: offer that ROI
+        self.seed_roi_hint = QLabel("")
+        self.seed_roi_hint.setWordWrap(True)
+        self.seed_roi_btn = QPushButton("")
+        self.seed_roi_btn.clicked.connect(self._use_seed_roi)
+        row = QHBoxLayout()
+        row.addWidget(self.seed_roi_hint, 1)
+        row.addWidget(self.seed_roi_btn)
+        input_layout.addRow(row)
+        self.seed_roi_hint.setVisible(False)
+        self.seed_roi_btn.setVisible(False)
+        self.seeds_combo.currentTextChanged.connect(lambda *_: self._update_seed_roi_hint())
+        self.roi_select.hub.rois_changed.connect(self._update_seed_roi_hint)
+        self.roi_select.hub.roi_edited.connect(self._update_seed_roi_hint)
         
         self.refresh_btn = QPushButton("Refresh Layers")
         input_layout.addRow(self.refresh_btn)
@@ -182,7 +196,7 @@ class SeedGrowthWidget(QWidget):
         layout.addWidget(input_group)
 
 
-        self.threshold_widget = HistogramThresholdWidget(self.viewer, roi_use=self.roi_use)
+        self.threshold_widget = HistogramThresholdWidget(self.viewer, roi_use=self.roi_select)
         self.threshold_widget.preview_requested.connect(self.preview_threshold)
         layout.addWidget(self.threshold_widget)
 
@@ -219,8 +233,6 @@ class SeedGrowthWidget(QWidget):
         output_dir_layout, self.output_folder_line = create_output_folder_row()
         layout.addLayout(output_dir_layout)
 
-        self.roi_reminder = RoiReminder(self.roi_use)
-        layout.addWidget(self.roi_reminder)
 
         # Control buttons
         btn_layout = QHBoxLayout()
@@ -243,6 +255,7 @@ class SeedGrowthWidget(QWidget):
         
         btn_layout.addWidget(self.grow_btn)
         btn_layout.addWidget(self.stop_btn)
+        self.roi_select.set_run_button(self.grow_btn, "Start Growth")
         layout.addLayout(btn_layout)
 
         
@@ -294,8 +307,45 @@ class SeedGrowthWidget(QWidget):
             if isinstance(layer, Image):
                 self.current_image = layer.data
             self.threshold_widget.set_image(layer)
-            self.roi_use.refresh()
+            self.roi_select.refresh()
             
+    def _seed_roi(self):
+        """(name, recorded metadata, ROI layer or None) if the picked seeds were made in an ROI."""
+        name = self.seeds_combo.currentText()
+        lay = self.viewer.layers[name] if name and name in self.viewer.layers else None
+        md = lay.metadata.get(R.META_KEY) if isinstance(lay, Labels) else None
+        if not isinstance(md, dict) or not md.get("name"):
+            return None
+        roi_name = md["name"]
+        roi_layer = self.viewer.layers[roi_name] if roi_name in self.viewer.layers else None
+        return roi_name, md, (roi_layer if roi_layer is not None and is_roi_layer(roi_layer) else None)
+
+    def _update_seed_roi_hint(self, *_):
+        info = self._seed_roi()
+        show = info is not None
+        self.seed_roi_hint.setVisible(show)
+        self.seed_roi_btn.setVisible(show and info[2] is not None)
+        if not show:
+            return
+        name, md, layer = info
+        text, style = f"Seeds were made in {name}", "color: gray"
+        if layer is None:
+            text += " (that ROI layer is gone)"
+        else:
+            self.seed_roi_btn.setText(f"Use {name}")
+            roi = self.roi_select.hub.live_roi(layer)
+            was = R.Roi.from_metadata(md)
+            if roi is not None and roi.key != was.key:
+                text = f"{name} changed since the seeds (was {range_text(was)})"
+                style = "color: #e08a00"
+        self.seed_roi_hint.setText(text)
+        self.seed_roi_hint.setStyleSheet(style)
+
+    def _use_seed_roi(self):
+        info = self._seed_roi()
+        if info is not None and info[2] is not None:
+            self.roi_select.select(info[2])
+
     def _toggle_grow_params_visibility(self, state):
         self.advanced_params_box.setVisible(state == Qt.Checked)  
           
@@ -357,7 +407,7 @@ class SeedGrowthWidget(QWidget):
             if not boundary_ok(self, self.boundary_combo.currentText(), self.current_boundary):
                 return
             try:
-                roi = self.roi_use.roi_for_run(np.shape(self.current_image))
+                roi = self.roi_select.roi_for_run(np.shape(self.current_image))
             except RoiError as e:
                 show_error(str(e))
                 return
@@ -404,7 +454,7 @@ class SeedGrowthWidget(QWidget):
                 upper_thresholds=main_params["upper_thresholds"] if any(u is not None for u in main_params["upper_thresholds"]) else None,
                 boundary= self.current_boundary,
                 touch_rule= main_params['touch_rule'],
-                base_name=R.roi_name(image_layer.name) if roi is not None else image_layer.name,
+                base_name=R.roi_name(image_layer.name, roi.name or "roi") if roi is not None else image_layer.name,
                 save_every_n_iters= advance_params['save_every_n_iters'],
                 grow_to_end= advance_params['grow_to_end'],
                 is_sort= advance_params['is_sort'],

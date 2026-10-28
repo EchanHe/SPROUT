@@ -14,7 +14,7 @@ from .widgets.grow_widget import SeedGrowthWidget
 from .widgets.boundary_widget import BoundaryWidget
 from .widgets.prompt_tab import PromptTab
 from .utils.sprout_bridge import SPROUTBridge
-from .utils.roi_widget import RoiManager
+from .utils.roi_widget import RoiTools
 
 from .widgets.info_widget import LayerInfoWidget
 from .widgets.edit_widget import QtLabelSelector
@@ -72,17 +72,19 @@ class SPROUTWidget(QWidget):
         self.prompt_tab = PromptTab(self.viewer)
         self.boundary_widget = BoundaryWidget(self.viewer)
 
+        # ROI tools and the Boundary tab share the last tab (two sub-tabs)
+        self.roi_tools = RoiTools(self.viewer)
+        self.roi_boundary_tabs = QTabWidget()
+        self.roi_boundary_tabs.addTab(self.roi_tools, "ROI")
+        self.roi_boundary_tabs.addTab(self.boundary_widget, "Boundary")
+
         # Add tabs
-        self.tabs.addTab(self.seed_widget, "1. Generate Seeds")
-        self.tabs.addTab(self.grow_widget, "2. Grow Seeds")
-        self.tabs.addTab(self.prompt_tab, "Prompt (AI)")
-        self.tabs.addTab(self.boundary_widget, "Boundary")
+        self.tabs.addTab(self.seed_widget, "1. Seeds")
+        self.tabs.addTab(self.grow_widget, "2. Grow")
+        self.tabs.addTab(self.prompt_tab, "3. Prompt (AI)")
+        self.tabs.addTab(self.roi_boundary_tabs, "ROI & Boundary")
         
         layout.addWidget(self.tabs)
-
-        # The one current ROI, used by the tabs that tick "Use current ROI" (collapsed)
-        self.roi_manager = RoiManager(self.viewer)
-        layout.addWidget(self.roi_manager)
         
         # Help text
         help_text = QLabel(

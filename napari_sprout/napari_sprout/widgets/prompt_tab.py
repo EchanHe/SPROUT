@@ -42,8 +42,8 @@ from sprout_core.nni_engine import NniEngine, nninteractive_status
 from sprout_core.prompt_engine import is_oom
 from sprout_core.roi import RoiError, parse_ids  # noqa: F401  (parse_ids: also importable from here)
 
-from ..utils.roi_model import get_roi_model
-from ..utils.roi_widget import RoiReminder, RoiUse
+from ..utils.roi_layers import get_roi_hub
+from ..utils.roi_widget import RoiSelect
 
 META_KEY = "sprout_prompt"
 SETTINGS = ("SPROUT", "napari-sprout")
@@ -119,7 +119,7 @@ class PromptTab(QWidget):
         except Exception as e:                       # never break the panel
             self._status = (False, f"cannot check nnInteractive: {e}")
         self.available = bool(self._status[0])
-        self._roi_model = get_roi_model(napari_viewer)
+        self._roi_model = get_roi_hub(napari_viewer)   # napari layer events as Qt signals
 
         self._img_layer = None
         self._seeds_layer = None
@@ -174,9 +174,8 @@ class PromptTab(QWidget):
         self.seeds_combo = QComboBox()
         f1.addRow("Image:", self.image_combo)
         f1.addRow("Seeds:", self.seeds_combo)
-        self.roi_use = RoiUse(self.viewer, self._shape,
-                              "Sample points and run the model only inside the ROI")
-        f1.addRow(self.roi_use)
+        self.roi_select = RoiSelect(self.viewer, self._shape, "Prompt")
+        f1.addRow("ROI:", self.roi_select)
         layout.addWidget(g1)
 
         # 2. Classes
@@ -290,8 +289,6 @@ class PromptTab(QWidget):
         row.addWidget(QLabel("Random seed:"))
         row.addWidget(self.seed_spin)
         fs.addRow(row)
-        self.gen_reminder = RoiReminder(self.roi_use, "Samples inside ROI")
-        fs.addRow(self.gen_reminder)
         row = QHBoxLayout()
         self.gen_btn = QPushButton("Generate for checked classes")
         self.gen_btn.setToolTip("Replaces the generated points of the checked classes; points you added "
@@ -381,10 +378,9 @@ class PromptTab(QWidget):
         self.margin_spin.setValue(32)
         self.margin_spin.setToolTip("Image context around the ROI the model sees (voxels).")
         f5.addRow("ROI margin:", self.margin_spin)
-        self.run_reminder = RoiReminder(self.roi_use, "Runs inside ROI")
-        f5.addRow(self.run_reminder)
         row = QHBoxLayout()
         self.run_btn = QPushButton("Run checked")
+        self.roi_select.set_run_button(self.run_btn, "Run checked")
         self.update_btn = QPushButton("Update current class")
         self.update_btn.setToolTip("Only added points: refines the previous result; otherwise re-runs it.")
         self.revert_btn = QPushButton("Revert class")
@@ -433,7 +429,7 @@ class PromptTab(QWidget):
         self._roi_model.layer_removed.connect(self._schedule_refresh)
         self.image_combo.currentTextChanged.connect(lambda *_: self._on_inputs_changed())
         self.seeds_combo.currentTextChanged.connect(lambda *_: self._on_inputs_changed())
-        self.roi_use.changed.connect(self._roi_timer.start)
+        self.roi_select.changed.connect(self._roi_timer.start)
 
         self.table.itemChanged.connect(self._on_item_changed)
         self.table.itemSelectionChanged.connect(self._on_selection)
@@ -550,7 +546,7 @@ class PromptTab(QWidget):
 
     def _display_roi(self):
         shape = self._shape()
-        return None if shape is None else self.roi_use.roi_for_display(shape)
+        return None if shape is None else self.roi_select.roi_for_display(shape)
 
     def input_type(self):
         """(key, prompt_type, scribble source)."""
@@ -646,7 +642,7 @@ class PromptTab(QWidget):
         self._connect_points_layer()
         self._on_type_changed()
         self._update_output_label()
-        self.roi_use.refresh()           # shows an ROI / image shape mismatch
+        self.roi_select.refresh()        # shows an ROI / image shape mismatch
         self.compute_stats()
         self._update_buttons()
 
@@ -654,7 +650,7 @@ class PromptTab(QWidget):
         if not self._alive():
             return
         roi = self._display_roi()
-        if roi is self._last_roi:
+        if (None if roi is None else roi.key) == (None if self._last_roi is None else self._last_roi.key):
             return                       # e.g. None -> None: ROI off, a kind change, an unused mask painted
         self.compute_stats()
         self._update_output_label()
@@ -924,7 +920,7 @@ class PromptTab(QWidget):
             show_error("Check at least one class")
             return
         try:
-            roi = self.roi_use.roi_for_run(np.shape(img.data))
+            roi = self.roi_select.roi_for_run(np.shape(img.data))
         except RoiError as e:
             show_error(str(e))
             return
@@ -1105,7 +1101,7 @@ class PromptTab(QWidget):
     # ================================================================== run
     def output_name(self, roi=None):
         name = f"{self._seeds_name()}_nni"
-        return R.roi_name(name) if roi is not None else name
+        return R.roi_name(name, roi.name or "roi") if roi is not None else name
 
     def _store_key(self, out_name):
         return (id(self.image_layer), id(self.seeds_layer), out_name)
@@ -1152,7 +1148,7 @@ class PromptTab(QWidget):
             return None
         shape = tuple(np.shape(img.data))
         try:
-            roi = self.roi_use.roi_for_run(shape)
+            roi = self.roi_select.roi_for_run(shape)
         except RoiError as e:
             show_error(str(e))
             return None

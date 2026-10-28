@@ -17,6 +17,7 @@ the dtype's min/max (what the old widget defaulted to), or +-inf for floats.
 """
 import threading
 import weakref
+from collections import OrderedDict
 
 import numpy as np
 from napari.layers import Image
@@ -38,12 +39,14 @@ from .slice_preview import SlicePreview
 
 PREVIEW_NAME = "Threshold Preview"
 
-# Histogram + Otsu per image array (and per ROI snapshot), shared by the Seeds and Grow
-# widgets: switching back to an image, or showing it in the other tab, costs nothing.
-# Keyed by id(array) (arrays are not hashable); the entry is dropped when the array is
-# freed, and the weak reference guards against a recycled id.
+# Histogram + Otsu per image array (and per ROI, by value: Roi.key), shared by the Seeds
+# and Grow widgets: switching back to an image, or showing it in the other tab, costs
+# nothing. Keyed by id(array) (arrays are not hashable); the entry is dropped when the
+# array is freed, and the weak reference guards against a recycled id. At most
+# _HIST_PER_IMAGE ROIs are kept per image (least recently used dropped first).
 _HIST_CACHE = {}
 _HIST_CACHE_LOCK = threading.Lock()
+_HIST_PER_IMAGE = 16
 
 
 def _cached_histogram(img, roi):
@@ -60,11 +63,11 @@ def _cached_histogram(img, roi):
                 weakref.finalize(img, _HIST_CACHE.pop, id(img), None)
             except TypeError:               # not weak-referenceable: no caching
                 ref = None
-            entry = (ref, {}, threading.Lock())
+            entry = (ref, OrderedDict(), threading.Lock())
             if ref is not None:
                 _HIST_CACHE[id(img)] = entry
     _, per_img, lock = entry
-    key = None if roi is None else roi.token
+    key = None if roi is None else roi.key
     with lock:
         if key not in per_img:
             vals = img if roi is None else roi.sample_values(img)   # ROI: only voxels inside it
@@ -73,7 +76,14 @@ def _cached_histogram(img, roi):
             sub = B.subsample(vals)
             otsu = float(threshold_otsu(sub)) if sub.size and sub.min() < sub.max() else None
             per_img[key] = (counts, edges, otsu)
+            while len(per_img) > _HIST_PER_IMAGE:
+                per_img.popitem(last=False)
+        per_img.move_to_end(key)
         return per_img[key]
+
+
+def _key(roi):
+    return None if roi is None else roi.key
 
 
 def _is_default_full_range_row(param_widget, params):
@@ -157,14 +167,15 @@ class HistogramThresholdWidget(QGroupBox):
         self._hist_timer = QTimer(self)
         self._hist_timer.setSingleShot(True)
         self._hist_timer.timeout.connect(self._start_histogram)
-        # ROI: follows the host tab's "Use current ROI" (roi_use; None = never an ROI).
-        # When ticked, the histogram, live slice and Create Preview Layer only look inside it.
+        # ROI: follows the host tab's ROI picker (roi_use, a RoiSelect; None = never an ROI).
+        # With an ROI picked, the histogram, live slice and Create Preview Layer only look inside it.
         self._roi_use = roi_use
         self._roi_timer = QTimer(self)          # next event-loop turn, like the histogram
         self._roi_timer.setSingleShot(True)
         self._roi_timer.timeout.connect(self._on_roi_changed)
         if roi_use is not None:
             roi_use.changed.connect(self._roi_timer.start)
+            roi_use.moving.connect(self._on_roi_moving)
         self._hist_roi = None
         self._auto_range = None
         self._roi_refresh = False
@@ -206,7 +217,8 @@ class HistogramThresholdWidget(QGroupBox):
 
         self.roi_reminder = None
         if roi_use is not None:
-            self.roi_reminder = RoiReminder(roi_use, "Preview inside ROI")
+            self.roi_reminder = RoiReminder(roi_use, "Preview inside",
+                                            shape=lambda: None if self._img is None else self._img.shape)
             lay.addWidget(self.roi_reminder)
         row = QHBoxLayout()
         self.create_btn = QPushButton("Create Preview Layer")
@@ -261,7 +273,7 @@ class HistogramThresholdWidget(QGroupBox):
             return _cached_histogram(img, roi)
 
         def done(res):
-            if job != self._job or roi is not self._hist_roi:
+            if job != self._job or _key(roi) != _key(self._hist_roi):
                 return
             counts, edges, otsu = res
             lo, hi = self._pending or (otsu, None)   # start at Otsu, no upper limit
@@ -281,13 +293,24 @@ class HistogramThresholdWidget(QGroupBox):
         """New ROI: recompute the histogram inside it; redraw the live slice."""
         if self._img is None:
             return
-        if self._display_roi(self._img) is self._hist_roi:
-            return                     # same ROI for this image (e.g. unticked -> still none)
+        if _key(self._display_roi(self._img)) == _key(self._hist_roi):
+            if not self.hist._ready() and self.hist._message == "ROI changed\u2026":
+                self._roi_refresh = True
+                self._hist_timer.start(0)          # dragged and put back: show it again
+            return                     # same ROI for this image (e.g. still none)
         if self.hist._ready() and self._pending is None and self.hist.get_range() != self._auto_range:
             self._pending = self.hist.get_bounds()   # keep the user's range ("no limit" stays)
         self._roi_refresh = True
         self._hist_timer.start(0)
         self._on_dims()                # redraw the live slice if it is shown
+
+    def _on_roi_moving(self):
+        """The picked ROI is being dragged: the histogram waits for the release."""
+        if self._img is None or not self.hist._ready():
+            return
+        if self._pending is None and self.hist.get_range() != self._auto_range:
+            self._pending = self.hist.get_bounds()   # keep the user's range
+        self.hist.show_message("ROI changed\u2026")
 
     def _display_roi(self, img):
         return None if self._roi_use is None else self._roi_use.roi_for_display(img.shape)
@@ -428,7 +451,7 @@ class HistogramThresholdWidget(QGroupBox):
             base += f"_ero{ero}" if ero else ""
             base += f"_cc{cc_n}" if cc_n else ""
             if roi is not None:
-                base = R.roi_name(base)
+                base = R.roi_name(base, roi.name or "roi")
             name, i = base, 1
             while name in self.viewer.layers:
                 name, i = f"{base}_{i}", i + 1
