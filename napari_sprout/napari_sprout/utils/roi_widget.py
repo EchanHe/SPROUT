@@ -301,8 +301,6 @@ class RoiTools(QWidget):
         self.viewer = napari_viewer
         self.hub = get_roi_hub(napari_viewer)
         self._edit = None                   # weakref: ROI layer being edited
-        self._drawing = None                # weakref: new layer waiting for its rectangle
-        self._prev_active = None
         self._job = 0
         self._workers = set()
         self._refresh_timer = QTimer(self)
@@ -422,6 +420,9 @@ class RoiTools(QWidget):
         self.hub.layer_inserted.connect(self._on_layers_changed)
         self.hub.layer_removed.connect(self._on_layers_changed)
         self.hub.dims_changed.connect(self._on_dims)
+        self.hub.draw_finished.connect(self._on_drawn)
+        # a closed panel takes its unfinished drawing (the "SPROUT draw" helper layer) along
+        self.destroyed.connect(self.hub.cancel_draw)
         self.refresh_layers()
 
     # ---- helpers
@@ -481,15 +482,14 @@ class RoiTools(QWidget):
         if ref is None:
             show_info("Load an image first: the box is drawn in its voxel grid")
             return
-        if self.viewer.dims.ndisplay != 2:
-            show_info("Switch to the 2D view to draw")
+        if not self.hub.view_ok():
+            show_info("Switch to the 2D view (z slices) to draw")
             return
-        self._prev_active = self.viewer.layers.selection.active
-        layer = add_roi_layer(self.viewer, ref, z_all=True)
-        self._drawing = weakref.ref(layer)
+        # a temporary helper layer: the ROI layer is made from the first rectangle drawn
+        self.hub.start_draw(ref)
+
+    def _on_drawn(self, layer):
         self._edit = weakref.ref(layer)
-        self.viewer.layers.selection.active = layer
-        layer.mode = "add_rectangle"
         self._on_rois_changed()
 
     def _whole(self):
@@ -554,14 +554,6 @@ class RoiTools(QWidget):
 
     # ---- edit
     def _on_edited(self, layer):
-        draw = None if self._drawing is None else self._drawing()
-        if layer is draw and len(layer.data):
-            self._drawing = None
-            if str(layer.mode).startswith("add"):
-                layer.mode = "pan_zoom"
-            prev, self._prev_active = self._prev_active, None
-            if prev is not None and prev in self.viewer.layers:
-                self.viewer.layers.selection.active = prev
         if layer is self.edit_layer:
             self._show()
 

@@ -26,6 +26,15 @@ The hub also keeps each ROI layer's canvas label and colour ("ROI_1 201×71×72"
 inside the z range, "ROI_1 outside (z 250–450)" orange-red outside; recoloured only when
 that state flips), snaps edited shapes back to one rectangle, and hides ROI layers in the
 3D view and in transposed views (restoring them after).
+
+Draw box uses a temporary helper layer "SPROUT draw" (no ROI marker: never an ROI, never
+listed). The first rectangle drawn on it becomes a new ROI_n and the helper is removed;
+leaving the drawing any other way (another mode, another active layer, 3D / transposed
+view, Draw again on another image, deleting the helper, closing the panel) removes it and
+creates nothing (no ROI number used):
+
+    draw_finished(layer)  the new ROI layer made from the rectangle
+    draw_ended            the drawing is over (finished or abandoned)
 """
 import math
 import warnings
@@ -33,6 +42,7 @@ import weakref
 
 import numpy as np
 from napari.layers import Shapes
+from napari.utils.notifications import show_info
 from qtpy.QtCore import QObject, QTimer, Signal
 
 from sprout_core.roi import Roi, RoiError
@@ -43,6 +53,8 @@ OUTSIDE = "#ff5a36"
 DASH = "–"
 TEXT = {"string": "{label}", "anchor": "upper_left", "size": 10, "color": {"feature": "tcolor"}}
 HIDDEN_NOTE = "ROI boxes are shown in the default z-slice 2D view only"
+DRAW_NAME = "SPROUT draw"
+DRAW_MARKER = "sprout_draw_layer"
 
 _HUBS = weakref.WeakKeyDictionary()       # viewer -> RoiHub
 
@@ -52,6 +64,11 @@ _HUBS = weakref.WeakKeyDictionary()       # viewer -> RoiHub
 # --------------------------------------------------------------------------
 def is_roi_layer(layer):
     return isinstance(layer, Shapes) and isinstance(layer.metadata.get(MARKER), dict)
+
+
+def is_draw_layer(layer):
+    """The temporary Draw box layer (a SPROUT helper: never an ROI, never offered in combos)."""
+    return isinstance(layer, Shapes) and bool(layer.metadata.get(DRAW_MARKER))
 
 
 def roi_layers(viewer):
@@ -187,6 +204,8 @@ class RoiHub(QObject):
     layer_removed = Signal(object)
     dims_changed = Signal()
     users_changed = Signal()          # a tab picked another ROI ("used by" in the ROI tools)
+    draw_finished = Signal(object)    # Draw box: the new ROI layer
+    draw_ended = Signal()             # Draw box: the drawing is over (finished or abandoned)
 
     MOVING_MS = 30
 
@@ -208,6 +227,11 @@ class RoiHub(QObject):
         self._dims_timer = QTimer(self)
         self._dims_timer.setSingleShot(True)
         self._dims_timer.timeout.connect(self._update_view)
+        self._draw = None                             # weakref: the "SPROUT draw" helper layer
+        self._draw_ref = None                         # weakref: the image whose grid it uses
+        self._draw_prev = None                        # weakref: active layer before Draw box
+        self._draw_token = 0                          # a new drawing (or its end) voids pending calls
+        self._draw_busy = False                       # our own selection / mode changes
         viewer.layers.events.inserted.connect(self._on_inserted)
         viewer.layers.events.removed.connect(self._on_removed)
         for name in ("current_step", "order", "ndisplay"):
@@ -305,6 +329,8 @@ class RoiHub(QObject):
 
     def _on_removed(self, event):
         layer = event.value
+        if self._draw is not None and layer is self._draw():
+            self._end_draw()                          # the helper layer was deleted
         if layer in self._attached:
             self._detach(layer)
             self.rois_changed.emit()
@@ -419,6 +445,8 @@ class RoiHub(QObject):
 
     def _update_view(self):
         ok = self._view_ok()
+        if not ok and self.drawing_layer() is not None:
+            self.cancel_draw(now=True)                # boxes are drawn in the z-slice 2D view only
         if not ok and not self.view_hidden:
             self.view_hidden = True
             for layer in self.layers():
@@ -432,3 +460,156 @@ class RoiHub(QObject):
             for layer in self.layers():
                 self.refresh_label(layer)
         self.dims_changed.emit()
+
+    def view_ok(self):
+        """The default z-slice 2D view, where ROI boxes are shown and drawn."""
+        return self._view_ok()
+
+    # ---- Draw box (temporary helper layer)
+    def drawing_layer(self):
+        layer = None if self._draw is None else self._draw()
+        v = self.viewer
+        return layer if layer is not None and v is not None and layer in v.layers else None
+
+    def start_draw(self, ref):
+        """Let the user drag one rectangle on the y / x grid of `ref` (an Image layer).
+        A drawing already going on is reused (same image) or replaced: one helper at most."""
+        v = self.viewer
+        if v is None:
+            return None
+        layer = self.drawing_layer()
+        prev = self._draw_prev() if self._draw_prev is not None else v.layers.selection.active
+        if layer is not None and (self._draw_ref is None or self._draw_ref() is not ref):
+            self._remove_draw(restore=False)
+            layer = None
+        if layer is None:
+            self._end_draw(quiet=True)                # a stale (deleted) helper
+            if prev is not None and (prev not in v.layers or is_draw_layer(prev)):
+                prev = None
+            shape = np.shape(ref.data)
+            layer = Shapes(ndim=2, name=DRAW_NAME, edge_color=YELLOW, face_color="transparent",
+                           edge_width=max(1.0, 0.004 * float(max(shape[-2:]))),
+                           scale=np.asarray(ref.scale, float)[-2:],
+                           translate=np.asarray(ref.translate, float)[-2:],
+                           metadata={DRAW_MARKER: True})
+            self._draw_token += 1
+            self._draw = weakref.ref(layer)
+            self._draw_ref = weakref.ref(ref)
+            self._draw_prev = None if prev is None else weakref.ref(prev)
+            self._draw_busy = True
+            try:
+                v.layers.append(layer)
+            finally:
+                self._draw_busy = False
+            layer.events.mode.connect(self._on_draw_mode)
+            layer.events.data.connect(self._on_draw_data)
+            v.layers.selection.events.active.connect(self._on_draw_active)
+        self._draw_busy = True
+        try:
+            v.layers.selection.active = layer
+            layer.mode = "add_rectangle"
+        finally:
+            self._draw_busy = False
+        return layer
+
+    def cancel_draw(self, *_, now=False):
+        """Abandon the drawing: remove the helper layer, create nothing. Deferred unless
+        now=True (it is called from napari callbacks and from a closing panel)."""
+        if self._draw is None:
+            return
+        if now:
+            self._remove_draw()
+            return
+        token = self._draw_token
+        QTimer.singleShot(0, lambda: self._remove_draw() if token == self._draw_token else None)
+
+    def _end_draw(self, quiet=False):
+        """Forget the drawing and drop its connections; returns (helper, ref, previous active)."""
+        if self._draw is None:
+            return None, None, None
+        layer = self._draw()
+        ref = None if self._draw_ref is None else self._draw_ref()
+        prev = None if self._draw_prev is None else self._draw_prev()
+        self._draw = self._draw_ref = self._draw_prev = None
+        self._draw_token += 1
+        v = self.viewer
+        pairs = [] if v is None else [(v.layers.selection.events.active, self._on_draw_active)]
+        if layer is not None:
+            pairs += [(layer.events.mode, self._on_draw_mode), (layer.events.data, self._on_draw_data)]
+        for em, cb in pairs:
+            try:
+                em.disconnect(cb)
+            except Exception:
+                pass
+        if not quiet:
+            self.draw_ended.emit()
+        return layer, ref, prev
+
+    def _remove_draw(self, restore=True):
+        layer, _, prev = self._end_draw()
+        self._drop_helper(layer, prev if restore else None)
+
+    def _drop_helper(self, layer, prev):
+        """Remove the (already forgotten) helper layer; give the selection back if it had it."""
+        v = self.viewer
+        if v is None or layer is None or layer not in v.layers:
+            return
+        was_active = v.layers.selection.active is layer
+        if str(layer.mode) != "pan_zoom":
+            layer.mode = "pan_zoom"
+        v.layers.remove(layer)
+        if was_active and prev is not None and prev in v.layers:
+            v.layers.selection.active = prev
+
+    def _on_draw_mode(self, event=None):
+        layer = self.drawing_layer()
+        if layer is not None and not self._draw_busy \
+                and str(layer.mode) != "add_rectangle" and len(layer.data) == 0:
+            self.cancel_draw()
+
+    def _on_draw_active(self, event=None):
+        layer = self.drawing_layer()
+        if layer is not None and not self._draw_busy and self.viewer.layers.selection.active is not layer:
+            self.cancel_draw()
+
+    def _on_draw_data(self, event):
+        if str(getattr(event, "action", "")) != "added":
+            return
+        token = self._draw_token
+        # ADDED fires inside napari's mouse-release handler: act on it later
+        QTimer.singleShot(0, lambda: self._finish_draw() if token == self._draw_token else None)
+
+    def _finish_draw(self):
+        """The first rectangle: a new ROI_n with that y / x box (z = all); helper removed."""
+        v = self.viewer
+        layer = self.drawing_layer()
+        if v is None or layer is None or len(layer.data) == 0:
+            return
+        ref = None if self._draw_ref is None else self._draw_ref()
+        if ref is None or ref not in v.layers:
+            self._remove_draw()
+            return
+        shape = tuple(int(s) for s in np.shape(ref.data))
+        verts = np.asarray(layer.data[-1], float)[:, -2:]
+        lo, hi = yx_box(verts, shape[-2:])
+        # a click, not a drag: napari starts a rectangle half a vertex radius (screen pixels) wide
+        tiny = max(0.5, 0.75 * float(getattr(layer, "_normalized_vertex_radius", 0.0) or 0.0))
+        click = bool(np.any(np.ptp(verts, axis=0) < tiny))
+        if click or any(h <= l for l, h in zip(lo, hi)):
+            if not click:
+                show_info("The box is outside the image: draw it again")
+            self._draw_busy = True
+            try:
+                layer.data = []
+            finally:
+                self._draw_busy = False
+            return
+        if len(shape) == 3:
+            lo, hi = [0] + lo, [shape[0]] + hi
+        layer, ref, prev = self._end_draw(quiet=True)
+        roi_layer = add_roi_layer(v, ref, lo, hi, z_all=True)
+        self._drop_helper(layer, None)
+        if prev is not None and prev in v.layers:
+            v.layers.selection.active = prev
+        self.draw_finished.emit(roi_layer)
+        self.draw_ended.emit()
