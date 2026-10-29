@@ -91,6 +91,25 @@ def capabilities_text(caps):
     return " · ".join(CAPABILITY_TEXT.get(c, c) for c in order)
 
 
+class _FitTable(QTableWidget):
+    """A table as high as its header + rows, up to MAX_ROWS rows; it scrolls inside beyond that."""
+
+    MAX_ROWS = 10
+
+    def fit(self):
+        n = min(self.rowCount(), self.MAX_ROWS)
+        h = 2 * self.frameWidth() + self.horizontalHeader().sizeHint().height()
+        h += sum(self.rowHeight(i) for i in range(n))
+        if self.horizontalHeader().length() > self.viewport().width():      # columns wider than the table
+            h += self.horizontalScrollBar().sizeHint().height()
+        if self.minimumHeight() != h or self.maximumHeight() != h:
+            self.setFixedHeight(h)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.fit()                      # a narrower table may need its horizontal scrollbar
+
+
 class _Progress(QObject):
     """Created on the UI thread; emits from worker threads are queued to it."""
     changed = Signal(int, int)
@@ -229,7 +248,7 @@ class PromptTab(QWidget):
         # 2. Classes
         g2 = QGroupBox("2. Classes")
         l2 = QVBoxLayout(g2)
-        self.table = QTableWidget(0, len(COLUMNS))
+        self.table = _FitTable(0, len(COLUMNS))
         self.table.setHorizontalHeaderLabels(COLUMNS)
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -237,8 +256,8 @@ class PromptTab(QWidget):
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setStretchLastSection(True)
-        self.table.setMinimumHeight(140)
-        self.table.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Expanding)
+        self.table.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)     # height: see _FitTable.fit
+        self.table.fit()
         self.table.setToolTip("Tick the classes to work on. The highlighted row is the class new points "
                               "belong to.")
         l2.addWidget(self.table)
@@ -736,6 +755,7 @@ class PromptTab(QWidget):
         self.table.blockSignals(False)
         roi = self._display_roi()
         self.table.horizontalHeaderItem(2).setText("seed voxels in ROI" if roi is not None else "seed voxels")
+        self.table.fit()
         if sel in ids:
             self.select_class(sel)
         elif ids and self._current is None:
