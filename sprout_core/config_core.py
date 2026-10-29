@@ -561,8 +561,12 @@ def validate_input_yaml(config, rules):
                         continue
                 else:
                     errors.append(f"Parameter '{param}' should be of type {rule['type'].__name__}, got {type(value).__name__}.")
-                continue 
-            
+                continue
+
+            # If list, check exact length (only for rules with "length", e.g. one value per axis)
+            if isinstance(value, list) and "length" in rule and len(value) != rule["length"]:
+                errors.append(f"Parameter '{param}' must be a single value or a list of {rule['length']} values, got {value}.")
+
             # If list, check subtype
             if isinstance(value, list) and "subtype" in rule:
                 if not all(isinstance(item, rule["subtype"]) for item in value):
@@ -1630,7 +1634,8 @@ input_val_nninteractive_run = {
         "type": bool,
         "required": False,
         "default": True,
-        "description": "Enable automatic zoom adjustment"
+        "description": "nnInteractive AutoZoom: when the prediction reaches the edge of the model patch, "
+                       "zoom out and refine at a coarser scale (passed to the nnInteractive session)"
     },
     
     # Input/Output paths
@@ -1737,6 +1742,45 @@ input_val_nninteractive_run = {
         "description": "Save per-class foreground probability maps as float32 TIFF files"
     },
 
+    # Seed ROI: crop the nnInteractive input around the seed of each class
+    "roi_from_seed": {
+        "type": bool,
+        "required": False,
+        "default": False,
+        "description": "Crop the nnInteractive input to an ROI around the seed voxels of each class"
+    },
+    "roi_mode": {
+        "type": str,
+        "required": False,
+        "default": "class",
+        "choices": ["class", "union"],
+        "description": "'class': one ROI per class seed bbox; 'union': one ROI around all seeds"
+    },
+    "roi_margin": {
+        "type": (int, float, list),
+        "subtype": (int, float),
+        "length": 3,
+        "min": 0,
+        "required": False,
+        "default": 32,
+        "description": "Margin around the seed bbox: one value or [z, y, x] (unit: roi_margin_unit)"
+    },
+    "roi_margin_unit": {
+        "type": str,
+        "required": False,
+        "default": "voxel",
+        "choices": ["voxel", "percent"],
+        "description": "Unit of roi_margin: 'voxel', or 'percent' of the seed bbox size per axis"
+    },
+    "roi_min_size": {
+        "type": (int, float, list),
+        "subtype": (int, float),
+        "length": 3,
+        "min": 0,
+        "required": False,
+        "default": 0,
+        "description": "Grow the ROI to at least this size per axis: one value or [z, y, x] (0 = off)"
+    },
     # Reproducibility
     "seed": {
         "type": int,
