@@ -85,7 +85,8 @@ def seed_to_point_prompts_nninteractive(
     negative_from_bg: bool = True,
     negative_from_other_classes: bool = True,
     negative_per_other_class: bool = False,
-    seed_pattern: str = '*.tif'
+    seed_pattern: str = '*.tif',
+    neg_regions: Optional[dict] = None
 ) -> pd.DataFrame:
     """
     Convert 3D segmentation seed(s) to point prompts DataFrame for nnInteractive.
@@ -122,7 +123,12 @@ def seed_to_point_prompts_nninteractive(
         If False: sample n_neg from ALL other classes combined
     seed_pattern : str
         File pattern if seed_path is a folder
-    
+    neg_regions : dict, optional
+        {class_id: tuple of slices (z, y, x)}. Negative points of that class are only
+        sampled inside its region (e.g. the class's seed ROI, where nnInteractive is run;
+        negatives outside it would be dropped). Classes not in the dict, or None
+        (default), sample negatives from the whole seed.
+
     Returns:
     --------
     pd.DataFrame
@@ -250,18 +256,28 @@ def seed_to_point_prompts_nninteractive(
         # Sample negative points
         if n_neg > 0:
             n_neg_total = 0
+
+            # Negative candidates: the whole seed, or only this class's region
+            win = neg_regions.get(int(cls)) if neg_regions else None
+            if win is not None:
+                win = tuple(slice(*s.indices(n)[:2]) for s, n in zip(win, seg.shape))
+                seg_neg = seg[win]
+                nonzero_neg = nonzero_mask[win] if nonzero_mask is not None else None
+                neg_offset = np.array([s.start for s in win])  # back to full-image coords
+            else:
+                seg_neg, nonzero_neg, neg_offset = seg, nonzero_mask, 0
             
             # From background
             if negative_from_bg:
                 # bg_mask = (seg == 0).astype(np.uint8)
-                bg_mask_bool = (seg == 0)
-                if nonzero_mask is not None:
-                    bg_mask_bool &= nonzero_mask  
+                bg_mask_bool = (seg_neg == 0)
+                if nonzero_neg is not None:
+                    bg_mask_bool &= nonzero_neg  
                 bg_mask = bg_mask_bool.astype(np.uint8)
                 
                 if np.sum(bg_mask) > 0:
                     try:
-                        neg_points_bg = sample_points_3d(bg_mask, n=n_neg, method=method)
+                        neg_points_bg = sample_points_3d(bg_mask, n=n_neg, method=method) + neg_offset
                         for pt in neg_points_bg:
                             all_prompts.append({
                                 'image_name': image_name,
@@ -284,14 +300,14 @@ def seed_to_point_prompts_nninteractive(
                         if other_cls == cls:
                             continue
 
-                        other_mask_bool = (seg == other_cls)
-                        if nonzero_mask is not None:
-                            other_mask_bool &= nonzero_mask  
+                        other_mask_bool = (seg_neg == other_cls)
+                        if nonzero_neg is not None:
+                            other_mask_bool &= nonzero_neg  
                         other_mask = other_mask_bool.astype(np.uint8)
                         
                         if np.sum(other_mask) > 0:
                             try:
-                                neg_points = sample_points_3d(other_mask, n=n_neg, method=method)
+                                neg_points = sample_points_3d(other_mask, n=n_neg, method=method) + neg_offset
                                 for pt in neg_points:
                                     all_prompts.append({
                                         'image_name': image_name,
@@ -308,10 +324,10 @@ def seed_to_point_prompts_nninteractive(
                                 print(f"    [WARNING] Failed to sample from class {other_cls}: {e}")
                 else:
                     # Sample from ALL other classes combined
-                    other_mask = (seg != cls) & (seg > 0)
+                    other_mask = (seg_neg != cls) & (seg_neg > 0)
                     if np.sum(other_mask) > 0:
                         try:
-                            neg_points = sample_points_3d(other_mask.astype(np.uint8), n=n_neg, method=method)
+                            neg_points = sample_points_3d(other_mask.astype(np.uint8), n=n_neg, method=method) + neg_offset
                             for pt in neg_points:
                                 all_prompts.append({
                                     'image_name': image_name,

@@ -12,6 +12,10 @@ import os, sys
 import yaml
 import sprout_core.config_core as config_core
 from sprout_core.nni_prob_session import nnInteractiveSessionWithProb
+from sprout_core.seed_roi import seed_rois, inner_face_fraction, roi_log
+
+# inner_face_fraction above this -> the prediction touches the ROI edge
+ROI_EDGE_WARN_FRACTION = 0.02
 
 
 def parse_scribble_config(optional_params):
@@ -202,6 +206,12 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
                  return_per_class_masks: bool = True,
                  scribble_config= None,
                  save_prob_maps: bool = False,
+                 do_autozoom: bool = True,
+                 roi_from_seed: bool = False,
+                 roi_mode: Literal['class', 'union'] = "class",
+                 roi_margin=32,
+                 roi_margin_unit: Literal['voxel', 'percent'] = "voxel",
+                 roi_min_size=0,
                  seed: int = 0):
     """
     Main function for nnInteractive prediction with point prompts.
@@ -218,6 +228,13 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
         return_per_class_masks: Whether to save individual class masks
         scribble_config: Configuration for scribble prompt generation
         save_prob_maps: Whether to save per-class foreground probability maps
+        do_autozoom: Let nnInteractive zoom out when the prediction reaches the patch border
+        roi_from_seed: Crop the nnInteractive input to a seed-derived ROI per class
+                       (outputs are pasted back to full size, zero outside the ROI)
+        roi_mode: 'class' (one ROI per class) or 'union' (one ROI around all seeds)
+        roi_margin: Margin around the seed bbox, a number or [z, y, x]
+        roi_margin_unit: 'voxel', or 'percent' of the seed bbox size per axis
+        roi_min_size: Grow the ROI to at least this size per axis (e.g. 192 = patch size)
         seed: random seed (default 0): np.random.seed(seed) before the point sampling and
               np.random.seed(seed + class_id) before each class, so a run is reproducible and a
               class's result does not depend on which other classes run
@@ -237,6 +254,10 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
     print(f"    Return per class masks: {return_per_class_masks}")
     print(f"    Scribble config: {scribble_config}")
     print(f"    Save probability maps: {save_prob_maps}")
+    print(f"    Do autozoom: {do_autozoom}")
+    print(f"    ROI from seed: {roi_from_seed}")
+    if roi_from_seed:
+        print(f"    ROI mode: {roi_mode}, margin: {roi_margin} {roi_margin_unit}, min size: {roi_min_size}")
     print("=" * 60)
 
     log_dict = {
@@ -244,6 +265,12 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
         "seg_path": seg_path,
         "output_folder": output_folder,
         "init_seg_path": init_seg_path,
+        "do_autozoom": do_autozoom,
+        "roi_from_seed": roi_from_seed,
+        "roi_mode": roi_mode,
+        "roi_margin": list(roi_margin) if isinstance(roi_margin, (list, tuple)) else roi_margin,
+        "roi_margin_unit": roi_margin_unit,
+        "roi_min_size": list(roi_min_size) if isinstance(roi_min_size, (list, tuple)) else roi_min_size,
         "seed": seed}
   
     if torch.cuda.is_available() and ("cuda" in str(device)):
@@ -271,7 +298,8 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
     # Use probability-tracking session if save_prob_maps is enabled
     SessionClass = nnInteractiveSessionWithProb if save_prob_maps else nnInteractiveInferenceSession
     # keyword arguments filtered for the installed nnInteractive (2.x has no use_pinned_memory)
-    session = make_session(device, session_cls=SessionClass, use_pinned_memory=False)
+    session = make_session(device, session_cls=SessionClass, do_autozoom=do_autozoom,
+                           use_pinned_memory=False)
     
     try:
         session.initialize_from_trained_model_folder(model_path)
@@ -296,7 +324,19 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
         print(f"      Final shape: {img.shape}")
     except Exception as e:
         raise RuntimeError(f"Failed to load image: {e}")
-    
+
+    # Seed ROIs: per class, nnInteractive only sees img[:, roi.bbox()]
+    seed, rois, roi_stats = None, None, None
+    if roi_from_seed:
+        seed_img = tifffile.imread(seg_path)
+        if seed_img.shape != img.shape[1:]:
+            raise ValueError(f"Seed shape {seed_img.shape} doesn't match image shape {img.shape[1:]}")
+        rois = seed_rois(seed_img, mode=roi_mode, margin=roi_margin, unit=roi_margin_unit, min_size=roi_min_size)
+        roi_stats = {}
+        print(f"      Seed ROIs ({roi_mode}):")
+        for class_id, roi in sorted(rois.items()):
+            print(f"        Class {class_id}: {_roi_text(roi)}")
+
     # 3. Load prompts
     print("\n[3/4] Loading prompts...")
     if prompt_type == "point":
@@ -315,6 +355,10 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
 
         pt_csv_path = Path(output_folder) / f"{Path(img_path).stem}_point_prompts.csv"
         
+        if rois:
+            # negatives outside a class's ROI would be dropped: sample them inside it
+            default_point_config['neg_regions'] = {c: roi.bbox() for c, roi in rois.items()}
+
         if seed is not None:
             np.random.seed(int(seed))          # the same points for the same seed
         df_pt= seed_to_point_prompts_nninteractive(seg_path,img_path=img_path,
@@ -337,7 +381,7 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
         df_pt = None
     
     if prompt_type == "scribble":
-        scribble_mask = tifffile.imread(seg_path)
+        scribble_mask = seed if seed is not None else tifffile.imread(seg_path)
         
         # Validate scribble shape
         expected_shape = img.shape[1:]
@@ -385,8 +429,12 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
         scribble_config=scribble_config,
         on_class_predicted=save_class_mask if return_per_class_masks else None,
         on_class_prob_predicted=save_prob_map if save_prob_maps else None,
+        rois=rois,
+        roi_stats=roi_stats,
         seed=seed
     )
+    if roi_stats is not None:
+        log_dict["roi_per_class"] = roi_stats
 
     
     # Save results
@@ -447,6 +495,8 @@ def nninter_predict(
     scribble_config = None,
     on_class_predicted=None,
     on_class_prob_predicted=None,
+    rois: Optional[dict] = None,
+    roi_stats: Optional[dict] = None,
     seed: Optional[int] = 0
 ) -> Union[np.ndarray, Tuple[np.ndarray, Dict[int, np.ndarray]]]:
     """
@@ -467,6 +517,11 @@ def nninter_predict(
         scribble_config: Configuration for scribble prompt generation
         on_class_predicted: Optional callback function with signature (class_id, mask) called after each class is predicted. Useful for saving masks without keeping all in memory.
         on_class_prob_predicted: Optional callback function with signature (class_id, prob_map_float32) called after each class probability map is predicted.
+        rois: Optional {class_id: Roi} from seed_roi.seed_rois. A class with an ROI is
+              predicted on img[:, roi.bbox()] only (prompts cropped / shifted, points
+              outside dropped); its mask and prob map are pasted back to full size,
+              zero outside the ROI. Classes without an ROI use the full image.
+        roi_stats: Optional dict, filled with {class_id: ROI log} when rois is given
         seed: np.random.seed(seed + class_id) after each class's reset (default 0; None = no
               seeding). nnInteractive's refinement draws from np.random: with a seed per class the
               result of a class does not depend on the classes run before it (the napari Prompt
@@ -499,9 +554,14 @@ def nninter_predict(
                 f"image shape {expected_shape}"
             )
     
-    # Set image
-    session.set_image(img.astype(np.float32))
-    
+    # Set image (once; with ROIs it is set per class crop in the loop, and the
+    # full image is never converted to float32 unless a class has no ROI)
+    full_window = tuple(slice(0, n) for n in img.shape[1:])
+    if not rois:
+        session.set_image(img.astype(np.float32))
+        current_window = full_window
+    else:
+        current_window = None  # window of img currently set in the session
     # per_class_masks = {}
     
     # Collect all class IDs from both sources
@@ -526,20 +586,32 @@ def nninter_predict(
     # Process each class
     for idx, class_id in enumerate(class_ids, 1):
         print(f"      [{idx}/{len(class_ids)}] Class {class_id}...", end=" ")
-        
+
+        # ROI of this class (None: full image); 'union' ROIs share one window, so
+        # the image is only set again when the window changes
+        roi = rois.get(int(class_id)) if rois else None
+        window = roi.bbox() if roi is not None else full_window
+        if window != current_window:
+            session.set_image(img[(slice(None),) + window].astype(np.float32))
+            current_window = window
+        if roi is not None:
+            print(f"crop {_roi_text(roi)}", end=" ")
+        work_shape = tuple(s.stop - s.start for s in window)
+
         # Reset interactions for new object
         session.reset_interactions()
         if seed is not None:
             np.random.seed(int(seed) + int(class_id))
-        target_tensor = torch.zeros(img.shape[1:], dtype=torch.uint8)
+        target_tensor = torch.zeros(work_shape, dtype=torch.uint8)
         session.set_target_buffer(target_tensor)
-        
+
         n_scribbles = 0
         n_points = 0
-        
+        n_dropped = 0
+
         # add initial mask if provided
         if init_mask is not None:
-            class_init_mask = (init_mask == class_id).astype(np.uint8)
+            class_init_mask = (_crop(init_mask, roi) == class_id).astype(np.uint8)
             print(f"      Initial mask pixels: {class_init_mask.sum():,}")
             if class_init_mask.sum() > 0:
                 session.add_initial_seg_interaction(
@@ -551,7 +623,8 @@ def nninter_predict(
         # 1. Add scribble interaction if available for this class
         if scribble_mask is not None:
             # Extract binary mask for current class
-            class_scribble = (scribble_mask == class_id).astype(np.uint8)
+            class_scribble_all = _crop(scribble_mask, roi)
+            class_scribble = (class_scribble_all == class_id).astype(np.uint8)
            
             
             if class_scribble.sum() > 0:  # Only add if scribble exists
@@ -563,7 +636,7 @@ def nninter_predict(
                 )
                 session._predict()
                 if scribble_config and scribble_config.get('use_negative_scribble', False):
-                    negative_scribble = (scribble_mask != class_id) & (scribble_mask != 0)
+                    negative_scribble = (class_scribble_all != class_id) & (class_scribble_all != 0)
             
                     session.add_scribble_interaction(
                         scribble_image=negative_scribble,
@@ -576,7 +649,12 @@ def nninter_predict(
         # 2. Add point interactions if available for this class
         if df_pt is not None:
             class_df = df_pt[df_pt['class_id'] == class_id]
-            
+            if roi is not None and len(class_df) > 0:
+                # to crop coordinates; points outside the ROI are dropped
+                class_df, n_dropped = _points_to_roi(class_df, roi)
+                if n_dropped > 0:
+                    print(f"\n      {n_dropped} point(s) outside the ROI dropped")
+
             if len(class_df) > 0:
                 for _, row in class_df.iterrows():
                     # Create point coordinates for session
@@ -604,15 +682,32 @@ def nninter_predict(
             prob_map = session.prob_buffer
             if isinstance(prob_map, torch.Tensor):
                 prob_map = prob_map.cpu().numpy()
-            on_class_prob_predicted(class_id, prob_map.copy().astype(np.float32))
+            prob_map = prob_map.copy().astype(np.float32)
+            if roi is not None:
+                prob_map = roi.paste(prob_map, region="bbox")  # full size, 0 outside the ROI
+            on_class_prob_predicted(class_id, prob_map)
 
         # 6. Save mask
-        
+
         if on_class_predicted is not None:
-            on_class_predicted(class_id, current_mask)
-        # 7. Update total mask
-        total_mask[current_mask] = class_id
-        
+            on_class_predicted(class_id, current_mask if roi is None else roi.paste(current_mask, region="bbox"))
+        # 7. Update total mask (current_mask is in ROI coordinates when cropped)
+        _crop(total_mask, roi)[current_mask] = class_id
+
+        # ROI log: is the prediction cut by the ROI?
+        if roi_stats is not None:
+            stats = {"cropped": roi is not None}
+            if roi is not None:
+                face = inner_face_fraction(current_mask, roi)
+                stats.update(roi_log(roi))
+                stats["inner_face_fraction"] = round(face, 5)
+                stats["n_points"] = int(n_points)
+                stats["n_points_dropped"] = int(n_dropped)
+                if face > ROI_EDGE_WARN_FRACTION:
+                    print(f"\n      [WARNING] Class {class_id}: {face:.1%} of the prediction lies on the ROI edge "
+                          f"(prediction touches the ROI edge; margin may be too small)")
+            roi_stats[int(class_id)] = stats
+
         # Print summary
         prompt_info = []
         if n_scribbles > 0:
@@ -639,6 +734,30 @@ def nninter_predict(
     torch.cuda.empty_cache()
 
     return total_mask
+
+
+def _roi_text(roi):
+    """e.g. 'z[0:96] y[10:150] x[0:122] (96, 140, 122)'"""
+    rng = " ".join(f"{a}[{l}:{h}]" for a, l, h in zip("zyx", roi.lo, roi.hi))
+    return f"{rng} {tuple(int(h - l) for l, h in zip(roi.lo, roi.hi))}"
+
+
+def _crop(arr, roi):
+    """arr on the ROI's bbox (a view), or arr itself when there is no ROI."""
+    return arr if roi is None else roi.crop(arr)
+
+
+def _points_to_roi(class_df: pd.DataFrame, roi):
+    """Point prompts shifted to ROI crop coordinates; points outside the ROI are
+    dropped. Returns (shifted DataFrame, number of dropped points)."""
+    inside = roi.contains(class_df[['z', 'y', 'x']].to_numpy())
+    out = class_df[inside].copy()
+    oz, oy, ox = roi.offset()
+    out['z'] -= oz
+    out['y'] -= oy
+    out['x'] -= ox
+    _validate_coordinates(out, roi.crop_shape())
+    return out, int((~inside).sum())
 
 
 def _validate_coordinates(df: pd.DataFrame, img_shape: tuple):
@@ -701,6 +820,12 @@ def run_nninteractive_yaml(file_path):
         return_per_class_masks=optional_params['return_per_class_masks'],
         scribble_config=scribble_config,
         save_prob_maps=optional_params.get('save_prob_maps', False),
+        do_autozoom=optional_params.get('do_autozoom', True),
+        roi_from_seed=optional_params.get('roi_from_seed', False),
+        roi_mode=optional_params.get('roi_mode', "class"),
+        roi_margin=optional_params.get('roi_margin', 32),
+        roi_margin_unit=optional_params.get('roi_margin_unit', "voxel"),
+        roi_min_size=optional_params.get('roi_min_size', 0),
         seed=optional_params['seed']
     )
 
