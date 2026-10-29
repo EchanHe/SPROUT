@@ -546,6 +546,8 @@ def validate_input_yaml(config, rules):
                 if isinstance(parsed, list):
                     value = parsed
                     config[param] = value
+                    if param in optional_values:
+                        optional_values[param] = value
 
             except Exception as e:
                 pass

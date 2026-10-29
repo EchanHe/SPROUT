@@ -593,6 +593,9 @@ def nninter_predict(
         window = roi.bbox() if roi is not None else full_window
         if window != current_window:
             session.set_image(img[(slice(None),) + window].astype(np.float32))
+            # set_image preprocesses in a background thread; wait for it so that
+            # reset_interactions below sees the new image shape
+            session._finish_preprocessing_and_initialize_interactions()
             current_window = window
         if roi is not None:
             print(f"crop {_roi_text(roi)}", end=" ")
