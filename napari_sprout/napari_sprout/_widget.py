@@ -80,7 +80,7 @@ class SPROUTWidget(QWidget):
         self.tabs.addTab(self.seed_widget, "1. Seeds")
         self.tabs.addTab(self.grow_widget, "2. Grow")
         self.tabs.addTab(self.prompt_tab, "3. Prompt (AI)")
-        self.tabs.addTab(self.roi_boundary_tabs, "ROI & Boundary")
+        self.tabs.addTab(self.roi_boundary_tabs, "ROI && Boundary")   # "&&": a single "&" is a Qt mnemonic
         
         layout.addWidget(self.tabs)
         

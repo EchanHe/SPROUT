@@ -5,8 +5,8 @@
                 Resolves the ROI for that tab: roi_for_run(shape) / roi_for_display(shape).
                 Default None; never picks a new ROI by itself.
     RoiReminder one line by a run / preview button, shown while its tab uses an ROI
-    RoiTools    create boxes (draw, whole image, from label ids + margin), edit the
-                selected ROI layer (name, z / y / x range), delete, save / load as JSON
+    RoiTools    four blocks: Draw a box (draw, full image), From labels (ids + margin),
+                Edit ROI (z / y / x range, delete; rename in napari's layer list), Save / Load
 
 ROIs are napari Shapes layers (roi_layers.py); every napari event reaches these widgets
 through the viewer's RoiHub as a Qt signal, so a closed panel leaves nothing behind.
@@ -20,7 +20,7 @@ from napari.qt.threading import thread_worker
 from napari.utils.notifications import show_info
 from qtpy.QtCore import Qt, QTimer, Signal
 from qtpy.QtWidgets import (
-    QComboBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
+    QComboBox, QFileDialog, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QSizePolicy, QSpinBox, QVBoxLayout, QWidget,
 )
 
@@ -35,6 +35,7 @@ OK_STYLE = "color: gray"
 ERROR_STYLE = "color: #d9534f"
 ROI_STYLE = "color: #e08a00"
 TIMES = " × "
+RENAME_TIP = "Rename in the napari layer list"
 # SPROUT's own live-preview Labels layers are never offered as a source of label ids
 _PREVIEW_LAYERS = ("Threshold Preview", "Boundary preview")
 
@@ -308,62 +309,80 @@ class RoiTools(QWidget):
         self._refresh_timer.timeout.connect(self.refresh_layers)
 
         outer = QVBoxLayout(self)
-        g = QGridLayout()
-        g.setVerticalSpacing(3)
-        g.addWidget(QLabel("New box on"), 0, 0)
+        outer.setSpacing(8)
+        self._form_labels = []
+
+        # Draw a box
+        box = self.draw_box = QGroupBox("Draw a box")
+        g = self._grid(box)
+        g.addWidget(self._label("On image"), 0, 0)
         self.image_combo = _LayerCombo()
         self.image_combo.setToolTip("The image whose voxel grid the box uses")
-        g.addWidget(self.image_combo, 0, 1, 1, 3)
+        g.addWidget(self.image_combo, 0, 1)
         self.draw_btn = QPushButton("Draw box")
         self.draw_btn.setToolTip("Drag a rectangle on the 2D view (y / x); z = all slices until you set it below")
-        self.whole_btn = QPushButton("Whole image")
-        row = QHBoxLayout()
-        row.addWidget(self.draw_btn)
-        row.addWidget(self.whole_btn)
-        row.addStretch()
-        g.addLayout(row, 1, 1, 1, 3)
-        g.addWidget(QLabel("From labels"), 2, 0)
+        g.addWidget(self.draw_btn, 1, 0, 1, 2)
+        self.whole_btn = QPushButton("Full image (then set z)")
+        self.whole_btn.setToolTip("An ROI with the full y / x extent and all slices. Use it to limit only the z range:\n"
+                                  "set z from / to below, e.g. process slices 200–400 with full x / y.")
+        g.addWidget(self.whole_btn, 2, 0, 1, 2)
+        g.addWidget(self._hint("Drag a rectangle on the 2D view; the z range starts as all slices."), 3, 0, 1, 2)
+        outer.addWidget(box)
+
+        # From labels
+        box = self.labels_box = QGroupBox("From labels")
+        g = self._grid(box)
+        g.addWidget(self._label("Labels"), 0, 0)
         self.labels_combo = _LayerCombo()
-        g.addWidget(self.labels_combo, 2, 1, 1, 3)
-        g.addWidget(QLabel("ids"), 3, 0)
+        self.labels_combo.setToolTip("A labels layer: the box goes around the label ids below")
+        g.addWidget(self.labels_combo, 0, 1)
+        g.addWidget(self._label("Ids"), 1, 0)
         self.ids_edit = QLineEdit()
-        self.ids_edit.setPlaceholderText("e.g. 3,5-7 (empty: all non-zero)")
-        g.addWidget(self.ids_edit, 3, 1)
-        g.addWidget(QLabel("margin"), 3, 2)
+        self.ids_edit.setPlaceholderText("e.g. 3,5-7 (empty: all)")
+        self.ids_edit.setToolTip("Label ids, e.g. 3,5-7; empty: all non-zero labels")
+        g.addWidget(self.ids_edit, 1, 1)
+        g.addWidget(self._label("Margin"), 2, 0)
         self.margin_spin = QSpinBox()
         self.margin_spin.setRange(0, 100000)
-        g.addWidget(self.margin_spin, 3, 3)
-        self.create_btn = QPushButton("Create")
-        self.create_btn.setToolTip("A box around these label ids (+ margin), computed once")
+        self.margin_spin.setToolTip("Voxels added on every side of the labels' bounding box")
         row = QHBoxLayout()
-        row.addWidget(self.create_btn)
+        row.addWidget(self.margin_spin)
+        row.addWidget(QLabel("voxels"))
         row.addStretch()
-        g.addLayout(row, 4, 1, 1, 3)
-        outer.addLayout(g)
+        g.addLayout(row, 2, 1)
+        self.create_btn = QPushButton("Create ROI")
+        self.create_btn.setToolTip("A box around these label ids (+ margin), computed once")
+        g.addWidget(self.create_btn, 3, 0, 1, 2)
         self.create_error = QLabel("")
         self.create_error.setStyleSheet(ERROR_STYLE)
         self.create_error.setWordWrap(True)
-        outer.addWidget(self.create_error)
+        g.addWidget(self.create_error, 4, 0, 1, 2)
         self.create_error.setVisible(False)
+        outer.addWidget(box)
 
-        line = QFrame()
-        line.setFrameShape(QFrame.HLine)
-        outer.addWidget(line)
+        # Edit ROI
+        box = self.edit_box = QGroupBox("Edit ROI")
+        v = QVBoxLayout(box)
+        v.setSpacing(4)
+        self.empty_note = self._hint("No ROI yet: draw a box or create one from labels above")
+        v.addWidget(self.empty_note)
         g = QGridLayout()
-        g.setVerticalSpacing(3)
-        g.addWidget(QLabel("ROI"), 0, 0)
+        g.setVerticalSpacing(4)
+        g.addWidget(self._label("ROI"), 0, 0)
         self.roi_combo = QComboBox()
-        g.addWidget(self.roi_combo, 0, 1, 1, 2)
+        self.roi_combo.setToolTip(RENAME_TIP)
+        self.roi_combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.roi_combo.setMinimumContentsLength(8)
+        g.addWidget(self.roi_combo, 0, 1, 1, 3)
         self.delete_btn = QPushButton("Delete")
+        self.delete_btn.setToolTip("Remove this ROI layer")
         g.addWidget(self.delete_btn, 0, 4)
-        g.addWidget(QLabel("name"), 1, 0)
-        self.name_edit = QLineEdit()
-        g.addWidget(self.name_edit, 1, 1, 1, 4)
-        g.addWidget(QLabel("from"), 2, 1)
-        g.addWidget(QLabel("to"), 2, 3)
+        self.from_to = (QLabel("from"), QLabel("to"))
+        g.addWidget(self.from_to[0], 1, 1)
+        g.addWidget(self.from_to[1], 1, 3)
         self.axis_rows = {}
-        for i, ax in enumerate(("z", "y", "x"), 3):
-            lab = QLabel(ax)
+        for i, ax in enumerate(("z", "y", "x"), 2):
+            lab = self._label(ax)
             lo, hi = QSpinBox(), QSpinBox()
             for sp in (lo, hi):
                 sp.setToolTip("Voxel index, inclusive")
@@ -381,35 +400,53 @@ class RoiTools(QWidget):
                     g.addWidget(b, i, col)
                     cur.append(b)
             self.axis_rows[ax] = (lab, lo, hi, cur)
-        outer.addLayout(g)
+        for col in (1, 3):
+            g.setColumnStretch(col, 1)
+        v.addLayout(g)
         self.info = QLabel("")
         self.info.setWordWrap(True)
-        outer.addWidget(self.info)
+        v.addWidget(self.info)
+        self.users_line = QLabel("")
+        self.users_line.setWordWrap(True)
+        v.addWidget(self.users_line)
         self.z_note = QLabel("z: all — set the z range with from / to or = slice")
         self.z_note.setStyleSheet(ROI_STYLE)
-        outer.addWidget(self.z_note)
+        self.z_note.setWordWrap(True)
+        v.addWidget(self.z_note)
         self.view_note = QLabel(HIDDEN_NOTE)
         self.view_note.setStyleSheet(ROI_STYLE)
         self.view_note.setWordWrap(True)
-        outer.addWidget(self.view_note)
+        v.addWidget(self.view_note)
+        outer.addWidget(box)
+
+        # Save / Load
+        box = self.file_box = QGroupBox("Save / Load")
+        v = QVBoxLayout(box)
+        v.setSpacing(4)
         row = QHBoxLayout()
+        row.setSpacing(12)
         self.save_btn = QPushButton("Save ROIs…")
+        self.save_btn.setToolTip("All ROI layers to one JSON file")
         self.load_btn = QPushButton("Load ROIs…")
+        self.load_btn.setToolTip("ROIs from a JSON file saved here, or from a run's roi.json")
         row.addWidget(self.save_btn)
         row.addWidget(self.load_btn)
         row.addStretch()
-        outer.addLayout(row)
+        v.addLayout(row)
+        v.addWidget(self._hint("Load also accepts a run's roi.json"))
         self.file_note = QLabel("")
         self.file_note.setWordWrap(True)
-        outer.addWidget(self.file_note)
+        self.file_note.setVisible(False)
+        v.addWidget(self.file_note)
+        outer.addWidget(box)
         outer.addStretch()
+        self._align_labels()
 
         self.draw_btn.clicked.connect(self._draw)
         self.whole_btn.clicked.connect(self._whole)
         self.create_btn.clicked.connect(self._from_labels)
         self.roi_combo.activated.connect(lambda i: self._pick(self.roi_combo.itemData(i)))
         self.delete_btn.clicked.connect(self._delete)
-        self.name_edit.editingFinished.connect(self._rename)
         self.save_btn.clicked.connect(lambda: self.save_rois())
         self.load_btn.clicked.connect(lambda: self.load_rois())
         # only the hub's Qt signals: nothing stays connected in napari when the panel closes
@@ -426,6 +463,43 @@ class RoiTools(QWidget):
         self.refresh_layers()
 
     # ---- helpers
+    def _align_labels(self):
+        """One label column width for every block (form-style alignment)."""
+        for lab in self._form_labels:
+            lab.setMinimumWidth(0)
+            lab.setMaximumWidth(16777215)
+        w = max(lab.sizeHint().width() for lab in self._form_labels)
+        for lab in self._form_labels:
+            lab.setFixedWidth(w)
+
+    def showEvent(self, event):
+        self._align_labels()          # the font may have changed with the napari stylesheet
+        super().showEvent(event)
+
+    def _label(self, text):
+        lab = QLabel(text)
+        self._form_labels.append(lab)
+        return lab
+
+    @staticmethod
+    def _hint(text):
+        lab = QLabel(text)
+        lab.setStyleSheet(OK_STYLE)
+        lab.setWordWrap(True)
+        return lab
+
+    @staticmethod
+    def _grid(box):
+        g = QGridLayout(box)
+        g.setVerticalSpacing(4)
+        g.setColumnStretch(1, 1)
+        return g
+
+    def _file_msg(self, text, style=OK_STYLE):
+        self.file_note.setText(text)
+        self.file_note.setStyleSheet(style)
+        self.file_note.setVisible(bool(text))
+
     def _create_err(self, text):
         self.create_error.setText(text)
         self.create_error.setVisible(bool(text))
@@ -542,7 +616,7 @@ class RoiTools(QWidget):
 
         def finished():
             self.create_btn.setEnabled(True)
-            self.create_btn.setText("Create")
+            self.create_btn.setText("Create ROI")
 
         w = thread_worker(work, ignore_errors=True)()
         w.returned.connect(done)
@@ -566,12 +640,6 @@ class RoiTools(QWidget):
         if layer is not None:
             self._edit = None
             self.viewer.layers.remove(layer)
-
-    def _rename(self):
-        layer = self.edit_layer
-        text = self.name_edit.text().strip()
-        if layer is not None and text and text != layer.name:
-            layer.name = text                  # napari makes it unique ("x [1]")
 
     def _commit_spins(self):
         layer = self.edit_layer
@@ -610,20 +678,21 @@ class RoiTools(QWidget):
 
     def _show(self, live=False):
         layer = self.edit_layer
-        for w in (self.delete_btn, self.name_edit):
-            w.setEnabled(layer is not None)
+        none = layer is None
+        self.edit_box.setEnabled(not none)
+        self.empty_note.setVisible(none)
+        for w in (*self.from_to, self.info, self.users_line):
+            w.setVisible(not none)
         self.view_note.setVisible(self.hub.view_hidden)
-        if layer is None:
-            self.name_edit.setText("")
-            self.info.setText("No ROI yet: draw a box, take the whole image, or make one from label ids")
-            self.info.setStyleSheet(OK_STYLE)
+        self.roi_combo.setToolTip(RENAME_TIP if none else f"{layer.name}\n{RENAME_TIP}")
+        if none:
+            self.info.setText("")
+            self.users_line.setText("")
             self.z_note.setVisible(False)
             for r in self.axis_rows.values():
                 for w in (r[0], r[1], r[2], *r[3]):
                     w.setVisible(False)
             return
-        if not self.name_edit.hasFocus():
-            self.name_edit.setText(layer.name)
         md = layer_meta(layer)
         shape = md["shape"]
         roi = self.hub.live_roi(layer)
@@ -644,13 +713,14 @@ class RoiTools(QWidget):
                 sp.setValue(int(val))
                 sp.blockSignals(False)
         self.z_note.setVisible(bool(md.get("z_all")) and len(shape) == 3)
+        users = self.hub.used_by(layer)
+        self.users_line.setText(f"Used by: {', '.join(users) if users else 'no tab'}")
         if roi is None:
             self.info.setText(f"{layer.name}: no box yet — drag a rectangle on the 2D view")
             self.info.setStyleSheet(ROI_STYLE)
             return
-        users = self.hub.used_by(layer)
         self.info.setText(f"{TIMES.join(str(v) for v in roi.sizes)} · {voxels_text(roi.n_voxels)} · "
-                          f"{format_percent(roi.fraction)} · used by: {', '.join(users) if users else 'none'}")
+                          f"{format_percent(roi.fraction)}")
         self.info.setToolTip(roi.describe())
         self.info.setStyleSheet("")
         self._on_dims()
@@ -659,15 +729,14 @@ class RoiTools(QWidget):
     def save_rois(self, path=None):
         layers = [l for l in self.hub.layers() if self.hub.live_roi(l) is not None]
         if not layers:
-            self.file_note.setText("No ROI to save")
+            self._file_msg("No ROI to save", ERROR_STYLE)
             return None
         if path is None:
             path, _ = QFileDialog.getSaveFileName(self, "Save ROIs", "rois.json", "ROI JSON (*.json)")
             if not path:
                 return None
         R.save_rois(path, [(self.hub.roi_of(l), layer_extra(l)) for l in layers])
-        self.file_note.setText(f"Saved {len(layers)} ROI{'s' if len(layers) != 1 else ''} to {os.path.basename(path)}")
-        self.file_note.setStyleSheet(OK_STYLE)
+        self._file_msg(f"Saved {len(layers)} ROI{'s' if len(layers) != 1 else ''} to {os.path.basename(path)}")
         return path
 
     def load_rois(self, path=None):
@@ -679,8 +748,7 @@ class RoiTools(QWidget):
         try:
             entries = R.load_rois(path)
         except (OSError, ValueError) as e:
-            self.file_note.setText(f"Cannot load {os.path.basename(path)}: {e}")
-            self.file_note.setStyleSheet(ERROR_STYLE)
+            self._file_msg(f"Cannot load {os.path.basename(path)}: {e}", ERROR_STYLE)
             return []
         made = []
         for roi, extra in entries:
@@ -696,8 +764,7 @@ class RoiTools(QWidget):
         if made:
             self._edit = weakref.ref(made[-1])
             self._on_rois_changed()
-        self.file_note.setText(f"Loaded {len(made)} ROI{'s' if len(made) != 1 else ''} from {os.path.basename(path)}")
-        self.file_note.setStyleSheet(OK_STYLE)
+        self._file_msg(f"Loaded {len(made)} ROI{'s' if len(made) != 1 else ''} from {os.path.basename(path)}")
         return made
 
     def _ref_for(self, roi, extra):
