@@ -1,3 +1,4 @@
+import inspect
 import numpy as np
 import pandas as pd
 import torch
@@ -212,6 +213,7 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
                  roi_margin=32,
                  roi_margin_unit: Literal['voxel', 'percent'] = "voxel",
                  roi_min_size=0,
+                 roi_norm: Literal['crop', 'global'] = "crop",
                  seed: int = 0):
     """
     Main function for nnInteractive prediction with point prompts.
@@ -235,6 +237,10 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
         roi_margin: Margin around the seed bbox, a number or [z, y, x]
         roi_margin_unit: 'voxel', or 'percent' of the seed bbox size per axis
         roi_min_size: Grow the ROI to at least this size per axis (e.g. 192 = patch size)
+        roi_norm: (experimental) intensity normalization of an ROI crop. 'crop' (default):
+                  nnInteractive z-scores each crop with the crop's own mean/std. 'global': the
+                  crop is z-scored with the mean/std nnInteractive computes on the full image.
+                  Only has an effect with roi_from_seed=True.
         seed: random seed (default 0): np.random.seed(seed) before the point sampling and
               np.random.seed(seed + class_id) before each class, so a run is reproducible and a
               class's result does not depend on which other classes run
@@ -258,6 +264,10 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
     print(f"    ROI from seed: {roi_from_seed}")
     if roi_from_seed:
         print(f"    ROI mode: {roi_mode}, margin: {roi_margin} {roi_margin_unit}, min size: {roi_min_size}")
+    if roi_norm not in ("crop", "global"):
+        raise ValueError(f"roi_norm must be 'crop' or 'global', got {roi_norm!r}")
+    if roi_norm != "crop":
+        print(f"    ROI normalization: {roi_norm}" + ("" if roi_from_seed else " (no effect without roi_from_seed)"))
     print("=" * 60)
 
     log_dict = {
@@ -272,7 +282,9 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
         "roi_margin_unit": roi_margin_unit,
         "roi_min_size": list(roi_min_size) if isinstance(roi_min_size, (list, tuple)) else roi_min_size,
         "seed": seed}
-  
+    if roi_norm != "crop":
+        log_dict["roi_norm"] = roi_norm
+
     if torch.cuda.is_available() and ("cuda" in str(device)):
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats(torch.device("cuda"))
@@ -336,6 +348,16 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
         print(f"      Seed ROIs ({roi_mode}):")
         for class_id, roi in sorted(rois.items()):
             print(f"        Class {class_id}: {_roi_text(roi)}")
+
+    # roi_norm='global': full-image normalization stats, used for every crop
+    norm_stats = None
+    if roi_from_seed and roi_norm == "global":
+        norm_stats = nni_global_norm_stats(img)
+        log_dict["roi_norm_stats"] = {"mean": float(norm_stats["mean"]), "std": float(norm_stats["std"]),
+                                      "bbox": norm_stats["bbox"], "nninteractive": norm_stats["version"]}
+        print(f"      Global normalization (nnInteractive {norm_stats['version']}): "
+              f"mean={float(norm_stats['mean']):.6g}, std={float(norm_stats['std']):.6g}, "
+              f"nonzero bbox {norm_stats['bbox']}")
 
     # 3. Load prompts
     print("\n[3/4] Loading prompts...")
@@ -431,6 +453,7 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
         on_class_prob_predicted=save_prob_map if save_prob_maps else None,
         rois=rois,
         roi_stats=roi_stats,
+        norm_stats=norm_stats,
         seed=seed
     )
     if roi_stats is not None:
@@ -497,6 +520,7 @@ def nninter_predict(
     on_class_prob_predicted=None,
     rois: Optional[dict] = None,
     roi_stats: Optional[dict] = None,
+    norm_stats: Optional[dict] = None,
     seed: Optional[int] = 0
 ) -> Union[np.ndarray, Tuple[np.ndarray, Dict[int, np.ndarray]]]:
     """
@@ -522,6 +546,9 @@ def nninter_predict(
               outside dropped); its mask and prob map are pasted back to full size,
               zero outside the ROI. Classes without an ROI use the full image.
         roi_stats: Optional dict, filled with {class_id: ROI log} when rois is given
+        norm_stats: Optional output of nni_global_norm_stats(img) (roi_norm='global'): every
+                    image window set in the session (ROI crops) is z-scored with these
+                    full-image stats instead of the window's own mean/std
         seed: np.random.seed(seed + class_id) after each class's reset (default 0; None = no
               seeding). nnInteractive's refinement draws from np.random: with a seed per class the
               result of a class does not depend on the classes run before it (the napari Prompt
@@ -596,6 +623,8 @@ def nninter_predict(
             # set_image preprocesses in a background thread; wait for it so that
             # reset_interactions below sees the new image shape
             session._finish_preprocessing_and_initialize_interactions()
+            if norm_stats is not None:
+                _apply_global_norm(session, img[(slice(None),) + window], norm_stats)
             current_window = window
         if roi is not None:
             print(f"crop {_roi_text(roi)}", end=" ")
@@ -739,6 +768,81 @@ def nninter_predict(
     return total_mask
 
 
+def _nni_norm_flavor():
+    """('v1' | 'v2', version) of the installed nnInteractive's set_image normalization.
+    v1 (1.1.x): crop the image to its nonzero bbox, x -= x.mean(); x /= x.std() (std of the
+                centred crop); preprocessed_image = the cropped tensor.
+    v2 (2.x):   no crop; mean/std over the nonzero bbox, the whole image is normalized.
+    The source of _background_set_image is checked so that another variant raises instead of
+    being emulated wrongly."""
+    try:
+        from importlib.metadata import version
+        ver = version("nnInteractive")
+    except Exception:
+        ver = "unknown"
+    src = inspect.getsource(nnInteractiveInferenceSession._background_set_image)
+    if ("image -= image.mean()" in src and "image /= image.std()" in src
+            and "bbox_used_for_cropping" in src):
+        return "v1", ver
+    if "mean = crop.mean()" in src and "std = crop.std()" in src and "image -= mean" in src:
+        return "v2", ver
+    raise NotImplementedError(f"roi_norm='global' is not implemented for nnInteractive {ver} "
+                              f"(unknown set_image normalization)")
+
+
+def _nonzero_bbox(img):
+    """[[lo, hi], ...] of the nonzero region of img on every axis (the bbox torch.where gives),
+    via per-axis projections."""
+    bbox = []
+    for ax in range(img.ndim):
+        occ = np.flatnonzero(np.any(img, axis=tuple(a for a in range(img.ndim) if a != ax)))
+        if occ.size == 0:
+            raise ValueError("Input image is entirely zero; cannot determine normalization statistics.")
+        bbox.append([int(occ[0]), int(occ[-1]) + 1])
+    return bbox
+
+
+def nni_global_norm_stats(img):
+    """Normalization stats nnInteractive's set_image computes for the full image img (C, Z, Y, X),
+    replicating the installed version (same voxel set, float32, same torch reductions), so that
+    a window normalized with them equals the corresponding region of the full-image
+    preprocessed tensor. Returns {mean, std (0-d float32 tensors), bbox (spatial nonzero bbox),
+    version, flavor}. Note: makes one temporary float32 copy of the full image.
+    Call it after the session is constructed: the constructor sets torch's thread count, and the
+    float32 reductions are only bit-identical to the session's with the same thread count."""
+    flavor, ver = _nni_norm_flavor()
+    bbox = _nonzero_bbox(img)
+    if flavor == "v2":
+        bbox[0] = [0, 1]  # 2.x takes the stats from channel 0
+    full = torch.from_numpy(np.array(img, dtype=np.float32))
+    view = full[tuple(slice(lo, hi) for lo, hi in bbox)]
+    mean = view.mean()
+    if flavor == "v1":
+        view -= mean            # 1.1.x: std of the centred (in-place) crop
+    std = view.std()
+    del full, view
+    return {"mean": mean, "std": std, "bbox": bbox[1:], "version": ver, "flavor": flavor}
+
+
+def _apply_global_norm(session, window_img, norm_stats):
+    """Replace the session's preprocessed image (set from window_img with the window's own
+    stats) by window_img z-scored with the full-image stats. Call after set_image and
+    _finish_preprocessing_and_initialize_interactions."""
+    x = torch.from_numpy(np.array(window_img, dtype=np.float32))
+    if norm_stats["flavor"] == "v1":
+        # 1.1.x keeps only the window's nonzero bbox
+        b = session.preprocessed_props["bbox_used_for_cropping"]
+        x = x[(slice(None),) + tuple(slice(lo, hi) for lo, hi in b)]
+    x -= norm_stats["mean"]
+    x /= norm_stats["std"]
+    if norm_stats["flavor"] == "v2":
+        x = x.to("cpu")
+    if tuple(x.shape) != tuple(session.preprocessed_image.shape):
+        raise RuntimeError(f"roi_norm='global': shape {tuple(x.shape)} != session preprocessed image "
+                           f"{tuple(session.preprocessed_image.shape)}")
+    session.preprocessed_image = x
+
+
 def _roi_text(roi):
     """e.g. 'z[0:96] y[10:150] x[0:122] (96, 140, 122)'"""
     rng = " ".join(f"{a}[{l}:{h}]" for a, l, h in zip("zyx", roi.lo, roi.hi))
@@ -829,6 +933,7 @@ def run_nninteractive_yaml(file_path):
         roi_margin=optional_params.get('roi_margin', 32),
         roi_margin_unit=optional_params.get('roi_margin_unit', "voxel"),
         roi_min_size=optional_params.get('roi_min_size', 0),
+        roi_norm=optional_params.get('roi_norm', "crop"),
         seed=optional_params['seed']
     )
 
