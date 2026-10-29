@@ -19,10 +19,13 @@ from ..utils.histogram_threshold_widget import HistogramThresholdWidget, append_
 from ..utils.boundary_check import boundary_ok
 from ..utils.roi_layers import is_roi_layer
 from ..utils.roi_widget import RoiSelect, range_text
+from ..utils.status import StatusLine, style
+from .seed_widget import input_combo, rename_in_combos
 
 import yaml
 import sys
 import os
+import time
 # get the current file's absolute path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 root_dir = os.path.abspath(os.path.join(current_dir, "../../"))
@@ -158,22 +161,26 @@ class SeedGrowthWidget(QWidget):
     def _init_ui(self):
         """Initialize the user interface."""
         layout = QVBoxLayout()
-        
-        # Input selection
-        input_group = QGroupBox("Input Options")
+        layout.setSpacing(8)
+
+        # Input
+        input_group = QGroupBox("Input")
         input_layout = QFormLayout()
-        
-        self.image_combo = QComboBox()
-        self.seeds_combo = QComboBox()
-        self.boundary_combo = QComboBox()
+
+        self.image_combo = input_combo()
+        self.seeds_combo = input_combo()
+        self.boundary_combo = input_combo()
         self.boundary_combo.addItem("None")
-        
-        input_layout.addRow("Original Image:", self.image_combo)
-        input_layout.addRow("Seeds Layer:", self.seeds_combo)
-        input_layout.addRow("Boundary Mask (optional):", self.boundary_combo)
+
+        input_layout.addRow("Image", self.image_combo)
+        input_layout.addRow("Seeds", self.seeds_combo)
+        input_layout.addRow("Boundary", self.boundary_combo)
+        # a boundary that cannot be used: red line under the combo, the run is refused
+        self.boundary_error = StatusLine(hide_empty=True)
+        input_layout.addRow(self.boundary_error)
         self.roi_select = RoiSelect(
             self.viewer, lambda: None if self.current_image is None else np.shape(self.current_image), "Grow")
-        input_layout.addRow("ROI:", self.roi_select)
+        input_layout.addRow("ROI", self.roi_select)
         # seeds made in an ROI: offer that ROI
         self.seed_roi_hint = QLabel("")
         self.seed_roi_hint.setWordWrap(True)
@@ -188,10 +195,7 @@ class SeedGrowthWidget(QWidget):
         self.seeds_combo.currentTextChanged.connect(lambda *_: self._update_seed_roi_hint())
         self.roi_select.hub.rois_changed.connect(self._update_seed_roi_hint)
         self.roi_select.hub.roi_edited.connect(self._update_seed_roi_hint)
-        
-        self.refresh_btn = QPushButton("Refresh Layers")
-        input_layout.addRow(self.refresh_btn)
-        
+
         input_group.setLayout(input_layout)
         layout.addWidget(input_group)
 
@@ -207,34 +211,36 @@ class SeedGrowthWidget(QWidget):
             lambda lo, hi: append_threshold_row(self.main_param_widget, lo, hi))
         layout.addWidget(self.main_param_widget)
         
+        # Import / Export YAML: in the Parameters header row; their messages in its status line
+        self.import_btn = QPushButton("Import YAML")
+        self.export_btn = QPushButton("Export YAML")
+        self.main_param_widget.add_header_widget(self.import_btn)
+        self.main_param_widget.add_header_widget(self.export_btn)
+        self.params_status = self.main_param_widget.status_line
+
+        # advanced grow options, at the bottom of Parameters
+        self.show_advanced_checkbox = QCheckBox("Show advanced options")
+        self.show_advanced_checkbox.stateChanged.connect(self._toggle_grow_params_visibility)
+        self.advanced_params_box = GrowOptionalParamGroupBox()
+        self.advanced_params_box.setVisible(False)
+        self.main_param_widget.add_bottom_widget(self.show_advanced_checkbox)
+        self.main_param_widget.add_bottom_widget(self.advanced_params_box)
+
+        # Output
+        output_group = QGroupBox("Output")
+        output_layout = QVBoxLayout()
+        output_dir_layout, self.output_folder_line = create_output_folder_row(label="Folder")
+        output_layout.addLayout(output_dir_layout)
+        output_group.setLayout(output_layout)
+        layout.addWidget(output_group)
+
         # Progress bar
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
         layout.addWidget(self.progress_bar)
 
-        self.show_advanced_checkbox = QCheckBox("Show Advanced Grow Options")
-        self.show_advanced_checkbox.stateChanged.connect(self._toggle_grow_params_visibility)
-        layout.addWidget(self.show_advanced_checkbox)
-        
-        self.advanced_params_box = GrowOptionalParamGroupBox()
-        layout.addWidget(self.advanced_params_box)   
-        self.advanced_params_box.setVisible(False)
 
-
-        # Import/Export yaml buttons
-        button_layout = QHBoxLayout()
-        self.import_btn = QPushButton("Import YAML")
-        self.export_btn = QPushButton("Export YAML")
-        button_layout.addWidget(self.import_btn)
-        button_layout.addWidget(self.export_btn)
-        layout.addLayout(button_layout)   
-
-        # Output folder selection
-        output_dir_layout, self.output_folder_line = create_output_folder_row()
-        layout.addLayout(output_dir_layout)
-
-
-        # Control buttons
+        # Control buttons        # Control buttons
         btn_layout = QHBoxLayout()
         self.grow_btn = QPushButton("Start Growth")
         self.grow_btn.setStyleSheet("""QPushButton { font-weight: bold; background-color: #45a049;}""")
@@ -259,9 +265,11 @@ class SeedGrowthWidget(QWidget):
         layout.addLayout(btn_layout)
 
         
-        # Status
-        self.status_label = QLabel("Ready to grow seeds")
+        # Status: one line, info / ok / warn / error (utils/status.py)
+        self.status_label = StatusLine("Ready to grow seeds", "info")
+        self.results_label = self.status_label          # same name as in the Seeds tab
         layout.addWidget(self.status_label)
+        layout.addStretch()
 
         main_scroll_container = QWidget()
         main_scroll_container.setLayout(layout)
@@ -275,23 +283,48 @@ class SeedGrowthWidget(QWidget):
         final_layout.addWidget(scroll)
         self.setLayout(final_layout)
 
-        # refresh layers when layers changed in napari
-        self.viewer.layers.events.inserted.connect(lambda e: self.refresh_layers())
-        self.viewer.layers.events.removed.connect(lambda e: self.refresh_layers())
+
+        # the Input combos follow napari's layers by themselves (added / removed / renamed),
+        # through the viewer's hub: a closed panel leaves no napari callbacks behind
+        hub = self.roi_select.hub
+        hub.layer_inserted.connect(self._on_layers_changed)
+        hub.layer_removed.connect(self._on_layers_changed)
+        hub.layer_renamed.connect(self._on_layer_renamed)
         
         # Add default threshold
         # self._add_threshold_row(100, None, 5)
     
     def _connect_signals(self):
         """Connect widget signals."""
-        self.refresh_btn.clicked.connect(self.refresh_layers)
         self.grow_btn.clicked.connect(self.start_growth)
         self.stop_btn.clicked.connect(self.stop_growth)
         self.image_combo.currentTextChanged.connect(self._on_image_changed)
         
 
-        self.import_btn.clicked.connect(self.import_yaml)
-        self.export_btn.clicked.connect(self.export_yaml)
+        self.import_btn.clicked.connect(lambda: self.import_yaml())
+        self.export_btn.clicked.connect(lambda: self.export_yaml())
+        self.boundary_combo.currentTextChanged.connect(self._on_boundary_changed)
+
+    def _on_layers_changed(self, *_):
+        self._refreshing = True
+        try:
+            self.refresh_layers()
+        finally:
+            self._refreshing = False
+        self._on_boundary_changed(self.boundary_combo.currentText())
+
+    def _on_boundary_changed(self, text):
+        if getattr(self, "_refreshing", False):              # combo refilled: same selection
+            return
+        if text != getattr(self, "_bad_boundary", None):    # another mask: its red line goes
+            self.boundary_error.clear()
+
+    def _on_layer_renamed(self, layer, old):
+        """Rename in place: the selections (and the threshold table) stay as they are."""
+        rename_in_combos(layer, old, (self.image_combo, self.seeds_combo, self.boundary_combo))
+        if self.previous_image_name == old and isinstance(layer, Image):
+            self.previous_image_name = layer.name
+        self._update_seed_roi_hint()
 
 
     def _on_image_changed(self, _):
@@ -328,7 +361,7 @@ class SeedGrowthWidget(QWidget):
         if not show:
             return
         name, md, layer = info
-        text, style = f"Seeds were made in {name}", "color: gray"
+        text, css = f"Seeds were made in {name}", style("info")
         if layer is None:
             text += " (that ROI layer is gone)"
         else:
@@ -337,9 +370,9 @@ class SeedGrowthWidget(QWidget):
             was = R.Roi.from_metadata(md)
             if roi is not None and roi.key != was.key:
                 text = f"{name} changed since the seeds (was {range_text(was)})"
-                style = "color: #e08a00"
+                css = style("warn")
         self.seed_roi_hint.setText(text)
-        self.seed_roi_hint.setStyleSheet(style)
+        self.seed_roi_hint.setStyleSheet(css)
 
     def _use_seed_roi(self):
         info = self._seed_roi()
@@ -392,7 +425,7 @@ class SeedGrowthWidget(QWidget):
         """Start the growth process."""
         # Get inputs
         if not self.image_combo.currentText() or not self.seeds_combo.currentText():
-            show_error("Please select both an image and seeds layer")
+            self.status_label.set("Please select both an image and seeds layer", "error")
             return
         
         try:
@@ -404,12 +437,13 @@ class SeedGrowthWidget(QWidget):
             self.current_boundary = None
             if self.boundary_combo.currentText() != "None":
                 self.current_boundary = self.viewer.layers[self.boundary_combo.currentText()].data
-            if not boundary_ok(self, self.boundary_combo.currentText(), self.current_boundary):
+            if not boundary_ok(self, self.boundary_combo.currentText(), self.current_boundary, self.boundary_error):
+                self._bad_boundary = self.boundary_combo.currentText()
                 return
             try:
                 roi = self.roi_select.roi_for_run(np.shape(self.current_image))
             except RoiError as e:
-                show_error(str(e))
+                self.status_label.set(str(e), "error")
                 return
             image_layer = self.viewer.layers[self.image_combo.currentText()]
             self._run_roi = roi
@@ -434,7 +468,8 @@ class SeedGrowthWidget(QWidget):
             self.stop_btn.setEnabled(True)
             self.progress_bar.setVisible(True)
             self.progress_bar.setValue(0)
-            self.status_label.setText("Growing seeds...")
+            self.status_label.set("Growing seeds...", "info")
+            self._t0 = time.perf_counter()
 
 
             advance_params = self.advanced_params_box.get_params()
@@ -473,6 +508,7 @@ class SeedGrowthWidget(QWidget):
             
         except Exception as e:
             show_error(f"Error starting growth: {str(e)}")
+            self.status_label.set(f"Error starting growth: {str(e)}", "error")
             self._reset_ui()
     
     def stop_growth(self):
@@ -481,7 +517,7 @@ class SeedGrowthWidget(QWidget):
             self.worker.terminate()
             self.worker.wait()
             self._reset_ui()
-            self.status_label.setText("Growth stopped by user")
+            self.status_label.set("Growth stopped by user", "info")
     
     def _on_growth_finished(self, grows_dict, log_dict):
         """Handle growth completion."""
@@ -502,7 +538,10 @@ class SeedGrowthWidget(QWidget):
         
         # Update UI
         self._reset_ui()
-        self.status_label.setText(f"Growth completed!" + self._run_note)
+        n = len(grows_dict)
+        secs = time.perf_counter() - getattr(self, "_t0", time.perf_counter())
+        self.status_label.set(f"Growth completed: {n} layer{'' if n == 1 else 's'} ({secs:.1f} s)"
+                              + self._run_note, "ok")
         # import psutil, os
         # print("MEM (MB):", psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024)
         # Emit signal
@@ -514,7 +553,7 @@ class SeedGrowthWidget(QWidget):
         """Handle growth error."""
         show_error(f"Napari Growth Error: {error_msg}")
         self._reset_ui()
-        self.status_label.setText("Growth failed - see error message")
+        self.status_label.set(f"Growth failed: {error_msg}", "error")
     
     def _reset_ui(self):
         """Reset UI after growth."""
@@ -550,12 +589,14 @@ class SeedGrowthWidget(QWidget):
         self.threshold_widget.preview_btn.setEnabled(True)  # Re-enable button after processing
         # Optionally, you can connect this to a signal or update other UI elements
         
-    def import_yaml(self):
+    def import_yaml(self, file_path=None):
         """Import grow parameters from a YAML file."""
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, "Open YAML File", "", "YAML Files (*.yaml *.yml);;All Files (*)"
-        )
+        if file_path is None:
+            file_path, _ = QFileDialog.getOpenFileName(
+                self, "Open YAML File", "", "YAML Files (*.yaml *.yml);;All Files (*)"
+            )
         if file_path:
+            notes = []
             try:
                 with open(file_path, "r") as f:
                     params = yaml.safe_load(f)
@@ -572,7 +613,7 @@ class SeedGrowthWidget(QWidget):
                     if input_image_name in [self.image_combo.itemText(i) for i in range(self.image_combo.count())]:
                         self.image_combo.setCurrentText(input_image_name)
                     else:
-                        show_error(f"Input image '{input_image_name}' not found in current layers.")
+                        notes.append(f"Input image '{input_image_name}' not found in current layers.")
                 
                 # Seeds layer
                 if 'seg_path' in params:
@@ -580,7 +621,7 @@ class SeedGrowthWidget(QWidget):
                     if seeds_name in [self.seeds_combo.itemText(i) for i in range(self.seeds_combo.count())]:
                         self.seeds_combo.setCurrentText(seeds_name)
                     else:
-                        show_error(f"Seeds layer '{seeds_name}' not found in current layers.")
+                        notes.append(f"Seeds layer '{seeds_name}' not found in current layers.")
                 
                 # Boundary layer
                 if 'boundary_path' in params and params['boundary_path'] is not None:
@@ -588,7 +629,7 @@ class SeedGrowthWidget(QWidget):
                     if boundary_name in [self.boundary_combo.itemText(i) for i in range(self.boundary_combo.count())]:
                         self.boundary_combo.setCurrentText(boundary_name)
                     else:
-                        show_error(f"Boundary layer '{boundary_name}' not found in current layers.")
+                        notes.append(f"Boundary layer '{boundary_name}' not found in current layers.")
                 
                 # Main parameters
                 main_keys = ["thresholds", "upper_thresholds", "dilation_steps", 
@@ -636,16 +677,20 @@ class SeedGrowthWidget(QWidget):
                         upper_threshold = 255 if lower_threshold <= 255 else lower_threshold + 100
                     self.threshold_widget.set_thresholds(lower_threshold, upper_threshold)
 
-                show_info(f"Parameters successfully loaded from {os.path.basename(file_path)}.")
+                if notes:
+                    self.params_status.set("\n".join(notes), "warn")
+                else:
+                    self.params_status.set(f"Parameters successfully loaded from {os.path.basename(file_path)}.", "ok")
 
             except Exception as e:
-                QMessageBox.critical(self, "Import Error", f"Failed to load parameters: {e}")
+                self.params_status.set(f"Failed to load parameters: {e}", "error")
 
-    def export_yaml(self):
+    def export_yaml(self, file_path=None):
         """Export grow parameters to a YAML file."""
-        file_path, _ = QFileDialog.getSaveFileName(
-            self, "Save YAML File", "", "YAML Files (*.yaml *.yml);;All Files (*)"
-        )
+        if file_path is None:
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, "Save YAML File", "", "YAML Files (*.yaml *.yml);;All Files (*)"
+            )
         if file_path:
             try:
                 # Get parameters from child widgets
@@ -709,7 +754,7 @@ class SeedGrowthWidget(QWidget):
                 with open(file_path, "w") as f:
                     yaml.dump(ordered_params, f, sort_keys=False, default_flow_style=False)
                 
-                show_info(f"Parameters successfully saved to {os.path.basename(file_path)}.")
-                
+                self.params_status.set(f"Parameters successfully saved to {os.path.basename(file_path)}.", "ok")
+
             except Exception as e:
-                QMessageBox.critical(self, "Export Error", f"Failed to save parameters: {e}")
+                self.params_status.set(f"Failed to save parameters: {e}", "error")

@@ -36,6 +36,7 @@ from sprout_core.sprout_core import erosion_binary_img_on_sub, get_ccomps_with_s
 from .histogram_widget import HistogramRangeWidget
 from .roi_widget import RoiReminder
 from .slice_preview import SlicePreview
+from .status import StatusLine, style
 
 PREVIEW_NAME = "Threshold Preview"
 
@@ -190,7 +191,7 @@ class HistogramThresholdWidget(QGroupBox):
                                 f"(layer '{PREVIEW_NAME}'). Untick to remove it.")
         lay.addWidget(self.live_cb)
         self.status = QLabel("")
-        self.status.setStyleSheet("color: gray")
+        self.status.setStyleSheet(style("info"))
         self.status.setWordWrap(True)
         lay.addWidget(self.status)
 
@@ -230,6 +231,8 @@ class HistogramThresholdWidget(QGroupBox):
         row.addWidget(self.create_btn)
         row.addWidget(self.add_btn)
         lay.addLayout(row)
+        self.error_line = StatusLine(hide_empty=True)    # why Create Preview Layer did nothing
+        lay.addWidget(self.error_line)
         self.preview_btn = self.create_btn   # old name, used by the host widgets
 
         self.hist.range_changed.connect(lambda *_: self._update_slice())
@@ -422,13 +425,14 @@ class HistogramThresholdWidget(QGroupBox):
     # ---- whole-volume result as a new layer
     def _create_preview_layer(self):
         if self._img is None:
-            show_error("Please select an image first")
+            self.error_line.set("Please select an image first", "error")
             return
         try:
             roi = None if self._roi_use is None else self._roi_use.roi_for_run(self._img.shape)
         except RoiError as e:
-            show_error(str(e))
+            self.error_line.set(str(e), "error")
             return
+        self.error_line.clear()
         lo_b, hi_b = self.hist.get_bounds()
         lo, hi = self.get_thresholds()
         ero = self.erosion_spin.value() if self.add_connected_components else 0

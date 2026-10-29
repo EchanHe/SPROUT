@@ -84,12 +84,6 @@ class SPROUTWidget(QWidget):
         
         layout.addWidget(self.tabs)
         
-        # Help text
-        help_text = QLabel(
-            "<b>Workflow:</b> 1) Generate seeds → 2) Review/edit seeds → 3) Grow regions"
-        )
-        help_text.setWordWrap(True)
-        layout.addWidget(help_text)
         
         self.setLayout(layout)
     

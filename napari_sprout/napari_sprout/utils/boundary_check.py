@@ -1,11 +1,13 @@
 """Check the boundary mask when Generate Seeds / Start Growth is clicked.
 
+A mask that cannot be used gives a red line under the Boundary combo (no dialog) and the
+run does not start.
+
 SPROUT needs a boundary with exactly two values (0 = keep, non-zero = boundary).
 Without this check a wrong layer only fails inside the background worker, with a
 less specific message.
 """
 import numpy as np
-from qtpy.QtWidgets import QMessageBox
 
 
 def boundary_problem(data):
@@ -30,16 +32,22 @@ def boundary_problem(data):
     return None
 
 
-def boundary_ok(parent, name, data):
-    """True if the boundary can be used; otherwise show a dialog and return False."""
+def boundary_message(name, problem):
+    return (f"The boundary mask '{name}' cannot be used: {problem}.\n"
+            "A boundary mask needs exactly two values: 0 = keep, non-zero = boundary.\n"
+            "Choose another layer, or set Boundary Mask to None.")
+
+
+def boundary_ok(parent, name, data, note=None):
+    """True if the boundary can be used; otherwise say why in `note` (the red line under
+    the Boundary combo, a utils.status.StatusLine) and return False. No dialog."""
+    if note is not None:
+        note.clear()
     if data is None:
         return True
     problem = boundary_problem(data)
     if problem is None:
         return True
-    QMessageBox.warning(
-        parent, "Boundary mask cannot be used",
-        f"The boundary mask '{name}' cannot be used: {problem}.\n\n"
-        "A boundary mask needs exactly two values: 0 = keep, non-zero = boundary.\n"
-        "Choose another layer, or set Boundary Mask to None.")
+    if note is not None:
+        note.set(boundary_message(name, problem), "error")
     return False

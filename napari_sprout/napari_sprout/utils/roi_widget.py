@@ -17,7 +17,6 @@ import weakref
 import numpy as np
 from napari.layers import Image, Labels
 from napari.qt.threading import thread_worker
-from napari.utils.notifications import show_info
 from qtpy.QtCore import Qt, QTimer, Signal
 from qtpy.QtWidgets import (
     QComboBox, QFileDialog, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QPushButton,
@@ -27,13 +26,14 @@ from qtpy.QtWidgets import (
 from sprout_core import roi as R
 from sprout_core.roi import RoiError, format_percent, parse_ids
 
+from .status import StatusLine, set_note, style
 from .roi_layers import (
     DASH, HIDDEN_NOTE, add_roi_layer, get_roi_hub, is_roi_layer, layer_extra, layer_meta, sizes_text,
 )
 
-OK_STYLE = "color: gray"
-ERROR_STYLE = "color: #d9534f"
-ROI_STYLE = "color: #e08a00"
+OK_STYLE = style("info")          # grey hints and info lines (utils/status.py levels)
+ERROR_STYLE = style("error")
+ROI_STYLE = style("warn")         # orange: needs attention ("z: all", "Runs inside ROI_1")
 TIMES = " × "
 RENAME_TIP = "Rename in the napari layer list"
 # SPROUT's own live-preview Labels layers are never offered as a source of label ids
@@ -327,6 +327,8 @@ class RoiTools(QWidget):
                                   "set z from / to below, e.g. process slices 200–400 with full x / y.")
         g.addWidget(self.whole_btn, 2, 0, 1, 2)
         g.addWidget(self._hint("Drag a rectangle on the 2D view; the z range starts as all slices."), 3, 0, 1, 2)
+        self.draw_note = StatusLine(hide_empty=True)      # why Draw box / Full image did nothing
+        g.addWidget(self.draw_note, 4, 0, 1, 2)
         outer.addWidget(box)
 
         # From labels
@@ -434,9 +436,7 @@ class RoiTools(QWidget):
         row.addStretch()
         v.addLayout(row)
         v.addWidget(self._hint("Load also accepts a run's roi.json"))
-        self.file_note = QLabel("")
-        self.file_note.setWordWrap(True)
-        self.file_note.setVisible(False)
+        self.file_note = StatusLine(hide_empty=True)
         v.addWidget(self.file_note)
         outer.addWidget(box)
         outer.addStretch()
@@ -458,6 +458,7 @@ class RoiTools(QWidget):
         self.hub.layer_removed.connect(self._on_layers_changed)
         self.hub.dims_changed.connect(self._on_dims)
         self.hub.draw_finished.connect(self._on_drawn)
+        self.hub.draw_note.connect(self._on_draw_note)
         # a closed panel takes its unfinished drawing (the "SPROUT draw" helper layer) along
         self.destroyed.connect(self.hub.cancel_draw)
         self.refresh_layers()
@@ -495,10 +496,8 @@ class RoiTools(QWidget):
         g.setColumnStretch(1, 1)
         return g
 
-    def _file_msg(self, text, style=OK_STYLE):
-        self.file_note.setText(text)
-        self.file_note.setStyleSheet(style)
-        self.file_note.setVisible(bool(text))
+    def _file_msg(self, text, level="ok"):
+        set_note(self.file_note, text, level)
 
     def _create_err(self, text):
         self.create_error.setText(text)
@@ -554,23 +553,29 @@ class RoiTools(QWidget):
     def _draw(self):
         ref = self._ref()
         if ref is None:
-            show_info("Load an image first: the box is drawn in its voxel grid")
+            self.draw_note.set("Load an image first: the box is drawn in its voxel grid", "error")
             return
         if not self.hub.view_ok():
-            show_info("Switch to the 2D view (z slices) to draw")
+            self.draw_note.set("Switch to the 2D view (z slices) to draw", "error")
             return
+        self.draw_note.clear()
         # a temporary helper layer: the ROI layer is made from the first rectangle drawn
         self.hub.start_draw(ref)
 
     def _on_drawn(self, layer):
+        self.draw_note.clear()
         self._edit = weakref.ref(layer)
         self._on_rois_changed()
+
+    def _on_draw_note(self, text):
+        self.draw_note.set(text, "warn")
 
     def _whole(self):
         ref = self._ref()
         if ref is None:
-            show_info("Load an image first")
+            self.draw_note.set("Load an image first", "error")
             return
+        self.draw_note.clear()
         shape = np.shape(ref.data)
         layer = add_roi_layer(self.viewer, ref, (0,) * len(shape), shape)
         self._edit = weakref.ref(layer)
@@ -729,7 +734,7 @@ class RoiTools(QWidget):
     def save_rois(self, path=None):
         layers = [l for l in self.hub.layers() if self.hub.live_roi(l) is not None]
         if not layers:
-            self._file_msg("No ROI to save", ERROR_STYLE)
+            self._file_msg("No ROI to save", "error")
             return None
         if path is None:
             path, _ = QFileDialog.getSaveFileName(self, "Save ROIs", "rois.json", "ROI JSON (*.json)")
@@ -748,7 +753,7 @@ class RoiTools(QWidget):
         try:
             entries = R.load_rois(path)
         except (OSError, ValueError) as e:
-            self._file_msg(f"Cannot load {os.path.basename(path)}: {e}", ERROR_STYLE)
+            self._file_msg(f"Cannot load {os.path.basename(path)}: {e}", "error")
             return []
         made = []
         for roi, extra in entries:

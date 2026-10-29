@@ -13,11 +13,12 @@ class _HistCanvas(QWidget):
 
     PAD = 6
     GRAB_PX = 8
+    HEIGHT = 50          # px; the range handles span the full height
 
     def __init__(self, owner):
         super().__init__(owner)
         self.owner = owner
-        self.setMinimumHeight(70)
+        self.setFixedHeight(self.HEIGHT)
         self.setMouseTracking(True)
         self._drag = None  # 'lower' | 'upper' | None
 
@@ -135,7 +136,7 @@ class HistogramRangeWidget(QWidget):
         self.lower_note = QLabel("")
         self.upper_note = QLabel("")
         for n in (self.lower_note, self.upper_note):
-            n.setStyleSheet("color: gray")
+            n.setStyleSheet("color: gray")      # = utils.status INFO
 
         row = QHBoxLayout()
         lbl_l = QLabel("lower")

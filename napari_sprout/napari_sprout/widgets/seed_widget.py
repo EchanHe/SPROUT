@@ -17,10 +17,12 @@ from ..utils.util_widget import (create_output_folder_row, SeedOptionalParamGrou
 from ..utils.histogram_threshold_widget import HistogramThresholdWidget, append_threshold_row
 from ..utils.boundary_check import boundary_ok
 from ..utils.roi_widget import RoiSelect
+from ..utils.status import StatusLine
 
 import yaml
 import sys
 import os
+import time
 # get the current file's absolute path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 root_dir = os.path.abspath(os.path.join(current_dir, "../../"))
@@ -165,6 +167,24 @@ class SeedWorker(QThread):
             self.error.emit(("ROI: " if self.roi is not None else "") + str(e))
 
 
+def input_combo():
+    """A layer combo for the Input group: long layer names never widen the panel."""
+    c = QComboBox()
+    c.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+    c.setMinimumContentsLength(10)
+    return c
+
+
+def rename_in_combos(layer, old, combos):
+    """A layer was renamed in napari: rename its item in place (the selection stays)."""
+    for combo in combos:
+        i = combo.findText(old)
+        if i >= 0 and old != "None":
+            combo.blockSignals(True)
+            combo.setItemText(i, layer.name)
+            combo.blockSignals(False)
+
+
 def set_min_size_policy_recursive(widget, min_width=40, max_width=300):
     for w in widget.findChildren((QPushButton, QLineEdit)):
         w.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
@@ -207,29 +227,30 @@ class SeedGenerationWidget(QWidget):
     def _init_ui(self):
         """Initialize the user interface."""
         layout = QVBoxLayout()
-        
-        # Image selection
-        image_group = QGroupBox("Input Options")
+        layout.setSpacing(8)
+
+        # Input
+        image_group = QGroupBox("Input")
         image_layout = QFormLayout()
-        
-        self.image_combo = QComboBox()
-        self.boundary_combo = QComboBox()
+
+        self.image_combo = input_combo()
+        self.boundary_combo = input_combo()
         self.boundary_combo.addItem("None")
-        
-        image_layout.addRow("Input Image:", self.image_combo)
-        image_layout.addRow("Boundary Mask (optional):", self.boundary_combo)
+
+        image_layout.addRow("Image", self.image_combo)
+        image_layout.addRow("Boundary", self.boundary_combo)
+        # a boundary that cannot be used: red line under the combo, the run is refused
+        self.boundary_error = StatusLine(hide_empty=True)
+        image_layout.addRow(self.boundary_error)
         self.roi_select = RoiSelect(
             self.viewer, lambda: None if self.current_image is None else np.shape(self.current_image), "Seeds")
-        image_layout.addRow("ROI:", self.roi_select)
-        
-        self.refresh_btn = QPushButton("Refresh Layers")
-        image_layout.addRow(self.refresh_btn)
-        
+        image_layout.addRow("ROI", self.roi_select)
+
         image_group.setLayout(image_layout)
         layout.addWidget(image_group)
 
 
-        
+
         # --- Parameters for Original and Adaptive (Thresholds) methods ---
         
         ## for list params, currently not used
@@ -283,72 +304,35 @@ class SeedGenerationWidget(QWidget):
         layout.addWidget(self.main_param_widget)
 
 
-        # checkbox for advanced adaptive seed options        
-        self.show_advanced_checkbox = QCheckBox("Show Advanced Adaptive Seed Options")
-        self.show_advanced_checkbox.stateChanged.connect(self._toggle_seed_params_visibility)
-
-        # Advanced parameters group box
-        self.advanced_params_box = SeedOptionalParamGroupBox()
-        self.advanced_params_box.setVisible(False)
-
-        # scroll area for advanced parameters
-        # scroll = QScrollArea()
-        # scroll.setWidgetResizable(True)
-        # scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        # scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        # scroll.setFrameShape(QScrollArea.NoFrame)
-
-        # # container 
-        # container = QWidget()
-        # container_layout = QVBoxLayout()
-        # container_layout.setSpacing(2)
-        # container_layout.setContentsMargins(0, 0, 0, 0)
-        # container_layout.addWidget(self.advanced_params_box)
-        # container.setLayout(container_layout)
-        # scroll.setWidget(container)
-
-        advanced_block = QWidget()
-        advanced_layout = QVBoxLayout()
-        advanced_layout.setSpacing(4)
-        advanced_layout.setContentsMargins(0, 0, 0, 0)
-        advanced_layout.addWidget(self.show_advanced_checkbox)
-        advanced_layout.addWidget(self.advanced_params_box)
-        advanced_block.setLayout(advanced_layout)
-
-        layout.addWidget(advanced_block)
-
-        # Import/Export yaml buttons
-        button_layout = QHBoxLayout()
+        # Import / Export YAML: in the Parameters header row; their messages in its status line
         self.import_btn = QPushButton("Import YAML")
         self.export_btn = QPushButton("Export YAML")
-        button_layout.addWidget(self.import_btn)
-        button_layout.addWidget(self.export_btn)
-        layout.addLayout(button_layout)   
+        self.main_param_widget.add_header_widget(self.import_btn)
+        self.main_param_widget.add_header_widget(self.export_btn)
+        self.params_status = self.main_param_widget.status_line
 
-        # Output folder selection
-        output_group = QGroupBox("Output Settings")
+        # advanced adaptive seed options, at the bottom of Parameters
+        self.show_advanced_checkbox = QCheckBox("Show advanced options")
+        self.show_advanced_checkbox.setToolTip("Advanced options of the adaptive seed methods")
+        self.show_advanced_checkbox.stateChanged.connect(self._toggle_seed_params_visibility)
+        self.advanced_params_box = SeedOptionalParamGroupBox()
+        self.advanced_params_box.setVisible(False)
+        self.main_param_widget.add_bottom_widget(self.show_advanced_checkbox)
+        self.main_param_widget.add_bottom_widget(self.advanced_params_box)
+
+        # Output
+        output_group = QGroupBox("Output")
         output_layout = QVBoxLayout()
-        
-        output_dir_layout, self.output_folder_line = create_output_folder_row()
-        
-        # output_dir_widget = QWidget()
-        # output_dir_widget.setLayout(output_dir_layout)
-        
-        
-        # save_every_iter (bool)
+        output_dir_layout, self.output_folder_line = create_output_folder_row(label="Folder")
         self.save_every_iter_checkbox = QCheckBox("Save mid results")
         self.save_every_iter_checkbox.setChecked(False)
-    
-        
         output_layout.addLayout(output_dir_layout)
-        # output_layout.addWidget(output_dir_widget)
         output_layout.addWidget(self.save_every_iter_checkbox)
-
         output_group.setLayout(output_layout)
         layout.addWidget(output_group)
-        
-        
-        # Execute buttons
+
+
+        # Execute buttons        # Execute buttons
         btn_layout = QHBoxLayout()
         # Generate button
         self.generate_btn = QPushButton("Generate Seeds")
@@ -376,9 +360,11 @@ class SeedGenerationWidget(QWidget):
         # btn_layout.addWidget(self.save_btn)
         layout.addLayout(btn_layout)
         
-        # Results info
-        self.results_label = QLabel("No seeds generated yet")
+        # Status: one line, info / ok / warn / error (utils/status.py)
+        self.results_label = StatusLine("No seeds generated yet", "info")
+        self.status_label = self.results_label          # same name as in the Grow tab
         layout.addWidget(self.results_label)
+        layout.addStretch()
         
         
         main_scroll_container = QWidget()
@@ -394,18 +380,15 @@ class SeedGenerationWidget(QWidget):
         self.setLayout(final_layout)
         
         
-        for w in [
-            self.generate_btn, self.stop_btn,
-            self.import_btn, self.export_btn
+        for w in [self.generate_btn, self.stop_btn]:
+            set_compact(w, minw=100)
 
-        ]:
-            set_compact(w, minw=100)        
-        # layout.addStretch()
-        # self.setLayout(layout)
-        
-        # refresh layers when layers changed in napari
-        self.viewer.layers.events.inserted.connect(lambda e: self.refresh_layers())
-        self.viewer.layers.events.removed.connect(lambda e: self.refresh_layers())
+        # the Input combos follow napari's layers by themselves (added / removed / renamed),
+        # through the viewer's hub: a closed panel leaves no napari callbacks behind
+        hub = self.roi_select.hub
+        hub.layer_inserted.connect(self._on_layers_changed)
+        hub.layer_removed.connect(self._on_layers_changed)
+        hub.layer_renamed.connect(self._on_layer_renamed)
 
     def _toggle_seed_params_visibility(self, state: int):
         """Toggle visibility of advanced seed parameters."""
@@ -413,7 +396,6 @@ class SeedGenerationWidget(QWidget):
 
     def _connect_signals(self):
         """Connect widget signals."""
-        self.refresh_btn.clicked.connect(self.refresh_layers)
         # TODO to be delete if thresholdwidget works
         # self.use_upper.toggled.connect(self.upper_threshold.setEnabled)
         # self.lower_threshold.valueChanged.connect(lambda v: self.lower_slider.setValue(int(v)))
@@ -426,8 +408,9 @@ class SeedGenerationWidget(QWidget):
 
         self.use_upper_list.toggled.connect(self.upper_thresholds_list.setEnabled)
         
-        self.import_btn.clicked.connect(self.import_yaml)
-        self.export_btn.clicked.connect(self.export_yaml)
+        self.import_btn.clicked.connect(lambda: self.import_yaml())
+        self.export_btn.clicked.connect(lambda: self.export_yaml())
+        self.boundary_combo.currentTextChanged.connect(self._on_boundary_changed)
         
         # self.browse_folder_btn.clicked.connect(self._browse_output_folder)
 
@@ -437,6 +420,26 @@ class SeedGenerationWidget(QWidget):
         if folder:
             self.output_folder_edit.setText(folder)
 
+
+    def _on_layers_changed(self, *_):
+        self._refreshing = True
+        try:
+            self.refresh_layers()
+        finally:
+            self._refreshing = False
+        self._on_boundary_changed(self.boundary_combo.currentText())
+
+    def _on_boundary_changed(self, text):
+        if getattr(self, "_refreshing", False):              # combo refilled: same selection
+            return
+        if text != getattr(self, "_bad_boundary", None):    # another mask: its red line goes
+            self.boundary_error.clear()
+
+    def _on_layer_renamed(self, layer, old):
+        """Rename in place: the selection (and the threshold table) stay as they are."""
+        rename_in_combos(layer, old, (self.image_combo, self.boundary_combo))
+        if self.previous_image_name == old and isinstance(layer, Image):
+            self.previous_image_name = layer.name
 
     def refresh_layers(self):
         """Refresh the list of available layers."""
@@ -551,7 +554,7 @@ class SeedGenerationWidget(QWidget):
     def generate_seeds(self):
         """Generate seeds with current parameters."""
         if self.current_image is None:
-            show_error("Please select an image first")
+            self.results_label.set("Please select an image first", "error")
             return
         current_name = self.image_combo.currentText()
         
@@ -565,20 +568,22 @@ class SeedGenerationWidget(QWidget):
                 boundary_layer = self.viewer.layers[self.boundary_combo.currentText()]
                 if isinstance(boundary_layer, Labels):
                     boundary = boundary_layer.data
-            if not boundary_ok(self, self.boundary_combo.currentText(), boundary):
+            if not boundary_ok(self, self.boundary_combo.currentText(), boundary, self.boundary_error):
+                self._bad_boundary = self.boundary_combo.currentText()
                 return
             try:
                 roi = self.roi_select.roi_for_run(np.shape(self.current_image))
             except RoiError as e:
-                show_error(str(e))
+                self.results_label.set(str(e), "error")
                 return
             image_layer = self.viewer.layers[current_name]
             self._run_roi = roi
             self._run_layer_kwargs = {"scale": image_layer.scale, "translate": image_layer.translate}
 
             output_folder = self.output_folder_line.text()
+            folder_note = ""
             if not output_folder:
-                show_error("Please specify an output folder. Default is 'napari_temp'")
+                folder_note = "Please specify an output folder. Default is 'napari_temp'"
                 output_folder = 'napari_temp'
             
             # TODO: @ioannouE
@@ -632,7 +637,12 @@ class SeedGenerationWidget(QWidget):
             )
             self.worker.finished.connect(self._on_seed_finished)
             self.worker.error.connect(self._on_seed_error)
-            
+
+            self._t0 = time.perf_counter()
+            if folder_note:
+                self.results_label.set(folder_note, "warn")
+            else:
+                self.results_label.set("Generating seeds…", "info")
             self.worker.start()
             # self.viewer.window.statusBar().showMessage(
             #     f"Generating seeds using {selected_method} method...")
@@ -719,6 +729,7 @@ class SeedGenerationWidget(QWidget):
 
         except Exception as e:
             show_error(f"Error generating seeds: {str(e)}")
+            self.results_label.set(f"Error generating seeds: {str(e)}", "error")
             self._reset_ui_after_generation()
 
     def _on_seed_finished(self, seeds_dict):
@@ -732,7 +743,9 @@ class SeedGenerationWidget(QWidget):
         self.add_labels_layer(seeds_dict, roi=self._run_roi, layer_kwargs=self._run_layer_kwargs)
         
         # Update results label
-        self.results_label.setText(f"Seeds generated: {len(seeds_dict)} layers")
+        n = len(seeds_dict)
+        secs = time.perf_counter() - getattr(self, "_t0", time.perf_counter())
+        self.results_label.set(f"Seeds generated: {n} layer{'' if n == 1 else 's'} ({secs:.1f} s)", "ok")
         
         show_info("Seeds generated successfully!")
 
@@ -742,7 +755,8 @@ class SeedGenerationWidget(QWidget):
     def _on_seed_error(self, error_message):
         """Handle errors during seed generation."""
         show_error(f"Error generating seeds: {error_message}")
-        
+        self.results_label.set(f"Error generating seeds: {error_message}", "error")
+
         # Reset UI state
         self._reset_ui_after_generation()
         
@@ -766,6 +780,7 @@ class SeedGenerationWidget(QWidget):
             self.worker.terminate()
             self.worker.wait()
             self._reset_ui_after_generation()
+            self.results_label.set("Seed generation stopped by user", "info")
             # show_info("Seed generation stopped.")
             # self.viewer.window.statusBar().showMessage("Seed generation stopped.", 1000)
             
@@ -775,11 +790,13 @@ class SeedGenerationWidget(QWidget):
 
     # TODO: need to consider threshold as a list
     # how to set threshold in the widget?
-    def import_yaml(self):
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, "Open YAML File", "", "YAML Files (*.yaml *.yml);;All Files (*)"
-        )
+    def import_yaml(self, file_path=None):
+        if file_path is None:
+            file_path, _ = QFileDialog.getOpenFileName(
+                self, "Open YAML File", "", "YAML Files (*.yaml *.yml);;All Files (*)"
+            )
         if file_path:
+            notes = []
             try:
                 with open(file_path, "r") as f:
                     params = yaml.safe_load(f)
@@ -794,13 +811,13 @@ class SeedGenerationWidget(QWidget):
                     if input_image_name in [self.image_combo.itemText(i) for i in range(self.image_combo.count())]:
                         self.image_combo.setCurrentText(input_image_name)
                     else:
-                        show_error(f"Input image '{input_image_name}' not found in current layers.")
+                        notes.append(f"Input image '{input_image_name}' not found in current layers.")
                 if 'boundary_path' in params:
                     boundary_name = params['boundary_path']
                     if boundary_name in [self.boundary_combo.itemText(i) for i in range(self.boundary_combo.count())]:
                         self.boundary_combo.setCurrentText(boundary_name)
                     else:
-                        show_error(f"Boundary image '{boundary_name}' not found in current layers.")
+                        notes.append(f"Boundary image '{boundary_name}' not found in current layers.")
                 
                 
                 # Main parameters
@@ -829,9 +846,10 @@ class SeedGenerationWidget(QWidget):
                     if key in params:
                         advanced_params_to_set[key] = params[key]
 
-                if params['seed_method']!="Original" and advanced_params_to_set:
+                if advanced_params_to_set:
                     self.advanced_params_box.set_params(advanced_params_to_set)
-                    self.show_advanced_checkbox.setChecked(True)
+                    if params.get('seed_method', "Original") != "Original":
+                        self.show_advanced_checkbox.setChecked(True)
                 
                 # Output parameters
                 if 'output_folder' in params:
@@ -843,6 +861,8 @@ class SeedGenerationWidget(QWidget):
                 thresholds_list = params.get('thresholds', None)
                 upper_thresholds_list = params.get('upper_thresholds', None)
                 self.main_param_widget.populate_thresholds_from_list(thresholds_list, upper_thresholds_list)
+                if 'footprints' in params:
+                    self.main_param_widget.set_footprints(params['footprints'])
                 
                 # Also set the threshold widget for preview functionality
                 if thresholds_list:
@@ -854,7 +874,10 @@ class SeedGenerationWidget(QWidget):
                     self.threshold_widget.set_thresholds(lower_threshold, upper_threshold)
                 
 
-                show_info(f"Parameters successfully loaded from {os.path.basename(file_path)}.")
+                if notes:
+                    self.params_status.set("\n".join(notes), "warn")
+                else:
+                    self.params_status.set(f"Parameters successfully loaded from {os.path.basename(file_path)}.", "ok")
 
                 # Currently not used as we use table for thresholds
                 # Update threshold line edits, which are part of this widget
@@ -869,12 +892,13 @@ class SeedGenerationWidget(QWidget):
                
 
             except Exception as e:
-                QMessageBox.critical(self, "Import Error", f"Failed to load parameters: {e}")
+                self.params_status.set(f"Failed to load parameters: {e}", "error")
 
-    def export_yaml(self):
-        file_path, _ = QFileDialog.getSaveFileName(
-            self, "Save YAML File", "", "YAML Files (*.yaml *.yml);;All Files (*)"
-        )
+    def export_yaml(self, file_path=None):
+        if file_path is None:
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, "Save YAML File", "", "YAML Files (*.yaml *.yml);;All Files (*)"
+            )
         if file_path:
             try:
                 # Get parameters from child widgets
@@ -942,7 +966,7 @@ class SeedGenerationWidget(QWidget):
                 with open(file_path, "w") as f:
                     yaml.dump(all_params_flow, f, sort_keys=False, default_flow_style=False)
                 
-                show_info(f"Parameters successfully saved to {os.path.basename(file_path)}.")
+                self.params_status.set(f"Parameters successfully saved to {os.path.basename(file_path)}.", "ok")
                 # Reorder keys to write seed_method, img_path, boundary_path first
                 ordered_keys = ["seed_method", "img_path", "boundary_path"]
                 rest_keys = [k for k in all_params_flow.keys() if k not in ordered_keys]
@@ -952,4 +976,4 @@ class SeedGenerationWidget(QWidget):
                 with open(file_path, "w") as f:
                     yaml.dump(ordered_params, f, sort_keys=False, default_flow_style=False)
             except Exception as e:
-                QMessageBox.critical(self, "Export Error", f"Failed to save parameters: {e}")
+                self.params_status.set(f"Failed to save parameters: {e}", "error")

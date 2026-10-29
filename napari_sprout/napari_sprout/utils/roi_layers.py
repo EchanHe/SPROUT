@@ -42,7 +42,6 @@ import weakref
 
 import numpy as np
 from napari.layers import Shapes
-from napari.utils.notifications import show_info
 from qtpy.QtCore import QObject, QTimer, Signal
 
 from sprout_core.roi import Roi, RoiError
@@ -202,10 +201,12 @@ class RoiHub(QObject):
     roi_moving = Signal(object)
     layer_inserted = Signal(object)
     layer_removed = Signal(object)
+    layer_renamed = Signal(object, str)   # any layer renamed: (layer, old name)
     dims_changed = Signal()
     users_changed = Signal()          # a tab picked another ROI ("used by" in the ROI tools)
     draw_finished = Signal(object)    # Draw box: the new ROI layer
     draw_ended = Signal()             # Draw box: the drawing is over (finished or abandoned)
+    draw_note = Signal(str)           # Draw box: a note for the ROI tools ("draw it again")
 
     MOVING_MS = 30
 
@@ -232,11 +233,13 @@ class RoiHub(QObject):
         self._draw_prev = None                        # weakref: active layer before Draw box
         self._draw_token = 0                          # a new drawing (or its end) voids pending calls
         self._draw_busy = False                       # our own selection / mode changes
+        self._names = weakref.WeakKeyDictionary()     # every layer -> its name (for layer_renamed)
         viewer.layers.events.inserted.connect(self._on_inserted)
         viewer.layers.events.removed.connect(self._on_removed)
         for name in ("current_step", "order", "ndisplay"):
             getattr(viewer.dims.events, name).connect(self._on_dims)
         for layer in list(viewer.layers):
+            self._watch_name(layer)
             if is_roi_layer(layer):
                 self._attach(layer)
 
@@ -316,8 +319,22 @@ class RoiHub(QObject):
                 except Exception:
                     pass
 
+    def _watch_name(self, layer):
+        if layer not in self._names:
+            layer.events.name.connect(self._on_any_name)
+        self._names[layer] = layer.name
+
+    def _on_any_name(self, event=None):
+        layer = getattr(event, "source", None)
+        if layer is None or layer not in self._names:
+            return
+        old, self._names[layer] = self._names[layer], layer.name
+        if old != layer.name:
+            self.layer_renamed.emit(layer, old)
+
     def _on_inserted(self, event):
         layer = event.value
+        self._watch_name(layer)
         if is_roi_layer(layer):
             self._attach(layer)
             self._rois.pop(layer, None)
@@ -329,6 +346,11 @@ class RoiHub(QObject):
 
     def _on_removed(self, event):
         layer = event.value
+        if self._names.pop(layer, None) is not None:
+            try:
+                layer.events.name.disconnect(self._on_any_name)
+            except Exception:
+                pass
         if self._draw is not None and layer is self._draw():
             self._end_draw()                          # the helper layer was deleted
         if layer in self._attached:
@@ -597,7 +619,7 @@ class RoiHub(QObject):
         click = bool(np.any(np.ptp(verts, axis=0) < tiny))
         if click or any(h <= l for l, h in zip(lo, hi)):
             if not click:
-                show_info("The box is outside the image: draw it again")
+                self.draw_note.emit("The box is outside the image: draw it again")
             self._draw_busy = True
             try:
                 layer.data = []

@@ -29,6 +29,7 @@ from qtpy.QtWidgets import (
 from sprout_core import boundary as B
 
 from ..utils.histogram_widget import HistogramRangeWidget
+from ..utils.status import StatusLine, style
 from ..utils.slice_preview import SlicePreview
 
 PREVIEW_NAME = "Boundary preview"
@@ -194,7 +195,7 @@ class BoundaryWidget(QWidget):
         # first time this tab is shown, not when the SPROUT panel opens.
         self.device_combo.model().item(1).setEnabled(False)
         self.device_label = QLabel("checking for a GPU...")
-        self.device_label.setStyleSheet("color: gray")
+        self.device_label.setStyleSheet(style("info"))
         self._gpu_checked = False
         row = QHBoxLayout()
         row.addWidget(self.device_combo)
@@ -217,9 +218,7 @@ class BoundaryWidget(QWidget):
         row.addWidget(self.progress, 1)
         row.addWidget(self.stop_btn)
         l2.addLayout(row)
-        self.compute_status = QLabel("")
-        self.compute_status.setStyleSheet("color: gray")
-        self.compute_status.setWordWrap(True)
+        self.compute_status = StatusLine()           # info / warn ("click Compute") / error
         l2.addWidget(self.compute_status)
         layout.addWidget(g2)
 
@@ -230,7 +229,7 @@ class BoundaryWidget(QWidget):
             "Response (eligible voxels only): drag the range; the current slice previews live")
         l3.addWidget(self.resp_hist)
         self.preview_label = QLabel("")
-        self.preview_label.setStyleSheet("color: gray")
+        self.preview_label.setStyleSheet(style("info"))
         l3.addWidget(self.preview_label)
         layout.addWidget(g3)
 
@@ -250,6 +249,8 @@ class BoundaryWidget(QWidget):
         row.addWidget(self.import_btn)
         row.addWidget(self.export_btn)
         form.addRow(row)
+        self.output_status = StatusLine(hide_empty=True)   # Created (ok) / cannot create (error)
+        form.addRow(self.output_status)
         layout.addWidget(g4)
         layout.addStretch()
 
@@ -367,6 +368,8 @@ class BoundaryWidget(QWidget):
             return
         self._stop()
         self._reset_response("Click Compute")
+        self.compute_status.set("")
+        self.output_status.clear()
         self._img_layer, self._img = None, None
         self._job["hist"] += 1
 
@@ -414,6 +417,7 @@ class BoundaryWidget(QWidget):
             return  # the running result is discarded on return (stale key)
         if self._resp is not None:
             self._reset_response("Parameters changed: click Compute")
+            self.compute_status.set("Parameters changed: click Compute", "warn")
 
     def _reset_response(self, message):
         self._resp = None
@@ -425,7 +429,7 @@ class BoundaryWidget(QWidget):
 
     def _compute(self):
         if self._img is None:
-            show_error("Select an image first")
+            self.compute_status.set("Select an image first", "error")
             return
         self._stop()
         self._job["compute"] += 1
@@ -441,7 +445,8 @@ class BoundaryWidget(QWidget):
         self._computing = True
         self._reset_response("Computing...")
         self.progress.setRange(0, 0)  # busy until the first chunk reports
-        self.compute_status.setText("")
+        self.compute_status.set("")
+        self.output_status.clear()
         self._update_buttons()
         def emit(done_, total):
             prog.changed.emit(done_, total)
@@ -464,6 +469,7 @@ class BoundaryWidget(QWidget):
                 return
             if key != self._current_key():
                 self._reset_response("Parameters changed during computing: click Compute")
+                self.compute_status.set("Parameters changed during computing: click Compute", "warn")
                 return
             resp, info, counts, edges, suggest = res
             self._resp, self._resp_key = resp, key
@@ -471,7 +477,7 @@ class BoundaryWidget(QWidget):
             self._resp_info = info
             dev = "GPU" if info["device"] == "cuda" else "CPU"
             note = "" if dev == "GPU" or device == "cpu" else f" ({info['device_reason']})"
-            self.compute_status.setText(f"{self._resp_desc}: {info['seconds']:.1f} s on {dev}{note}")
+            self.compute_status.set(f"{self._resp_desc}: {info['seconds']:.1f} s on {dev}{note}", "info")
             lo, hi = self._pending_threshold or (suggest, None)   # None -> axis end = no limit
             self._pending_threshold = None
             self.resp_hist.set_data(counts, edges, integer=resp.dtype.kind in "ui", lower=lo, upper=hi)
@@ -482,9 +488,10 @@ class BoundaryWidget(QWidget):
         def failed(e):
             if isinstance(e, B.Cancelled):
                 self.resp_hist.show_message("Stopped: click Compute")
-                self.compute_status.setText("Stopped")
+                self.compute_status.set("Stopped", "info")
             else:
                 self.resp_hist.show_message("Failed: see notification")
+                self.compute_status.set(f"Failed: {type(e).__name__}: {e}", "error")
                 self._report_error(e)
 
         def finished():
@@ -577,7 +584,7 @@ class BoundaryWidget(QWidget):
 
     def _create(self):
         if self._resp is None:
-            show_error("Compute first")
+            self.output_status.set("Compute first", "error")
             return
         self._job["create"] += 1
         job, resp, img = self._job["create"], self._resp, self._img
@@ -597,14 +604,20 @@ class BoundaryWidget(QWidget):
                 return
             mask, n = res
             if n == 0:
-                show_error("No voxel is in the threshold range: lower the threshold")
+                self.output_status.set("No voxel is in the threshold range: lower the threshold", "error")
                 return
             if n == mask.size:
-                show_error("Every voxel is in the threshold range: raise the threshold")
+                self.output_status.set("Every voxel is in the threshold range: raise the threshold", "error")
                 return
+            self._name_note = ""
             name = self._add_or_update_output(mask, rec)
             self._slice_preview.remove()
             show_info(f"Created '{name}': {n:,} voxels ({n / mask.size:.2%})")
+            if self._name_note:     # created under another name: say so (orange)
+                self.output_status.set(f"Created '{name}': {n:,} voxels ({n / mask.size:.2%})\n"
+                                       f"{self._name_note}", "warn")
+            else:
+                self.output_status.set(f"Created '{name}': {n:,} voxels ({n / mask.size:.2%})", "ok")
             if self.use_cb.isChecked():
                 self.boundary_created.emit(name)
 
@@ -626,7 +639,7 @@ class BoundaryWidget(QWidget):
             while name in self.viewer.layers:
                 name = f"{base}_{i}"
                 i += 1
-            show_warning(f"A layer named '{base}' already exists; created '{name}'")
+            self._name_note = f"A layer named '{base}' already exists; created '{name}'"
         self.viewer.add_labels(mask, name=name, metadata={META_KEY: rec}, **self._layer_kwargs())
         return name
 
@@ -641,7 +654,7 @@ class BoundaryWidget(QWidget):
         rec["image"] = self._img_layer.name if self._img_layer is not None else None
         with open(path, "w", encoding="utf-8") as f:
             yaml.safe_dump(rec, f, sort_keys=False)
-        show_info(f"Saved {path}")
+        self.output_status.set(f"Saved {path}", "ok")
 
     def _import_yaml(self):
         import yaml
@@ -663,4 +676,4 @@ class BoundaryWidget(QWidget):
             h.set_range(h._xmin if ilo is None else ilo, h._xmax if ihi is None else ihi)
         if "threshold_lower" in rec or "threshold_upper" in rec:
             self._pending_threshold = (rec.get("threshold_lower"), rec.get("threshold_upper"))
-        show_info("Parameters loaded: click Compute")
+        self.compute_status.set("Parameters loaded: click Compute", "warn")

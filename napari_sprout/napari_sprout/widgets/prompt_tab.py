@@ -47,6 +47,8 @@ from sprout_core.nni_engine import NniEngine, nninteractive_status
 from sprout_core.prompt_engine import is_oom
 from sprout_core.roi import RoiError, parse_ids  # noqa: F401  (parse_ids: also importable from here)
 
+from ..utils.fit_table import FitTable
+from ..utils.status import StatusLine, style
 from ..utils.roi_layers import get_roi_hub
 from ..utils.roi_widget import RoiSelect
 
@@ -54,8 +56,9 @@ META_KEY = "sprout_prompt"
 SETTINGS = ("SPROUT", "napari-sprout")
 POS_COLOR, NEG_COLOR = "lime", "magenta"
 TOOLTIP_ROLE = 3            # Qt.ToolTipRole
-GREY = "color: gray"
-ACT_STYLE = "color: #e08a00"            # orange: something the user must act on now
+GREY = style("info")
+ACT_STYLE = style("warn")               # orange: needs attention, can run (utils/status.py)
+LOAD_FIRST = "Load the model first (3. Model)"
 
 # Promptable models offered in "3. Model": (label, engine class, availability check).
 # The engine CLASS declares `name` and `capabilities`, so the UI knows what a model
@@ -91,23 +94,11 @@ def capabilities_text(caps):
     return " · ".join(CAPABILITY_TEXT.get(c, c) for c in order)
 
 
-class _FitTable(QTableWidget):
-    """A table as high as its header + rows, up to MAX_ROWS rows; it scrolls inside beyond that."""
+class _FitTable(FitTable):
+    """The classes table: fitted by hand after each rebuild (see utils/fit_table.py)."""
 
-    MAX_ROWS = 10
-
-    def fit(self):
-        n = min(self.rowCount(), self.MAX_ROWS)
-        h = 2 * self.frameWidth() + self.horizontalHeader().sizeHint().height()
-        h += sum(self.rowHeight(i) for i in range(n))
-        if self.horizontalHeader().length() > self.viewport().width():      # columns wider than the table
-            h += self.horizontalScrollBar().sizeHint().height()
-        if self.minimumHeight() != h or self.maximumHeight() != h:
-            self.setFixedHeight(h)
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        self.fit()                      # a narrower table may need its horizontal scrollbar
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, auto_fit=False, **kwargs)
 
 
 class _Progress(QObject):
@@ -298,7 +289,7 @@ class PromptTab(QWidget):
         self.device_combo.addItem("CPU", "cpu")
         self.device_combo.setToolTip("Auto: the GPU if torch sees one, else the CPU.")
         self.cpu_label = QLabel("")
-        self.cpu_label.setStyleSheet(ACT_STYLE)
+        self.cpu_label.setStyleSheet(style("warn"))
         row = QHBoxLayout()
         row.addWidget(self.device_combo)
         row.addWidget(self.cpu_label, 1)
@@ -311,9 +302,7 @@ class PromptTab(QWidget):
         row.addWidget(self.load_btn, 1)
         row.addWidget(self.release_btn)
         f3.addRow(row)
-        self.model_status = QLabel("")
-        self.model_status.setWordWrap(True)
-        self.model_status.setStyleSheet(GREY)
+        self.model_status = StatusLine()
         f3.addRow(self.model_status)
         layout.addWidget(g3)
 
@@ -390,9 +379,7 @@ class PromptTab(QWidget):
         row.addWidget(self.edit_btn)
         row.addStretch()
         f4.addRow("New points:", row)
-        self.prompt_status = QLabel("")
-        self.prompt_status.setStyleSheet(GREY)
-        self.prompt_status.setWordWrap(True)
+        self.prompt_status = StatusLine()
         f4.addRow(self.prompt_status)
         layout.addWidget(g4)
 
@@ -411,9 +398,7 @@ class PromptTab(QWidget):
         self.progress = QProgressBar()
         self.progress.setTextVisible(True)
         f5.addRow(self.progress)
-        self.run_status = QLabel("")
-        self.run_status.setWordWrap(True)
-        self.run_status.setStyleSheet(GREY)
+        self.run_status = StatusLine()
         f5.addRow(self.run_status)
         self.output_edit = QLineEdit("")
         self.output_edit.setToolTip("Labels layer the results go to (full image size; classes not run are 0). "
@@ -587,7 +572,7 @@ class PromptTab(QWidget):
         cls = self.model_class()
         caps = frozenset(getattr(cls, "capabilities", self.engine.capabilities))
         self.supports_label.setText(f"Supports: {capabilities_text(caps)}")
-        self.model_status.setText("not loaded" if self.available else f"{self.engine.name} is not installed")
+        self.model_status.set("not loaded" if self.available else f"{self.engine.name} is not installed", "info")
         model = self.type_combo.model()
         for i in range(self.type_combo.count()):
             key = self.type_combo.itemData(i)
@@ -611,7 +596,7 @@ class PromptTab(QWidget):
             self.model_combo.blockSignals(True)
             self.model_combo.setCurrentIndex(self._model_index)
             self.model_combo.blockSignals(False)
-            show_error("Stop the run first")
+            self.model_status.set("Stop the run first", "error")
             return
         self._finalizer()                                  # release the old model
         self._model_index = i
@@ -894,7 +879,7 @@ class PromptTab(QWidget):
 
     def start_adding_points(self):
         if self._current is None:
-            show_error("Select a class first")
+            self.prompt_status.set("Select a class first", "error")
             return
         lay = self.points_layer()
         if lay is None:
@@ -907,16 +892,16 @@ class PromptTab(QWidget):
         """Sample points for the checked classes (background); replaces their generated points."""
         img, seeds = self.image_layer, self.seeds_layer
         if img is None or seeds is None:
-            show_error("Select an image and seeds first")
+            self.prompt_status.set("Select an image and seeds first", "error")
             return
         classes = self.checked_classes()
         if not classes:
-            show_error("Check at least one class")
+            self.prompt_status.set("Check at least one class", "error")
             return
         try:
             roi = self.roi_select.roi_for_run(np.shape(img.data))
         except RoiError as e:
-            show_error(str(e))
+            self.prompt_status.set(str(e), "error")
             return
         opts = dict(default_n_pos=self.npos_spin.value(), default_n_neg=self.nneg_spin.value(),
                     default_method=self.method_combo.currentText(), negative_from_bg=True,
@@ -930,7 +915,7 @@ class PromptTab(QWidget):
         logs = []
         self._busy["gen"] = True
         self._update_buttons()
-        self.prompt_status.setText(f"Sampling points for {len(classes)} classes...")
+        self.prompt_status.set(f"Sampling points for {len(classes)} classes...", "info")
         t0 = time.perf_counter()
 
         def work():
@@ -954,15 +939,15 @@ class PromptTab(QWidget):
             if missing:
                 msg += f"; no points for {', '.join(map(str, missing[:20]))}" + (" ..." if len(missing) > 20 else "")
                 msg += " (no seed voxel" + (" inside the ROI)" if roi is not None else ")")
-            self.prompt_status.setText(msg)
+            self.prompt_status.set(msg, "info")
 
         def failed(e):
             if job != self._job["gen"]:
                 return
             if isinstance(e, Cancelled):
-                self.prompt_status.setText("Sampling stopped")
+                self.prompt_status.set("Sampling stopped", "info")
                 return
-            self.prompt_status.setText(f"Sampling failed: {e}")
+            self.prompt_status.set(f"Sampling failed: {e}", "error")
             self._report_error(e)
 
         def finished():
@@ -1002,7 +987,7 @@ class PromptTab(QWidget):
             z_ok = (df.z >= 0) & (df.z < (shape[0] if len(shape) == 3 else 1))
             inside = z_ok & (df.y >= 0) & (df.y < shape[-2]) & (df.x >= 0) & (df.x < shape[-1])
             if not inside.all():
-                show_warning(f"{int((~inside).sum())} points outside the image were skipped")
+                self.prompt_status.set(f"{int((~inside).sum())} points outside the image were skipped", "warn")
                 df = df[inside]
         self.set_prompts(df.reset_index(drop=True))
         return len(df)
@@ -1011,7 +996,7 @@ class PromptTab(QWidget):
     def create_scribble_layer(self, negative=False):
         img, seeds = self.image_layer, self.seeds_layer
         if img is None or seeds is None:
-            show_error("Select an image and seeds first")
+            self.prompt_status.set("Select an image and seeds first", "error")
             return None
         name = self.scribble_name(negative)
         lay = self._layer(name, Labels)
@@ -1038,17 +1023,17 @@ class PromptTab(QWidget):
 
     def load_model(self):
         if not self.available:
-            show_error(self._status[1])
+            self.model_status.set(self._status[1], "error")
             return
         folder = self.model_edit.text().strip()
         if not folder:
-            show_error("Choose the weights folder first")
+            self.model_status.set("Choose the weights folder first", "error")
             return
         device = self.device_combo.currentData()
         self._job["load"] += 1
         job = self._job["load"]
         self._busy["load"] = True
-        self.model_status.setText("loading...")
+        self.model_status.set("loading...", "info")
         self._update_buttons()
 
         def done(info):
@@ -1056,17 +1041,17 @@ class PromptTab(QWidget):
                 return
             QSettings(*SETTINGS).setValue("prompt/model_dir", folder)
             dev = info.get("device", "?")
-            self.model_status.setText(f"{self.engine.name} {info.get('version', '?')} on {dev}, "
-                                      f"loaded in {info.get('seconds', 0):.1f} s")
+            self.model_status.set(f"{self.engine.name} {info.get('version', '?')} on {dev}, "
+                                  f"loaded in {info.get('seconds', 0):.1f} s", "info")
             if info.get("license"):
                 self.model_status.setToolTip(f"Model license: {info['license']}")
-            if self.run_status.styleSheet() == ACT_STYLE:          # "load the model first" is done
+            if self.run_status.text() == LOAD_FIRST:              # "load the model first" is done
                 self._set_run_status("")
 
         def failed(e):
             if job != self._job["load"]:
                 return
-            self.model_status.setText(f"loading failed: {type(e).__name__}: {e}")
+            self.model_status.set(f"loading failed: {type(e).__name__}: {e}", "error")
             self._report_error(e)
 
         def finished():
@@ -1078,10 +1063,11 @@ class PromptTab(QWidget):
 
     def release_model(self):
         if self._busy["run"]:
-            show_error("Stop the run first")
+            self.model_status.set("Stop the run first", "error")
             return
         self.engine.release()
-        self.model_status.setText("released" if self.available else self.model_status.text())
+        if self.available:
+            self.model_status.set("released", "info")
         self._update_buttons()
 
     # ================================================================== run
@@ -1113,9 +1099,8 @@ class PromptTab(QWidget):
             return self._stores.setdefault(key, PS.ResultStore())
         return self._stores.get(key)
 
-    def _set_run_status(self, text, act=False):
-        self.run_status.setText(text)
-        self.run_status.setStyleSheet(ACT_STYLE if act else GREY)
+    def _set_run_status(self, text, level="info"):
+        self.run_status.set(text, level)
 
     def run_checked(self):
         return self._start_run(self.checked_classes(), "scratch")
@@ -1123,42 +1108,42 @@ class PromptTab(QWidget):
     def update_current(self):
         """Refine the highlighted class with its added points (no button in this UI)."""
         if self._current is None:
-            show_error("Select a class first")
+            self._set_run_status("Select a class first", "error")
             return None
         return self._start_run([self._current], "update")
 
     def _start_run(self, classes, mode):
         img, seeds = self.image_layer, self.seeds_layer
         if not self.available:
-            show_error(self._status[1])
+            self._set_run_status(self._status[1], "error")
             return None
         if img is None or seeds is None:
-            show_error("Select an image and seeds first")
+            self._set_run_status("Select an image and seeds first", "error")
             return None
         if not self.engine.loaded:
-            self._set_run_status("Load the model first (3. Model)", act=True)
+            self._set_run_status(LOAD_FIRST, "error")
             return None
         if img.ndim != 3:
-            show_error(f"Prompt (AI) needs a 3D image ({self.engine.name} is a 3D model)")
+            self._set_run_status(f"Prompt (AI) needs a 3D image ({self.engine.name} is a 3D model)", "error")
             return None
         if not classes:
-            show_error("Check at least one class")
+            self._set_run_status("Check at least one class", "error")
             return None
         shape = tuple(np.shape(img.data))
         try:
             roi = self.roi_select.roi_for_run(shape)
         except RoiError as e:
-            show_error(str(e))
+            self._set_run_status(str(e), "error")
             return None
         key, ptype, src = self.input_type()
         if not self.engine.supports_prompt_type(ptype):
-            show_error(f"{self.engine.name} does not support this input type")
+            self._set_run_status(f"{self.engine.name} does not support this input type", "error")
             return None
         scribbles, neg = None, False
         if src == "drawn":
             lay = self._layer(self.scribble_name(False), Labels)
             if lay is None:
-                show_error(f"Create and paint '{self.scribble_name(False)}' first")
+                self._set_run_status(f"Create and paint '{self.scribble_name(False)}' first", "error")
                 return None
             scribbles = np.asarray(lay.data)
             nl = self._layer(self.scribble_name(True), Labels)
@@ -1249,10 +1234,10 @@ class PromptTab(QWidget):
         if isinstance(e, Cancelled):
             self._set_run_status(f"Stopped after {ctx['done']} of {len(ctx['classes'])} classes")
         elif is_oom(e):
-            self._set_run_status(str(e))
+            self._set_run_status(str(e), "error")
             show_error(f"Prompt (AI): {e}")
         else:
-            self._set_run_status(f"Failed: {type(e).__name__}: {e}")
+            self._set_run_status(f"Failed: {type(e).__name__}: {e}", "error")
             self._report_error(e)
         ctx["error"] = e
 
@@ -1261,7 +1246,7 @@ class PromptTab(QWidget):
         if "error" not in ctx:
             self._set_run_status(f"Done: {ctx['done']} classes in {time.perf_counter() - ctx['t0']:.1f} s"
                                  + (f"; {ctx['store'].overlap_voxels():,} voxels claimed by more than one "
-                                    f"class" if len(ctx["store"]) > 1 else ""))
+                                    f"class" if len(ctx["store"]) > 1 else ""), "ok")
         self._rebuild_table()
         self._update_buttons()
 
@@ -1273,7 +1258,7 @@ class PromptTab(QWidget):
         """Back to the highlighted class's previous result (no button in this UI)."""
         store = self._store_for_current_output(create=False)
         if store is None or self._current is None or not store.can_revert(self._current):
-            show_error("Nothing to revert for this class")
+            self._set_run_status("Nothing to revert for this class", "error")
             return
         region = store.revert(self._current)
         ctx = self._ctx if self._ctx is not None and self._ctx["store"] is store else None
