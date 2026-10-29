@@ -41,7 +41,8 @@ def margin_voxels(lo, hi, margin, unit="voxel"):
     m = _per_axis(margin, len(lo), "roi_margin")
     if unit == "voxel":
         return tuple(int(round(k)) for k in m)
-    return tuple(int(math.ceil(k / 100.0 * (h - l))) for k, l, h in zip(m, lo, hi))
+    # round before ceil: 7 / 100 * 100 is 7.000000000000001 in floating point
+    return tuple(int(math.ceil(round(k * (h - l) / 100.0, 9))) for k, l, h in zip(m, lo, hi))
 
 
 def expand_to_min_size(lo, hi, shape, min_size):
@@ -98,15 +99,19 @@ def seed_bboxes(seed, labels=None):
 def seed_roi_from_bbox(shape, lo, hi, margin=32, unit="voxel", min_size=0):
     """Box Roi = seed bbox [lo, hi) + margin, at least min_size per axis, clipped to shape."""
     m = margin_voxels(lo, hi, margin, unit)
+    ms = [int(v) for v in _per_axis(min_size, len(shape), "roi_min_size")]
     glo = [l - k for l, k in zip(lo, m)]
     ghi = [h + k for h, k in zip(hi, m)]
+    # clipped: the image border cut the margin, or min_size is larger than the image
+    clipped = (any(v < 0 for v in glo) or any(v > n for v, n in zip(ghi, shape))
+               or any(w > n for w, n in zip(ms, shape)))
     glo = [max(0, v) for v in glo]
     ghi = [min(n, v) for n, v in zip(shape, ghi)]
-    glo, ghi = expand_to_min_size(glo, ghi, shape, min_size)
+    glo, ghi = expand_to_min_size(glo, ghi, shape, ms)
     roi = Roi.box(shape, glo, ghi)
     return Roi(roi.shape, roi.lo, roi.hi, None, "box",
-               dict(roi.source, seed_lo=list(map(int, lo)), seed_hi=list(map(int, hi)),
-                    margin=list(m), margin_unit=unit, min_size=_per_axis(min_size, len(shape), "roi_min_size").tolist()))
+               dict(roi.source, clipped=bool(clipped), seed_lo=list(map(int, lo)), seed_hi=list(map(int, hi)),
+                    margin=list(m), margin_unit=unit, min_size=ms))
 
 
 def seed_rois(seed, labels=None, mode="class", margin=32, unit="voxel", min_size=0):
