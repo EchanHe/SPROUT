@@ -1,44 +1,50 @@
 """Prompt (AI) tab for napari-sprout: seeds -> prompts -> interactive model.
 
 Paper Fig. 1d: instead of threshold-guided growing, the seeds are turned into
-prompts (points, scribbles) for a promptable model (nnInteractive now; the model
-list is a registry so SAM can be added). Workflow, top to bottom:
+prompts for a promptable model (nnInteractive now; the model list is a registry so
+SAM can be added). The tab follows SPROUT's nnInteractive pipeline
+(`python sprout.py --prompt --nninteractive`, sprout_core/nninteractive_predict.py):
 
-    1. Input     image, seeds, ROI (sampling and the run stay inside the ROI)
-    2. Classes   which seed classes to work on (checked); the highlighted row is
-                 the class new points belong to
+    1. Input     image, seeds, ROI (the run stays inside the ROI)
+    2. Classes   which seed classes to run (checked); the highlighted row is the class
+                 new points belong to
     3. Model     model, weights folder, device, Load / Release
-    4. Prompts   input type (only what the model supports), Generate points for
-                 the checked classes into one Points layer "{seeds}_prompts"
-                 (edit them there), drawn scribble layers
+    4. Prompts   prompt type as in the YAML: "Seeds as scribbles" (prompt_type: scribble,
+                 default) or "Points sampled from seeds" (prompt_type: point); optional
+                 initial mask (init_seg_path); manual points; Import / Export YAML
     5. Run       Run checked / Stop -> one full-size Labels layer "{seeds}_nni"
-                 ("{seeds}_nni_ROI_1" with an ROI)
+                 ("{seeds}_nni_ROI_1" with an ROI); optionally one layer per class and
+                 the pipeline's files in a folder
 
-The model runs in the background, one class after the other; each finished
-class is pasted into the output layer right away. Heavy imports (torch,
-nnInteractive) happen only when the model is loaded.
+Overlaps: like the scripts, classes are composed so that the smaller id wins ('min_id').
+The model runs in the background, one class after the other; each finished class is
+pasted into the output right away. Heavy imports (torch, nnInteractive) happen only when
+the model is loaded.
 
-Kept in code but not in this UI (sprout_core and the methods below): seed as
-initial mask / seed as scribble input types, overlap rule choice (always 'seed'),
-ROI margin (32), Update / Revert one class, CSV import / export.
+Kept in code but not in this UI (sprout_core and the methods below): drawn scribble
+layers, seed as initial mask, other overlap rules, ROI margin (32), Update / Revert one
+class, CSV import / export.
 """
 import functools
+import os
 import threading
 import time
 import weakref
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from napari.layers import Image, Labels, Points
 from napari.qt.threading import thread_worker
-from napari.utils.notifications import show_error, show_warning
-from qtpy.QtCore import QObject, QSettings, Qt, QTimer, Signal
+from napari.utils.notifications import show_error
+from qtpy.QtCore import QEvent, QObject, QSettings, Qt, QTimer, Signal
 from qtpy.QtWidgets import (
-    QAbstractItemView, QButtonGroup, QComboBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
-    QHeaderView, QLabel, QLineEdit, QProgressBar, QPushButton, QRadioButton, QScrollArea, QSizePolicy,
-    QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QAbstractItemView, QButtonGroup, QCheckBox, QComboBox, QFileDialog, QFormLayout, QGroupBox,
+    QHBoxLayout, QHeaderView, QLabel, QLineEdit, QProgressBar, QPushButton, QRadioButton, QScrollArea,
+    QSizePolicy, QSpinBox, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
+from sprout_core import config_core
 from sprout_core import prompt_points as PP
 from sprout_core import prompt_seg as PS
 from sprout_core import roi as R
@@ -51,13 +57,13 @@ from ..utils.fit_table import FitTable
 from ..utils.status import StatusLine, style
 from ..utils.roi_layers import get_roi_hub
 from ..utils.roi_widget import RoiSelect
+from ..utils.util_widget import create_output_folder_row
 
 META_KEY = "sprout_prompt"
 SETTINGS = ("SPROUT", "napari-sprout")
 POS_COLOR, NEG_COLOR = "lime", "magenta"
 TOOLTIP_ROLE = 3            # Qt.ToolTipRole
 GREY = style("info")
-ACT_STYLE = style("warn")               # orange: needs attention, can run (utils/status.py)
 LOAD_FIRST = "Load the model first (3. Model)"
 
 # Promptable models offered in "3. Model": (label, engine class, availability check).
@@ -68,24 +74,28 @@ MODELS = [("nnInteractive", NniEngine, nninteractive_status)]
 CAPABILITY_TEXT = {"points": "points", "scribble": "scribbles", "init_mask": "initial mask",
                    "bbox": "boxes", "lasso": "lasso"}
 
-# (key, prompt_type, scribble source, label, tooltip)
-INPUT_TYPES = [
-    ("points", "points", None, "Points",
-     "Points sampled from the seeds (Generate) and / or placed by hand in '{seeds}_prompts'."),
-    ("points+init", "points+init", None, "Points + seed as initial mask",
-     "The seed of each class is the initial mask; its points are added after it."),
-    ("seed_scribble", "scribble", "seed", "Seed as scribble (+points)",
-     "The seed of each class is a scribble; its points are added after it."),
-    ("drawn_scribble", "scribble", "drawn", "Drawn scribbles (+points)",
-     "Paint the class id into '{seeds}_scribbles' (and, optionally, 'not this class' into "
-     "'{seeds}_scribbles_neg'). The class's points are added after the scribbles."),
-]
-UI_INPUT_TYPES = ("points", "drawn_scribble")       # the input types offered in this UI
-OVERLAP_RULE = "seed"           # a voxel claimed by two classes: the class whose seed it is, else smaller id
+# Prompt types of the pipeline YAML (prompt_type) -> (core prompt type, label, tooltip)
+PROMPT_MODES = {
+    "scribble": ("scribble", "Seeds as scribbles",
+                 "prompt_type: scribble - for each class, its whole seed is a positive scribble "
+                 "(as `sprout.py --prompt --nninteractive`)."),
+    "point": ("points", "Points sampled from seeds",
+              "prompt_type: point - points sampled from each class's seed (Generate points), "
+              "plus the points you add by hand."),
+}
+SCRIBBLE_HINT = "The seeds are the scribbles: paint or erase in the seeds Labels layer to change them, then Run."
+MANUAL_HINT = ("Add points to fix a class, check only that class and Run again. "
+               "To change a scribble, edit the seeds Labels layer directly.")
+OVERLAP_RULE = "min_id"         # as nninter_predict: classes in descending id, last write wins
 ROI_MARGIN = 32                 # image context (voxels) the model sees around the ROI
 BASE_SEED = 0                   # random seed of the point sampling (and of the model, + class id)
 COLUMNS = ["", "id", "seed voxels", "points + / -", "status", "result voxels"]
 NEG_SLOW = "(slow on big images)"
+YAML_RULES = config_core.input_val_nninteractive_run
+
+
+def yaml_default(key):
+    return YAML_RULES[key].get("default")
 
 
 def capabilities_text(caps):
@@ -94,11 +104,36 @@ def capabilities_text(caps):
     return " · ".join(CAPABILITY_TEXT.get(c, c) for c in order)
 
 
+def _source_path(layer):
+    p = getattr(getattr(layer, "source", None), "path", None) if layer is not None else None
+    return str(p) if p else None
+
+
+def _same_path(a, b):
+    try:
+        return os.path.normcase(os.path.abspath(str(a))) == os.path.normcase(os.path.abspath(str(b)))
+    except Exception:
+        return False
+
+
 class _FitTable(FitTable):
     """The classes table: fitted by hand after each rebuild (see utils/fit_table.py)."""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, auto_fit=False, **kwargs)
+        # the horizontal scrollbar can come and go after a fit (the vertical one appears,
+        # the columns settle): fit again so its height is not counted when it is gone
+        self.horizontalScrollBar().rangeChanged.connect(self._refit)
+        self.horizontalHeader().sectionResized.connect(self._refit)
+
+    def _refit(self, *_):
+        self.fit()
+
+    def viewportEvent(self, event):
+        res = super().viewportEvent(event)
+        if event.type() == QEvent.Resize:         # e.g. the vertical scrollbar appeared
+            self.fit()
+        return res
 
 
 class _Progress(QObject):
@@ -173,6 +208,8 @@ class PromptTab(QWidget):
         self._current = None             # current class id
         self._points_conn = None         # Points layer whose events we listen to
         self._out_auto = True            # output name follows seeds / ROI until the user edits it
+        self.class_config = None         # per-class sampling options from an imported YAML
+        self.base_seed = int(yaml_default("seed") or BASE_SEED)   # YAML 'seed': sampling + seed + class id
 
         self._refresh_timer = QTimer(self)
         self._refresh_timer.setSingleShot(True)
@@ -249,7 +286,7 @@ class PromptTab(QWidget):
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)     # height: see _FitTable.fit
         self.table.fit()
-        self.table.setToolTip("Tick the classes to work on. The highlighted row is the class new points "
+        self.table.setToolTip("Tick the classes to run. The highlighted row is the class new points "
                               "belong to.")
         l2.addWidget(self.table)
         row = QHBoxLayout()
@@ -276,7 +313,7 @@ class PromptTab(QWidget):
         self.model_edit = QLineEdit(str(QSettings(*SETTINGS).value("prompt/model_dir", "") or ""))
         self.model_edit.setPlaceholderText("folder of the model weights")
         self.model_edit.setToolTip("Folder of the weights, e.g. nnInteractive_v1.0 "
-                                   "(remembered for the next session).")
+                                   "(remembered for the next session; model_path in the YAML).")
         self.browse_btn = QPushButton("...")
         self.browse_btn.setToolTip("Choose the weights folder")
         row = QHBoxLayout()
@@ -308,30 +345,60 @@ class PromptTab(QWidget):
 
         # 4. Prompts
         g4 = QGroupBox("4. Prompts")
-        f4 = QFormLayout(g4)
-        self.type_combo = QComboBox()
-        for key, ptype, src, label, tip in INPUT_TYPES:
-            if key in UI_INPUT_TYPES:
-                self.type_combo.addItem(label, key)
-        f4.addRow("Input type:", self.type_combo)
+        l4 = QVBoxLayout(g4)
         row = QHBoxLayout()
-        self.scrib_btn = QPushButton("+ Scribble layer")
-        self.scrib_btn.setToolTip("Labels layer '{seeds}_scribbles': paint the class id (positive scribble).")
-        self.scrib_neg_btn = QPushButton("+ Negative scribble layer")
-        self.scrib_neg_btn.setToolTip("Labels layer '{seeds}_scribbles_neg': paint the class id = "
-                                      "'not this class'. Optional.")
-        row.addWidget(self.scrib_btn)
-        row.addWidget(self.scrib_neg_btn)
         row.addStretch()
-        row.setContentsMargins(0, 0, 0, 0)
-        self.scrib_row = QWidget()
-        self.scrib_row.setLayout(row)
-        f4.addRow(self.scrib_row)
+        self.import_btn = QPushButton("Import YAML")
+        self.import_btn.setToolTip("Read a `sprout.py --prompt --nninteractive` config: model, device, prompt "
+                                   "options, output folder; layers whose file is img_path / seg_path / "
+                                   "init_seg_path are selected.")
+        self.export_btn = QPushButton("Export YAML")
+        self.export_btn.setToolTip("Write this setup as a config for `python sprout.py --prompt --nninteractive "
+                                   "--config x.yaml`.")
+        row.addWidget(self.import_btn)
+        row.addWidget(self.export_btn)
+        l4.addLayout(row)
+        self.yaml_status = StatusLine(hide_empty=True)
+        l4.addWidget(self.yaml_status)
+        f4 = QFormLayout()
+        self.scribble_rb = QRadioButton(PROMPT_MODES["scribble"][1])
+        self.points_rb = QRadioButton(PROMPT_MODES["point"][1])
+        self.scribble_rb.setToolTip(PROMPT_MODES["scribble"][2])
+        self.points_rb.setToolTip(PROMPT_MODES["point"][2])
+        self.scribble_rb.setChecked(True)
+        grp = QButtonGroup(self)
+        grp.addButton(self.scribble_rb)
+        grp.addButton(self.points_rb)
+        box = QVBoxLayout()
+        box.setSpacing(2)
+        box.addWidget(self.scribble_rb)
+        box.addWidget(self.points_rb)
+        f4.addRow("Prompt type:", box)
+        l4.addLayout(f4)
 
+        # -- Seeds as scribbles
+        self.scribble_box = QWidget()
+        ls = QVBoxLayout(self.scribble_box)
+        ls.setContentsMargins(0, 0, 0, 0)
+        self.neg_scribble_cb = QCheckBox("Other classes' seeds as negative scribbles")
+        self.neg_scribble_cb.setChecked(bool(yaml_default("use_negative_scribble")))
+        self.neg_scribble_cb.setToolTip("use_negative_scribble: for each class, the seeds of all other classes "
+                                        "are added as a negative scribble.")
+        ls.addWidget(self.neg_scribble_cb)
+        self.scribble_hint = QLabel(SCRIBBLE_HINT)
+        self.scribble_hint.setWordWrap(True)
+        self.scribble_hint.setStyleSheet(GREY)
+        ls.addWidget(self.scribble_hint)
+        l4.addWidget(self.scribble_box)
+
+        # -- Points sampled from seeds
+        self.points_box = QWidget()
+        fp = QFormLayout(self.points_box)
+        fp.setContentsMargins(0, 0, 0, 0)
         self.npos_spin = QSpinBox()
         self.npos_spin.setRange(1, 1000)
-        self.npos_spin.setValue(1)
-        self.npos_spin.setToolTip("Positive points sampled inside each checked class's seed.")
+        self.npos_spin.setValue(int(yaml_default("default_n_pos")))
+        self.npos_spin.setToolTip("default_n_pos: positive points sampled inside each checked class's seed.")
         self.method_combo = QComboBox()
         for m, tip in (("random", "Uniformly at random inside the seed."),
                        ("grid", "One point per cell of a grid over the seed (spread out)."),
@@ -339,48 +406,86 @@ class PromptTab(QWidget):
                        ("kmeans", "Cluster centres of the seed voxels (needs scikit-learn).")):
             self.method_combo.addItem(m)
             self.method_combo.setItemData(self.method_combo.count() - 1, tip, TOOLTIP_ROLE)
-        self.method_combo.setToolTip("How the points are placed inside the seed.")
-        row = QHBoxLayout()
-        row.addWidget(self.npos_spin)
-        row.addWidget(QLabel("method:"))
-        row.addWidget(self.method_combo)
-        row.addStretch()
-        f4.addRow("Positive per class:", row)
+        self.method_combo.setCurrentText(yaml_default("default_method"))
+        self.method_combo.setToolTip("default_method: how the points are placed inside the seed.")
         self.nneg_spin = QSpinBox()
         self.nneg_spin.setRange(0, 1000)
-        self.nneg_spin.setValue(0)
-        self.nneg_spin.setToolTip("Negative points per class, from the other classes' seeds and the "
-                                  "background (zero-intensity voxels excluded).")
+        self.nneg_spin.setValue(int(yaml_default("default_n_neg")))
+        self.nneg_spin.setToolTip("default_n_neg: negative points per class (zero-intensity voxels excluded).")
         self.neg_slow_label = QLabel(NEG_SLOW)
         self.neg_slow_label.setStyleSheet(GREY)
         self.neg_slow_label.setToolTip("Negatives are drawn from all background / other-class voxels: "
                                        "5-14 s on the 13 M-voxel dog demo.")
         row = QHBoxLayout()
+        row.addWidget(self.npos_spin)
+        row.addWidget(QLabel("method"))
+        row.addWidget(self.method_combo)
+        row.addStretch()
+        fp.addRow("Positive", row)
+        row = QHBoxLayout()
         row.addWidget(self.nneg_spin)
         row.addWidget(self.neg_slow_label)
         row.addStretch()
-        f4.addRow("Negative per class:", row)
-        self.gen_btn = QPushButton("Generate for checked classes")
-        self.gen_btn.setToolTip("Replaces the generated points of the checked classes in '{seeds}_prompts' "
-                                "(inside the ROI picked in 1. Input); points you added by hand are kept.")
-        f4.addRow(self.gen_btn)
+        fp.addRow("Negative", row)
+        self.neg_bg_cb = QCheckBox("background")
+        self.neg_bg_cb.setChecked(bool(yaml_default("negative_from_bg")))
+        self.neg_bg_cb.setToolTip("negative_from_bg")
+        self.neg_other_cb = QCheckBox("other classes")
+        self.neg_other_cb.setChecked(bool(yaml_default("negative_from_other_classes")))
+        self.neg_other_cb.setToolTip("negative_from_other_classes")
+        self.neg_each_cb = QCheckBox("each other class")
+        self.neg_each_cb.setChecked(bool(yaml_default("negative_per_other_class")))
+        self.neg_each_cb.setToolTip("negative_per_other_class: n negatives from EACH other class "
+                                    "(else from all other classes together).")
+        row = QHBoxLayout()
+        row.addWidget(self.neg_bg_cb)
+        row.addWidget(self.neg_other_cb)
+        row.addWidget(self.neg_each_cb)
+        row.addStretch()
+        fp.addRow("Negatives from", row)
+        self.gen_btn = QPushButton("Generate points")
+        self.gen_btn.setToolTip("Samples points for the checked classes into '{seeds}_prompts' (inside the ROI "
+                                "picked in 1. Input). Replaces their generated points; points added by hand "
+                                "are kept.")
+        fp.addRow(self.gen_btn)
+        l4.addWidget(self.points_box)
+
+        # -- both
+        f4b = QFormLayout()
+        self.init_combo = QComboBox()
+        self.init_combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.init_combo.setMinimumContentsLength(12)
+        self.init_combo.setToolTip("init_seg_path: an initial segmentation (any Labels layer, e.g. a Grow "
+                                   "result). For each class, its voxels in this layer are the starting mask.")
+        f4b.addRow("Initial mask:", self.init_combo)
+        l4.addLayout(f4b)
+
+        # -- manual points
+        gm = QGroupBox("Manual points")
+        lm = QVBoxLayout(gm)
         self.pos_rb = QRadioButton("positive")
         self.neg_rb = QRadioButton("negative")
         self.pos_rb.setChecked(True)
-        grp = QButtonGroup(self)
-        grp.addButton(self.pos_rb)
-        grp.addButton(self.neg_rb)
+        grp2 = QButtonGroup(self)
+        grp2.addButton(self.pos_rb)
+        grp2.addButton(self.neg_rb)
         self.edit_btn = QPushButton("Add points")
         self.edit_btn.setToolTip("Selects '{seeds}_prompts' in add mode: click in the image to add points to "
                                  "the class highlighted in the table.")
         row = QHBoxLayout()
+        row.addWidget(QLabel("New points"))
         row.addWidget(self.pos_rb)
         row.addWidget(self.neg_rb)
         row.addWidget(self.edit_btn)
         row.addStretch()
-        f4.addRow("New points:", row)
+        lm.addLayout(row)
+        self.manual_hint = QLabel(MANUAL_HINT)
+        self.manual_hint.setWordWrap(True)
+        self.manual_hint.setStyleSheet(GREY)
+        lm.addWidget(self.manual_hint)
+        l4.addWidget(gm)
         self.prompt_status = StatusLine()
-        f4.addRow(self.prompt_status)
+        l4.addWidget(self.prompt_status)
         layout.addWidget(g4)
 
         # 5. Run
@@ -402,9 +507,22 @@ class PromptTab(QWidget):
         f5.addRow(self.run_status)
         self.output_edit = QLineEdit("")
         self.output_edit.setToolTip("Labels layer the results go to (full image size; classes not run are 0). "
-                                    "Overlaps: a voxel claimed by two classes goes to the class whose seed "
-                                    "it is, else to the smaller id.")
+                                    "Overlaps: a voxel claimed by two classes goes to the smaller id, as in "
+                                    "the scripts.")
         f5.addRow("Output:", self.output_edit)
+        self.per_class_cb = QCheckBox("Also add each class as a separate layer")
+        self.per_class_cb.setChecked(bool(yaml_default("return_per_class_masks")))
+        self.per_class_cb.setToolTip("return_per_class_masks: one Labels layer per class "
+                                     "('{output}_class_<id>'), before overlaps are resolved.")
+        f5.addRow(self.per_class_cb)
+        self.save_cb = QCheckBox("Save results to folder")
+        self.save_cb.setToolTip("After a run, write <image>_segmentation.tif (+ <image>_class_<id>.tif), "
+                                "used_config.yaml and, for points, <image>_point_prompts.csv - "
+                                "the files of the pipeline.")
+        f5.addRow(self.save_cb)
+        folder_row, self.folder_edit = create_output_folder_row(label="Folder")
+        self.folder_browse_btn = folder_row.browse_btn
+        f5.addRow(folder_row)
         layout.addWidget(g5)
         layout.addStretch()
 
@@ -419,7 +537,7 @@ class PromptTab(QWidget):
         outer.addWidget(scroll)
 
         self._apply_model()
-        self._on_type_changed()
+        self._on_mode_changed()
         self._on_nneg_changed()
         self._update_buttons()
 
@@ -443,13 +561,13 @@ class PromptTab(QWidget):
         self.load_btn.clicked.connect(self.load_model)
         self.release_btn.clicked.connect(self.release_model)
 
-        self.type_combo.currentIndexChanged.connect(lambda *_: self._on_type_changed())
-        self.scrib_btn.clicked.connect(lambda: self.create_scribble_layer(negative=False))
-        self.scrib_neg_btn.clicked.connect(lambda: self.create_scribble_layer(negative=True))
+        self.scribble_rb.toggled.connect(lambda *_: self._on_mode_changed())
         self.nneg_spin.valueChanged.connect(lambda *_: self._on_nneg_changed())
         self.gen_btn.clicked.connect(self.generate)
         self.pos_rb.toggled.connect(lambda *_: self._apply_feature_defaults())
         self.edit_btn.clicked.connect(self.start_adding_points)
+        self.import_btn.clicked.connect(lambda: self.import_yaml())
+        self.export_btn.clicked.connect(lambda: self.export_yaml())
 
         self.run_btn.clicked.connect(self.run_checked)
         self.stop_btn.clicked.connect(self.stop)
@@ -515,15 +633,17 @@ class PromptTab(QWidget):
     def seeds_layer(self):
         return self._seeds_layer if self._seeds_layer in self.viewer.layers else None
 
+    @property
+    def init_layer(self):
+        name = self.init_combo.currentData()
+        return self._layer(name, Labels) if name else None
+
     def _seeds_name(self):
         lay = self.seeds_layer
         return lay.name if lay is not None else ""
 
     def points_name(self):
         return f"{self._seeds_name()}_prompts"
-
-    def scribble_name(self, negative=False):
-        return f"{self._seeds_name()}_scribbles" + ("_neg" if negative else "")
 
     def points_layer(self):
         return self._layer(self.points_name(), Points) if self.seeds_layer is not None else None
@@ -542,13 +662,28 @@ class PromptTab(QWidget):
         shape = self._shape()
         return None if shape is None else self.roi_select.roi_for_display(shape)
 
+    def prompt_mode(self):
+        """'scribble' | 'point' (the YAML prompt_type)."""
+        return "scribble" if self.scribble_rb.isChecked() else "point"
+
+    def set_prompt_mode(self, mode):
+        (self.scribble_rb if mode == "scribble" else self.points_rb).setChecked(True)
+
     def input_type(self):
-        """(key, prompt_type, scribble source)."""
-        key = self.type_combo.currentData()
-        for k, ptype, src, _, _ in INPUT_TYPES:
-            if k == key:
-                return k, ptype, src
-        return INPUT_TYPES[0][:3]
+        """(key, core prompt type, scribble source) of the current prompt type."""
+        if self.prompt_mode() == "scribble":
+            return "seed_scribble", "scribble", "seed"
+        return "points", "points", None
+
+    def type_enabled(self, key):
+        """Whether an input type can be chosen ('seed_scribble' / 'points' / 'init_mask')."""
+        if key in ("seed_scribble", "scribble"):
+            return self.scribble_rb.isEnabled()
+        if key in ("points", "point"):
+            return self.points_rb.isEnabled()
+        if key == "init_mask":
+            return self.init_combo.isEnabled()
+        return False
 
     def _update_buttons(self):
         busy = any(self._busy.values())
@@ -568,26 +703,26 @@ class PromptTab(QWidget):
 
     # --------------------------------------------------------------- model
     def _apply_model(self):
-        """Supports line + input types for the selected model (from its class: nothing is loaded)."""
+        """Supports line + prompt types for the selected model (from its class: nothing is loaded)."""
         cls = self.model_class()
         caps = frozenset(getattr(cls, "capabilities", self.engine.capabilities))
         self.supports_label.setText(f"Supports: {capabilities_text(caps)}")
         self.model_status.set("not loaded" if self.available else f"{self.engine.name} is not installed", "info")
-        model = self.type_combo.model()
-        for i in range(self.type_combo.count()):
-            key = self.type_combo.itemData(i)
-            k, ptype, src, label, tip = [t for t in INPUT_TYPES if t[0] == key][0]
+        name = self.models[self._model_index][0]
+        for rb, mode in ((self.scribble_rb, "scribble"), (self.points_rb, "point")):
+            ptype, label, tip = PROMPT_MODES[mode]
             req = PS.required_capabilities(ptype)
             ok = req <= caps
-            model.item(i).setEnabled(ok)
-            if ok:
-                self.type_combo.setItemData(i, tip, TOOLTIP_ROLE)
-            else:
-                missing = ", ".join(CAPABILITY_TEXT.get(c, c) for c in sorted(req - caps))
-                self.type_combo.setItemData(i, f"{self.models[self._model_index][0]} does not support "
-                                               f"{missing}", TOOLTIP_ROLE)
-        if not model.item(self.type_combo.currentIndex()).isEnabled():
-            self.type_combo.setCurrentIndex(0)
+            rb.setEnabled(ok)
+            rb.setToolTip(tip if ok else f"{name} does not support "
+                                         f"{', '.join(CAPABILITY_TEXT.get(c, c) for c in sorted(req - caps))}")
+        if not self.scribble_rb.isEnabled() and self.scribble_rb.isChecked():
+            self.points_rb.setChecked(True)                 # points: the fallback
+        init_ok = "init_mask" in caps
+        self.init_combo.setEnabled(init_ok)
+        if not init_ok:
+            self.init_combo.setCurrentIndex(0)
+            self.init_combo.setToolTip(f"{name} does not support an initial mask")
 
     def _on_model_changed(self, i):
         if i == self._model_index or i < 0:
@@ -609,13 +744,10 @@ class PromptTab(QWidget):
         self._apply_model()
         self._update_buttons()
 
-    def type_enabled(self, key):
-        i = self.type_combo.findData(key)
-        return i >= 0 and self.type_combo.model().item(i).isEnabled()
-
-    def _on_type_changed(self):
-        key, ptype, src = self.input_type()
-        self.scrib_row.setVisible(src == "drawn")
+    def _on_mode_changed(self):
+        scribble = self.prompt_mode() == "scribble"
+        self.scribble_box.setVisible(scribble)
+        self.points_box.setVisible(not scribble)
 
     def _on_nneg_changed(self):
         self.neg_slow_label.setVisible(self.nneg_spin.value() > 0)
@@ -623,6 +755,7 @@ class PromptTab(QWidget):
     # ================================================================ input
     def refresh_layers(self):
         img_cur, seeds_cur = self.image_combo.currentText(), self.seeds_combo.currentText()
+        init_cur = self.init_combo.currentData()
         images = [l.name for l in self.viewer.layers if isinstance(l, Image)]
         derived = ("_nni", "_scribbles", "_scribbles_neg", "_prompts")
         labels = [l.name for l in self.viewer.layers if isinstance(l, Labels)]
@@ -638,6 +771,14 @@ class PromptTab(QWidget):
             elif pref:
                 combo.setCurrentText(pref[0])
             combo.blockSignals(False)
+        self.init_combo.blockSignals(True)
+        self.init_combo.clear()
+        self.init_combo.addItem("None", None)
+        for n in labels:
+            self.init_combo.addItem(n, n)
+        i = self.init_combo.findData(init_cur) if init_cur else 0
+        self.init_combo.setCurrentIndex(max(i, 0))
+        self.init_combo.blockSignals(False)
         self._on_inputs_changed()
 
     def _on_inputs_changed(self):
@@ -656,7 +797,6 @@ class PromptTab(QWidget):
                                        f"differ in shape")
             self._seeds_layer = None
         self._connect_points_layer()
-        self._on_type_changed()
         self._update_output_name()
         self.roi_select.refresh()        # shows an ROI / image shape mismatch
         self.compute_stats()
@@ -775,10 +915,6 @@ class PromptTab(QWidget):
     def _set_current(self, c):
         self._current = c
         self._apply_feature_defaults()
-        for neg in (False, True):
-            lay = self._layer(self.scribble_name(neg), Labels)
-            if lay is not None:
-                lay.selected_label = c
         self._update_buttons()
 
     def _on_item_changed(self, item):
@@ -888,6 +1024,13 @@ class PromptTab(QWidget):
         self._apply_feature_defaults()
         lay.mode = "add"
 
+    def point_options(self):
+        """The point sampling options with the YAML's names."""
+        return dict(default_n_pos=self.npos_spin.value(), default_n_neg=self.nneg_spin.value(),
+                    default_method=self.method_combo.currentText(), negative_from_bg=self.neg_bg_cb.isChecked(),
+                    negative_from_other_classes=self.neg_other_cb.isChecked(),
+                    negative_per_other_class=self.neg_each_cb.isChecked())
+
     def generate(self):
         """Sample points for the checked classes (background); replaces their generated points."""
         img, seeds = self.image_layer, self.seeds_layer
@@ -903,10 +1046,8 @@ class PromptTab(QWidget):
         except RoiError as e:
             self.prompt_status.set(str(e), "error")
             return
-        opts = dict(default_n_pos=self.npos_spin.value(), default_n_neg=self.nneg_spin.value(),
-                    default_method=self.method_combo.currentText(), negative_from_bg=True,
-                    negative_from_other_classes=True, negative_per_other_class=False,
-                    exclude_zero_intensity=True, image_name=img.name)
+        opts = dict(self.point_options(), class_config=self.class_config, exclude_zero_intensity=True,
+                    image_name=img.name)
         sdata, idata = np.asarray(seeds.data), np.asarray(img.data)
         self._job["gen"] += 1
         job = self._job["gen"]
@@ -919,7 +1060,7 @@ class PromptTab(QWidget):
         t0 = time.perf_counter()
 
         def work():
-            kw = dict(classes=classes, rng=np.random.RandomState(BASE_SEED), log=logs.append, cancel=cancel,
+            kw = dict(classes=classes, rng=np.random.RandomState(self.base_seed), log=logs.append, cancel=cancel,
                       **opts)
             if roi is None:
                 return PP.seeds_to_point_prompts(sdata, idata, **kw)
@@ -992,24 +1133,137 @@ class PromptTab(QWidget):
         self.set_prompts(df.reset_index(drop=True))
         return len(df)
 
-    # ------------------------------------------------------------ scribbles
-    def create_scribble_layer(self, negative=False):
-        img, seeds = self.image_layer, self.seeds_layer
-        if img is None or seeds is None:
-            self.prompt_status.set("Select an image and seeds first", "error")
-            return None
-        name = self.scribble_name(negative)
-        lay = self._layer(name, Labels)
-        if lay is None:
-            ids = self.class_ids()
-            dtype = PS._label_dtype(max(ids) if ids else 1)
-            lay = self.viewer.add_labels(np.zeros(np.shape(img.data), dtype), name=name, **self._layer_kwargs())
-            lay.metadata[META_KEY] = {"role": "negative scribbles" if negative else "scribbles"}
-        if self._current is not None:
-            lay.selected_label = self._current
-        self.viewer.layers.selection.active = lay
-        lay.mode = "paint"
-        return lay
+    # ================================================================ YAML
+    def yaml_config(self):
+        """(config dict for `sprout.py --prompt --nninteractive`, list of placeholder keys)."""
+        missing = []
+
+        def path_of(layer, key, what):
+            p = _source_path(layer)
+            if p:
+                return p
+            missing.append(key)
+            return f"<path to {what}>"
+
+        model = self.model_edit.text().strip()
+        if not model:
+            missing.append("model_path")
+        dev = self.device_combo.currentData()
+        cfg = {
+            "model_path": model or "<path to the nnInteractive weights folder>",
+            "device": "cpu" if dev == "cpu" else "cuda:0",
+            "img_path": path_of(self.image_layer, "img_path",
+                                f"{self.image_layer.name}.tif" if self.image_layer is not None else "the image"),
+            "seg_path": path_of(self.seeds_layer, "seg_path",
+                                f"{self.seeds_layer.name}.tif" if self.seeds_layer is not None else "the seeds"),
+            "output_folder": self.folder_edit.text().strip() or "<output folder>",
+        }
+        if self.init_layer is not None:
+            cfg["init_seg_path"] = path_of(self.init_layer, "init_seg_path", f"{self.init_layer.name}.tif")
+        cfg["prompt_type"] = self.prompt_mode()
+        cfg.update(self.point_options())
+        if self.class_config:
+            cfg["class_config"] = self.class_config
+        cfg["use_negative_scribble"] = self.neg_scribble_cb.isChecked()
+        cfg["return_per_class_masks"] = self.per_class_cb.isChecked()
+        cfg["seed"] = int(self.base_seed)
+        return cfg, missing
+
+    def export_yaml(self, file_path=None):
+        import yaml
+        if not file_path:
+            file_path, _ = QFileDialog.getSaveFileName(self, "Export nnInteractive YAML", "nninteractive.yaml",
+                                                       "YAML Files (*.yaml *.yml);;All Files (*)")
+            if not file_path:
+                return None
+        cfg, missing = self.yaml_config()
+        with open(file_path, "w") as f:
+            yaml.safe_dump(cfg, f, sort_keys=False, default_flow_style=False)
+        notes = []
+        if missing:
+            notes.append(f"fill in {', '.join(missing)} (no file behind the layer)")
+        if self.roi_select.layer is not None:
+            notes.append("the ROI is not part of the YAML (the script runs on the whole image)")
+        if len(self.checked_classes()) != len(self.class_ids()):
+            notes.append("the script runs all classes, not only the checked ones")
+        if self.prompt_mode() == "scribble" and len(self.prompts_df()):
+            notes.append("manual points are not part of a scribble YAML")
+        if notes:
+            self.yaml_status.set(f"Exported {Path(file_path).name}; " + "; ".join(notes), "warn")
+        else:
+            self.yaml_status.set(f"Exported {Path(file_path).name}", "ok")
+        return cfg
+
+    def import_yaml(self, file_path=None):
+        import yaml
+        if not file_path:
+            file_path, _ = QFileDialog.getOpenFileName(self, "Import nnInteractive YAML", "",
+                                                       "YAML Files (*.yaml *.yml);;All Files (*)")
+            if not file_path:
+                return None
+        with open(file_path) as f:
+            cfg = yaml.safe_load(f) or {}
+        notes = []
+        unknown = [k for k in cfg if k not in YAML_RULES]
+        if unknown:
+            notes.append(f"ignored: {', '.join(unknown)}")
+        if cfg.get("model_path"):
+            self.model_edit.setText(str(cfg["model_path"]))
+        dev = str(cfg.get("device", yaml_default("device")) or "")
+        self.device_combo.setCurrentIndex(self.device_combo.findData("cpu" if dev.startswith("cpu") else "cuda"))
+        pt = cfg.get("prompt_type")
+        if pt in ("scribble", "point"):
+            if pt == "scribble" and not self.scribble_rb.isEnabled():
+                notes.append(f"{self.engine.name} cannot use scribbles: points are used")
+            else:
+                self.set_prompt_mode(pt)
+        elif pt is not None:
+            notes.append(f"unknown prompt_type '{pt}'")
+        self.npos_spin.setValue(int(cfg.get("default_n_pos", yaml_default("default_n_pos"))))
+        self.nneg_spin.setValue(int(cfg.get("default_n_neg", yaml_default("default_n_neg"))))
+        meth = cfg.get("default_method", yaml_default("default_method"))
+        if self.method_combo.findText(str(meth)) >= 0:
+            self.method_combo.setCurrentText(str(meth))
+        for cb, key in ((self.neg_bg_cb, "negative_from_bg"), (self.neg_other_cb, "negative_from_other_classes"),
+                        (self.neg_each_cb, "negative_per_other_class"),
+                        (self.neg_scribble_cb, "use_negative_scribble"),
+                        (self.per_class_cb, "return_per_class_masks")):
+            cb.setChecked(bool(cfg.get(key, yaml_default(key))))
+        self.base_seed = int(cfg.get("seed", yaml_default("seed")) or 0)
+        cc = cfg.get("class_config")
+        self.class_config = {int(k): dict(v) for k, v in cc.items()} if isinstance(cc, dict) and cc else None
+        if self.class_config:
+            notes.append(f"class_config for {len(self.class_config)} classes is used by Generate points")
+        if cfg.get("do_autozoom") is False:
+            notes.append("do_autozoom: false is not supported here (autozoom stays on)")
+        if cfg.get("output_folder"):
+            self.folder_edit.setText(str(cfg["output_folder"]))
+            self.save_cb.setChecked(True)
+        # layers whose file is the YAML's path
+        for key, combo, kind in (("img_path", self.image_combo, Image), ("seg_path", self.seeds_combo, Labels)):
+            p = cfg.get(key)
+            if not p:
+                continue
+            lay = next((l for l in self.viewer.layers if isinstance(l, kind) and _same_path(_source_path(l), p)), None)
+            if lay is not None:
+                combo.setCurrentText(lay.name)
+            else:
+                notes.append(f"{key} {Path(str(p)).name} is not open: open it and pick it in 1. Input")
+        p = cfg.get("init_seg_path")
+        if p:
+            lay = next((l for l in self.viewer.layers if isinstance(l, Labels) and _same_path(_source_path(l), p)), None)
+            if lay is not None and self.init_combo.isEnabled():
+                self.init_combo.setCurrentIndex(self.init_combo.findData(lay.name))
+            else:
+                notes.append(f"init_seg_path {Path(str(p)).name} is not open: open it and pick it as Initial mask")
+        else:
+            self.init_combo.setCurrentIndex(0)
+        self._on_inputs_changed()
+        if notes:
+            self.yaml_status.set(f"Imported {Path(file_path).name}; " + "; ".join(notes), "warn")
+        else:
+            self.yaml_status.set(f"Imported {Path(file_path).name}", "ok")
+        return cfg
 
     # ================================================================ model
     def _browse_model(self):
@@ -1075,6 +1329,13 @@ class PromptTab(QWidget):
         name = f"{self._seeds_name()}_nni"
         return R.roi_name(name, roi.name or "roi") if roi is not None else name
 
+    def class_layer_name(self, out_name, class_id, roi=None):
+        """'{seeds}_nni_class_3' ('..._class_3_ROI_1' with an ROI) for an automatic output name."""
+        base = out_name
+        if roi is not None and roi.name and base.endswith(f"_{roi.name}"):
+            return R.roi_name(f"{base[: -len(roi.name) - 1]}_class_{class_id}", roi.name)
+        return f"{base}_class_{class_id}"
+
     def _update_output_name(self):
         if self._out_auto:
             self.output_edit.setText(self.output_name(self._display_roi()) if self.seeds_layer is not None else "")
@@ -1137,17 +1398,22 @@ class PromptTab(QWidget):
             return None
         key, ptype, src = self.input_type()
         if not self.engine.supports_prompt_type(ptype):
-            self._set_run_status(f"{self.engine.name} does not support this input type", "error")
+            self._set_run_status(f"{self.engine.name} does not support this prompt type", "error")
             return None
-        scribbles, neg = None, False
-        if src == "drawn":
-            lay = self._layer(self.scribble_name(False), Labels)
-            if lay is None:
-                self._set_run_status(f"Create and paint '{self.scribble_name(False)}' first", "error")
+        init_lay = self.init_layer
+        init_data = None
+        if init_lay is not None:
+            if tuple(np.shape(init_lay.data)) != shape:
+                self._set_run_status(f"Initial mask '{init_lay.name}' is {np.shape(init_lay.data)}; image is "
+                                     f"{shape}", "error")
                 return None
-            scribbles = np.asarray(lay.data)
-            nl = self._layer(self.scribble_name(True), Labels)
-            neg = np.asarray(nl.data) if nl is not None else False
+            init_data = np.array(init_lay.data, copy=True)
+        save_dir = None
+        if self.save_cb.isChecked():
+            save_dir = self.folder_edit.text().strip()
+            if not save_dir:
+                self._set_run_status("Choose the output folder first (or untick 'Save results to folder')", "error")
+                return None
         df = self.prompts_df()
         seeds_snap = np.array(seeds.data, copy=True)
         img_data = np.asarray(img.data)
@@ -1157,10 +1423,15 @@ class PromptTab(QWidget):
         out_name = self.current_output_name()
         store = self._stores.setdefault(self._store_key(out_name), PS.ResultStore())
         image_key = (id(img), img.name, id(img.data))
+        stem = Path(_source_path(img)).stem if _source_path(img) else img.name
+        if roi is not None:
+            stem = R.roi_name(stem, roi.name or "roi")
         ctx = dict(out=out_name, store=store, seeds=seeds_snap, shape=shape, roi=roi, ptype=ptype, input=key,
                    layer_kwargs=self._layer_kwargs(), image=img.name, seeds_name=seeds.name,
-                   margin=ROI_MARGIN, base_seed=BASE_SEED, mode=mode, classes=list(classes),
-                   t0=time.perf_counter(), done=0)
+                   margin=ROI_MARGIN, base_seed=self.base_seed, mode=mode, classes=list(classes),
+                   t0=time.perf_counter(), done=0, per_class=self.per_class_cb.isChecked(),
+                   save_dir=save_dir, stem=stem, df=df, config=self.yaml_config()[0],
+                   init=None if init_lay is None else init_lay.name)
         self._ctx = ctx
 
         self._job["run"] += 1
@@ -1179,13 +1450,14 @@ class PromptTab(QWidget):
         self.progress.setFormat("%v / %m classes")
         self._set_run_status(f"Running {len(classes)} classes...")
         self._rebuild_table()
+        neg = self.neg_scribble_cb.isChecked() if src == "seed" else False
 
         def gen():
             yield from PS.run_classes(
                 engine, img_data, seeds_snap, df, classes, crop=crop, image_key=image_key, roi=roi,
                 mode="update" if mode == "update" else "scratch", store=store, prompt_type=ptype,
-                scribbles=scribbles, neg_scribble=neg, base_seed=BASE_SEED, cancel=cancel,
-                on_point=lambda i, n: prog.changed.emit(i, n))
+                scribbles=None, neg_scribble=neg, base_seed=self.base_seed, cancel=cancel,
+                on_point=lambda i, n: prog.changed.emit(i, n), init_masks=init_data)
 
         w = thread_worker(gen, ignore_errors=True)()
         w.yielded.connect(self._guard(lambda r: job == self._job["run"] and self._on_result(r, ctx)))
@@ -1222,6 +1494,8 @@ class PromptTab(QWidget):
             extra = f", {r.n_dropped} points outside" if r.n_dropped else ""
             self._class_status[c] = f"done ({r.seconds:.1f} s{extra})"
             self._write_output(ctx, region)
+            if ctx["per_class"]:
+                self._write_class_layer(ctx, r)
         nxt = self._next_running(ctx)
         if nxt is not None:
             self._class_status[nxt] = "running"
@@ -1232,7 +1506,8 @@ class PromptTab(QWidget):
         for c in ctx["classes"][ctx["done"]:]:
             self._class_status[c] = "stopped" if isinstance(e, Cancelled) else "failed"
         if isinstance(e, Cancelled):
-            self._set_run_status(f"Stopped after {ctx['done']} of {len(ctx['classes'])} classes")
+            self._set_run_status(f"Stopped after {ctx['done']} of {len(ctx['classes'])} classes"
+                                 + ("; nothing saved" if ctx["save_dir"] else ""))
         elif is_oom(e):
             self._set_run_status(str(e), "error")
             show_error(f"Prompt (AI): {e}")
@@ -1244,9 +1519,18 @@ class PromptTab(QWidget):
     def _on_run_finished(self, ctx):
         self._busy["run"] = False
         if "error" not in ctx:
-            self._set_run_status(f"Done: {ctx['done']} classes in {time.perf_counter() - ctx['t0']:.1f} s"
-                                 + (f"; {ctx['store'].overlap_voxels():,} voxels claimed by more than one "
-                                    f"class" if len(ctx["store"]) > 1 else ""), "ok")
+            msg = (f"Done: {ctx['done']} classes in {time.perf_counter() - ctx['t0']:.1f} s"
+                   + (f"; {ctx['store'].overlap_voxels():,} voxels claimed by more than one class (smaller id "
+                      f"wins)" if len(ctx["store"]) > 1 else ""))
+            level = "ok"
+            if ctx["save_dir"]:
+                try:
+                    files = self.save_results(ctx)
+                    msg += f"; saved {len(files)} files to {ctx['save_dir']}"
+                except Exception as e:
+                    msg += f"; saving failed: {type(e).__name__}: {e}"
+                    level = "error"
+            self._set_run_status(msg, level)
         self._rebuild_table()
         self._update_buttons()
 
@@ -1290,8 +1574,8 @@ class PromptTab(QWidget):
         meta[META_KEY] = {
             "engine": {k: info.get(k) for k in ("version", "device", "license")} | {"name": self.engine.name},
             "image": ctx["image"], "seeds": ctx["seeds_name"], "input_type": ctx["input"],
-            "prompt_type": ctx["ptype"], "overlap_rule": rule, "roi_margin": ctx["margin"],
-            "base_seed": ctx["base_seed"],
+            "prompt_type": ctx["ptype"], "initial_mask": ctx["init"], "overlap_rule": rule,
+            "roi_margin": ctx["margin"], "base_seed": ctx["base_seed"], "config": ctx["config"],
             "classes": {int(c): {"mode": r.mode, "voxels": r.n_voxels, "points": r.n_points,
                                  "points_dropped": r.n_dropped, "seconds": r.seconds,
                                  "prompt_type": r.prompt_type}
@@ -1301,3 +1585,54 @@ class PromptTab(QWidget):
             meta[R.META_KEY] = ctx["roi"].to_metadata()
         lay.metadata = meta
         self.output_updated.emit(ctx["out"])
+
+    def _write_class_layer(self, ctx, r):
+        """One Labels layer per class (its own mask, before overlaps; value = class id)."""
+        name = self.class_layer_name(ctx["out"], r.class_id, ctx["roi"])
+        dtype = PS._label_dtype(r.class_id)
+        data = np.zeros(ctx["shape"], dtype)
+        data[r.slices][r.mask] = r.class_id
+        lay = self._layer(name, Labels)
+        if lay is not None and tuple(lay.data.shape) == ctx["shape"] and lay.data.dtype == dtype:
+            lay.data = data
+        else:
+            if lay is not None:
+                self.viewer.layers.remove(name)
+            lay = self.viewer.add_labels(data, name=name, **ctx["layer_kwargs"])
+        lay.metadata = {**lay.metadata, META_KEY: {"role": "class", "class_id": int(r.class_id),
+                                                    "output": ctx["out"]}}
+        if ctx["roi"] is not None:
+            lay.metadata = {**lay.metadata, R.META_KEY: ctx["roi"].to_metadata()}
+
+    def save_results(self, ctx=None):
+        """Write the pipeline's files for the current output (as nninter_main): returns the paths."""
+        import tifffile
+        import yaml
+        ctx = ctx or self._ctx
+        folder = Path(ctx["save_dir"])
+        folder.mkdir(parents=True, exist_ok=True)
+        store, stem = ctx["store"], ctx["stem"]
+        ids = store.classes()
+        total = store.compose(ctx["shape"], dtype=PS._label_dtype(max(ids) if ids else 0), rule=OVERLAP_RULE,
+                              seeds=ctx["seeds"])
+        files = []
+        p = folder / f"{stem}_segmentation.tif"
+        tifffile.imwrite(p, total, compression="zlib")
+        files.append(p)
+        if ctx["per_class"]:
+            full = tuple(slice(0, n) for n in ctx["shape"])
+            for c in ids:
+                p = folder / f"{stem}_class_{c}.tif"
+                tifffile.imwrite(p, store.get(c).full_mask_in(full).astype(np.uint8) * 255, compression="zlib")
+                files.append(p)
+        cfg = dict(ctx["config"])
+        cfg["output_folder"] = str(folder)
+        p = folder / "used_config.yaml"
+        with open(p, "w") as f:
+            yaml.safe_dump(cfg, f, sort_keys=False, default_flow_style=False)
+        files.append(p)
+        if ctx["ptype"] == "points":
+            p = folder / f"{stem}_point_prompts.csv"
+            ctx["df"].to_csv(p, index=False)
+            files.append(p)
+        return files

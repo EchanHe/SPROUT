@@ -444,7 +444,7 @@ def _array_key(*arrays):
 # --------------------------------------------------------------------------
 def run_classes(engine, img, seeds, df, classes, *, crop, image_key, roi=None, mode="scratch", store=None,
                 prompt_type="points", scribbles=None, neg_scribble=False, base_seed=0, cancel=None,
-                on_point=None):
+                on_point=None, init_masks=None):
     """Predict classes one by one; yields ClassResult or ('skipped', class_id, reason).
 
     engine     a PromptEngine (loaded)
@@ -462,6 +462,9 @@ def run_classes(engine, img, seeds, df, classes, *, crop, image_key, roi=None, m
                classes of the scribble source as negative scribble; an array = a drawn
                "not this class" label array.
     base_seed  np.random.seed(base_seed + class_id) before each class (None: no seeding)
+    init_masks optional full-size label array: per class, (init_masks == class_id) is the
+               initial segmentation (nninter_predict's init_mask / YAML init_seg_path), added
+               before the scribbles / points. Needs the 'init_mask' capability.
 
     The store is NOT modified here (the caller stores what it receives), so a Stop
     (boundary.Cancelled from the engine) leaves it as it was for the running class.
@@ -502,8 +505,15 @@ def run_classes(engine, img, seeds, df, classes, *, crop, image_key, roi=None, m
             if neg_scribble.shape != shape:
                 raise ValueError(f"negative scribbles shape {neg_scribble.shape} does not match the image {shape}")
             neg_c = np.array(neg_scribble[crop], copy=True)
-    use_init = prompt_type == "points+init"
-    if use_init and seeds_c is None:
+    use_init = prompt_type == "points+init" or init_masks is not None
+    init_c = None
+    if init_masks is not None:
+        if "init_mask" not in engine.capabilities:
+            raise ValueError(f"{engine.name} does not support an initial mask")
+        if np.shape(init_masks) != shape:
+            raise ValueError(f"initial mask shape {np.shape(init_masks)} does not match the image {shape}")
+        init_c = np.array(init_masks[crop], copy=True)
+    elif use_init and seeds_c is None:
         raise ValueError("'points+init' needs seeds")
 
     engine_key = (image_key, tuple((s.start, s.stop) for s in crop))
@@ -526,7 +536,7 @@ def run_classes(engine, img, seeds, df, classes, *, crop, image_key, roi=None, m
 
         init = pos_s = neg_s = None
         if use_init:
-            init = masked(seeds_c == c)
+            init = masked((init_c if init_c is not None else seeds_c) == c)
         if use_scribble:
             pos_s = masked(scr_c == c)
             if isinstance(neg_scribble, np.ndarray):
