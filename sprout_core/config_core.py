@@ -1404,6 +1404,15 @@ input_val_nninteractive_run = {
         "description": "Return separate masks for each class"
     },
 
+    # Reproducibility
+    "seed": {
+        "type": int,
+        "required": False,
+        "default": 0,
+        "description": "Random seed: the point sampling uses it, and np.random.seed(seed + class_id) is set "
+                       "before each class, so results are reproducible and do not depend on which classes run"
+    },
+
 
 }
 
