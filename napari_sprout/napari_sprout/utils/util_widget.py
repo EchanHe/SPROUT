@@ -63,10 +63,10 @@ def create_output_folder_row(default_folder=None, label="Output Folder:"):
     folder_edit.setMinimumWidth(80)
     browse_btn = QPushButton("Browse")
 
-    # set default folder if provided, otherwise use current working directory
+    # set default folder if provided, otherwise use current working directory. It is only shown
+    # here: the writers create it (os.makedirs(..., exist_ok=True)) when a run writes files.
     if default_folder is None:
         default_folder = os.path.join(os.getcwd(), "sprout_temp")
-    os.makedirs(default_folder, exist_ok=True)
     folder_edit.setText(default_folder)
 
     def browse():
