@@ -1,5 +1,5 @@
 """
-Plain-script check for sprout_core/seed_roi.py and the seed-ROI config keys (no GPU, no pytest).
+Plain-script check for sprout_core/seed_roi.py, the seed-ROI config keys and the postmask / crop paths of nninter_predict (fake session; no GPU, no pytest).
 
     python check_seed_roi.py
 
@@ -300,8 +300,7 @@ def check_roi_log():
 
 
 # ---------------------------------------------------------------- config
-ROI_KEYS = ["roi_from_seed", "roi_mode", "roi_margin", "roi_margin_unit", "roi_min_size",
-            "do_autozoom", "save_prob_maps"]
+ROI_KEYS = ["seed_roi", "seed_roi_margin", "seed_roi_margin_unit", "do_autozoom", "save_prob_maps"]
 RULES = {k: config_core.input_val_nninteractive_run[k] for k in ROI_KEYS}
 
 
@@ -321,40 +320,38 @@ def invalid(cfg, word):
 
 def check_config():
     defaults = validate({})
-    assert defaults == {"roi_from_seed": False, "roi_mode": "class", "roi_margin": 32,
-                        "roi_margin_unit": "voxel", "roi_min_size": 0, "do_autozoom": True,
-                        "save_prob_maps": False}, defaults
+    assert defaults == {"seed_roi": "off", "seed_roi_margin": 32, "seed_roi_margin_unit": "voxel",
+                        "do_autozoom": True, "save_prob_maps": False}, defaults
 
     ok = [
-        {"roi_from_seed": True, "roi_mode": "union", "roi_margin": 16, "roi_margin_unit": "percent",
-         "roi_min_size": 192, "do_autozoom": False, "save_prob_maps": True},
-        {"roi_margin": 12.5},
-        {"roi_margin": [8, 16, 16.5]},
-        {"roi_margin": 0, "roi_min_size": [192, 192, 96]},
-        {"roi_min_size": 0.0},
+        {"seed_roi": "postmask", "seed_roi_margin": 16, "seed_roi_margin_unit": "percent",
+         "do_autozoom": False, "save_prob_maps": True},
+        {"seed_roi": "crop"},
+        {"seed_roi_margin": 12.5},
+        {"seed_roi_margin": [8, 16, 16.5]},
+        {"seed_roi_margin": 0},
     ]
     for cfg in ok:
         out = validate(cfg)
         for k, v in cfg.items():
             assert out[k] == v, (k, out[k], v)
     # a list written as a string (e.g. a CSV cell) is parsed
-    cfg = {"roi_margin": "[4, 8, 8]"}
+    cfg = {"seed_roi_margin": "[4, 8, 8]"}
     validate(cfg)
 
     bad = [
-        ({"roi_mode": "box"}, "roi_mode"),
-        ({"roi_margin_unit": "mm"}, "roi_margin_unit"),
-        ({"roi_margin": -1}, "roi_margin"),
-        ({"roi_margin": [1, -2, 3]}, "roi_margin"),
-        ({"roi_margin": [1, 2]}, "roi_margin"),
-        ({"roi_margin": [1, 2, 3, 4]}, "roi_margin"),
-        ({"roi_margin": ["a", 2, 3]}, "roi_margin"),
-        ({"roi_margin": "big"}, "roi_margin"),
-        ({"roi_min_size": -192}, "roi_min_size"),
-        ({"roi_min_size": [192, 192]}, "roi_min_size"),
-        ({"roi_from_seed": "yes"}, "roi_from_seed"),
+        ({"seed_roi": "on"}, "seed_roi"),
+        ({"seed_roi": True}, "seed_roi"),
+        ({"seed_roi_margin_unit": "mm"}, "seed_roi_margin_unit"),
+        ({"seed_roi_margin": -1}, "seed_roi_margin"),
+        ({"seed_roi_margin": [1, -2, 3]}, "seed_roi_margin"),
+        ({"seed_roi_margin": [1, 2]}, "seed_roi_margin"),
+        ({"seed_roi_margin": [1, 2, 3, 4]}, "seed_roi_margin"),
+        ({"seed_roi_margin": ["a", 2, 3]}, "seed_roi_margin"),
+        ({"seed_roi_margin": "big"}, "seed_roi_margin"),
         ({"do_autozoom": 1}, "do_autozoom"),
-        ({"roi_margins": 3}, "roi_margins"),       # unknown key
+        ({"roi_from_seed": True}, "roi_from_seed"),     # old key: unknown now
+        ({"seed_roi_margins": 3}, "seed_roi_margins"),  # unknown key
     ]
     for cfg, word in bad:
         assert invalid(cfg, word), f"should be rejected: {cfg}"
@@ -364,8 +361,77 @@ def check_config():
         tpl = yaml.safe_load(f)
     out = validate({k: tpl[k] for k in ROI_KEYS if k in tpl})
     assert all(k in tpl for k in ROI_KEYS), [k for k in ROI_KEYS if k not in tpl]
-    assert out["roi_from_seed"] is False and out["do_autozoom"] is True
-    print("OK config validation (roi_* keys, number-or-list)")
+    assert out["seed_roi"] == "off" and out["do_autozoom"] is True
+    print("OK config validation (seed_roi* keys, number-or-list)")
+
+
+# ---------------------------------------------------------------- nninter_predict, fake session
+class FakeSession:
+    """Stands in for the nnInteractive session: every _predict marks the whole image set in
+    the session as foreground, so the output shows exactly where a class may end up."""
+    def __init__(self):
+        self.shapes = []
+
+    def set_image(self, img):
+        self.shapes.append(tuple(img.shape[1:]))
+
+    def _finish_preprocessing_and_initialize_interactions(self):
+        pass
+
+    def reset_interactions(self):
+        pass
+
+    def set_target_buffer(self, t):
+        self.target_buffer = t
+
+    def add_scribble_interaction(self, scribble_image, include_interaction, run_prediction):
+        assert scribble_image.shape == self.shapes[-1], (scribble_image.shape, self.shapes[-1])
+
+    def add_point_interaction(self, coordinates, include_interaction, run_prediction):
+        assert all(0 <= c < n for c, n in zip(coordinates, self.shapes[-1])), coordinates
+
+    def _predict(self):
+        self.target_buffer[...] = 1
+
+
+def check_predict_postmask_crop():
+    from sprout_core.nninteractive_predict import nninter_predict
+    seed = make_seed()
+    img = np.ones((1,) + SHAPE, np.float32)
+    rois = seed_rois(seed, mode="class", margin=2)
+
+    def run(roi_apply, rois_, **kw):
+        session, masks, stats = FakeSession(), {}, {}
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            total = nninter_predict(session, img, scribble_mask=seed, rois=rois_, roi_apply=roi_apply,
+                                    roi_stats=stats if rois_ else None,
+                                    on_class_predicted=lambda c, m: masks.__setitem__(int(c), m.copy()), **kw)
+        return session, total, masks, stats, out.getvalue()
+
+    # no ROI: every class covers the whole image; classes run high id first, so class 1 wins
+    s, total, masks, _, _ = run("crop", None)
+    assert s.shapes == [SHAPE] and (total == 1).all() and all(m.all() for m in masks.values())
+
+    for mode in ("postmask", "crop"):
+        s, total, masks, stats, log = run(mode, rois)
+        assert s.shapes == ([SHAPE] if mode == "postmask" else [rois[2].crop_shape(), rois[1].crop_shape()]), s.shapes
+        for c in (1, 2):
+            want = np.zeros(SHAPE, bool)
+            want[rois[c].bbox()] = True
+            assert masks[c].shape == SHAPE and np.array_equal(masks[c], want), (mode, c)
+            assert stats[c]["cropped"] == (mode == "crop")
+            assert stats[c]["inner_face_fraction"] > 0
+            if mode == "postmask":
+                assert stats[c]["n_removed_outside_roi"] == int(np.prod(SHAPE) - want.sum()), stats[c]
+        assert np.array_equal(total > 0, masks[1] | masks[2])
+        assert "[WARNING]" in log, "a prediction filling its ROI must warn"
+
+    # a class without an ROI is predicted on the full image and not masked
+    s, total, masks, stats, log = run("postmask", {1: rois[1]})
+    assert masks[2].all() and np.array_equal(masks[1], rois[1].paste(np.ones(rois[1].crop_shape(), bool), region="bbox"))
+    assert "no seed ROI" in log
+    assert raises(lambda: run("mask", rois))
+    print("OK nninter_predict postmask / crop (fake session)")
 
 
 if __name__ == "__main__":
@@ -381,6 +447,7 @@ if __name__ == "__main__":
     check_inner_face()
     check_roi_log()
     check_config()
+    check_predict_postmask_crop()
     if FAILS:
         print(f"\n{len(FAILS)} FAIL(s) in seed_roi.py:")
         for m in FAILS:

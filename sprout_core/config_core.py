@@ -1744,44 +1744,30 @@ input_val_nninteractive_run = {
         "description": "Save per-class foreground probability maps as float32 TIFF files"
     },
 
-    # Seed ROI: crop the nnInteractive input around the seed of each class
-    "roi_from_seed": {
-        "type": bool,
-        "required": False,
-        "default": False,
-        "description": "Crop the nnInteractive input to an ROI around the seed voxels of each class"
-    },
-    "roi_mode": {
+    # Seed ROI: per class, seed bbox + margin
+    "seed_roi": {
         "type": str,
         "required": False,
-        "default": "class",
-        "choices": ["class", "union"],
-        "description": "'class': one ROI per class seed bbox; 'union': one ROI around all seeds"
+        "default": "off",
+        "choices": ["off", "postmask", "crop"],
+        "description": "Per-class ROI from the seed bbox + seed_roi_margin. 'postmask': predict on the full "
+                       "image, then clear each class outside its ROI; 'crop': nnInteractive only sees the ROI"
     },
-    "roi_margin": {
+    "seed_roi_margin": {
         "type": (int, float, list),
         "subtype": (int, float),
         "length": 3,
         "min": 0,
         "required": False,
         "default": 32,
-        "description": "Margin around the seed bbox: one value or [z, y, x] (unit: roi_margin_unit)"
+        "description": "Margin around the seed bbox: one value or [z, y, x] (unit: seed_roi_margin_unit)"
     },
-    "roi_margin_unit": {
+    "seed_roi_margin_unit": {
         "type": str,
         "required": False,
         "default": "voxel",
         "choices": ["voxel", "percent"],
-        "description": "Unit of roi_margin: 'voxel', or 'percent' of the seed bbox size per axis"
-    },
-    "roi_min_size": {
-        "type": (int, float, list),
-        "subtype": (int, float),
-        "length": 3,
-        "min": 0,
-        "required": False,
-        "default": 0,
-        "description": "Grow the ROI to at least this size per axis: one value or [z, y, x] (0 = off)"
+        "description": "Unit of seed_roi_margin: 'voxel', or 'percent' of the seed bbox size per axis"
     },
     # Reproducibility
     "seed": {

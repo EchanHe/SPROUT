@@ -64,11 +64,9 @@ def run_batch_nninteractive(file_path):
                 return_per_class_masks=optional_params['return_per_class_masks'],
                 save_prob_maps=optional_params.get('save_prob_maps', False),
                 do_autozoom=optional_params.get('do_autozoom', True),
-                roi_from_seed=optional_params.get('roi_from_seed', False),
-                roi_mode=optional_params.get('roi_mode', "class"),
-                roi_margin=optional_params.get('roi_margin', 32),
-                roi_margin_unit=optional_params.get('roi_margin_unit', "voxel"),
-                roi_min_size=optional_params.get('roi_min_size', 0),
+                seed_roi=optional_params.get('seed_roi', "off"),
+                seed_roi_margin=optional_params.get('seed_roi_margin', 32),
+                seed_roi_margin_unit=optional_params.get('seed_roi_margin_unit', "voxel"),
                 seed=optional_params['seed']
             )
             if len(nn_output) == 3:

@@ -1,4 +1,3 @@
-import inspect
 import numpy as np
 import pandas as pd
 import torch
@@ -208,12 +207,9 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
                  scribble_config= None,
                  save_prob_maps: bool = False,
                  do_autozoom: bool = True,
-                 roi_from_seed: bool = False,
-                 roi_mode: Literal['class', 'union'] = "class",
-                 roi_margin=32,
-                 roi_margin_unit: Literal['voxel', 'percent'] = "voxel",
-                 roi_min_size=0,
-                 roi_norm: Literal['crop', 'global'] = "crop",
+                 seed_roi: Literal['off', 'postmask', 'crop'] = "off",
+                 seed_roi_margin=32,
+                 seed_roi_margin_unit: Literal['voxel', 'percent'] = "voxel",
                  seed: int = 0):
     """
     Main function for nnInteractive prediction with point prompts.
@@ -231,16 +227,15 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
         scribble_config: Configuration for scribble prompt generation
         save_prob_maps: Whether to save per-class foreground probability maps
         do_autozoom: Let nnInteractive zoom out when the prediction reaches the patch border
-        roi_from_seed: Crop the nnInteractive input to a seed-derived ROI per class
-                       (outputs are pasted back to full size, zero outside the ROI)
-        roi_mode: 'class' (one ROI per class) or 'union' (one ROI around all seeds)
-        roi_margin: Margin around the seed bbox, a number or [z, y, x]
-        roi_margin_unit: 'voxel', or 'percent' of the seed bbox size per axis
-        roi_min_size: Grow the ROI to at least this size per axis (e.g. 192 = patch size)
-        roi_norm: (experimental) intensity normalization of an ROI crop. 'crop' (default):
-                  nnInteractive z-scores each crop with the crop's own mean/std. 'global': the
-                  crop is z-scored with the mean/std nnInteractive computes on the full image.
-                  Only has an effect with roi_from_seed=True.
+        seed_roi: Per-class ROI = the class's seed bbox + seed_roi_margin.
+                  'off' (default): not used.
+                  'postmask': predict on the full image, then clear each class's prediction
+                              outside its ROI (removes leaks into other parts).
+                  'crop': nnInteractive only sees the ROI crop (faster, less memory, but
+                          less accurate with scribble prompts). Outputs are pasted back to
+                          full size, zero outside the ROI.
+        seed_roi_margin: Margin around the seed bbox, a number or [z, y, x]
+        seed_roi_margin_unit: 'voxel', or 'percent' of the seed bbox size per axis
         seed: random seed (default 0): np.random.seed(seed) before the point sampling and
               np.random.seed(seed + class_id) before each class, so a run is reproducible and a
               class's result does not depend on which other classes run
@@ -261,13 +256,10 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
     print(f"    Scribble config: {scribble_config}")
     print(f"    Save probability maps: {save_prob_maps}")
     print(f"    Do autozoom: {do_autozoom}")
-    print(f"    ROI from seed: {roi_from_seed}")
-    if roi_from_seed:
-        print(f"    ROI mode: {roi_mode}, margin: {roi_margin} {roi_margin_unit}, min size: {roi_min_size}")
-    if roi_norm not in ("crop", "global"):
-        raise ValueError(f"roi_norm must be 'crop' or 'global', got {roi_norm!r}")
-    if roi_norm != "crop":
-        print(f"    ROI normalization: {roi_norm}" + ("" if roi_from_seed else " (no effect without roi_from_seed)"))
+    if seed_roi not in ("off", "postmask", "crop"):
+        raise ValueError(f"seed_roi must be 'off', 'postmask' or 'crop', got {seed_roi!r}")
+    print(f"    Seed ROI: {seed_roi}" + (f", margin: {seed_roi_margin} {seed_roi_margin_unit}"
+                                         if seed_roi != "off" else ""))
     print("=" * 60)
 
     log_dict = {
@@ -276,15 +268,11 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
         "output_folder": output_folder,
         "init_seg_path": init_seg_path,
         "do_autozoom": do_autozoom,
-        "roi_from_seed": roi_from_seed,
-        "roi_mode": roi_mode,
-        "roi_margin": list(roi_margin) if isinstance(roi_margin, (list, tuple)) else roi_margin,
-        "roi_margin_unit": roi_margin_unit,
-        "roi_min_size": list(roi_min_size) if isinstance(roi_min_size, (list, tuple)) else roi_min_size,
+        "seed_roi": seed_roi,
+        "seed_roi_margin": list(seed_roi_margin) if isinstance(seed_roi_margin, (list, tuple)) else seed_roi_margin,
+        "seed_roi_margin_unit": seed_roi_margin_unit,
         "seed": seed}
-    if roi_norm != "crop":
-        log_dict["roi_norm"] = roi_norm
-
+  
     if torch.cuda.is_available() and ("cuda" in str(device)):
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats(torch.device("cuda"))
@@ -337,27 +325,17 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
     except Exception as e:
         raise RuntimeError(f"Failed to load image: {e}")
 
-    # Seed ROIs: per class, nnInteractive only sees img[:, roi.bbox()]
-    seed, rois, roi_stats = None, None, None
-    if roi_from_seed:
+    # Seed ROIs: one per class, seed bbox + margin
+    seed_img, rois, roi_stats = None, None, None
+    if seed_roi != "off":
         seed_img = tifffile.imread(seg_path)
         if seed_img.shape != img.shape[1:]:
             raise ValueError(f"Seed shape {seed_img.shape} doesn't match image shape {img.shape[1:]}")
-        rois = seed_rois(seed_img, mode=roi_mode, margin=roi_margin, unit=roi_margin_unit, min_size=roi_min_size)
+        rois = seed_rois(seed_img, mode="class", margin=seed_roi_margin, unit=seed_roi_margin_unit)
         roi_stats = {}
-        print(f"      Seed ROIs ({roi_mode}):")
+        print(f"      Seed ROIs ({seed_roi}):")
         for class_id, roi in sorted(rois.items()):
             print(f"        Class {class_id}: {_roi_text(roi)}")
-
-    # roi_norm='global': full-image normalization stats, used for every crop
-    norm_stats = None
-    if roi_from_seed and roi_norm == "global":
-        norm_stats = nni_global_norm_stats(img)
-        log_dict["roi_norm_stats"] = {"mean": float(norm_stats["mean"]), "std": float(norm_stats["std"]),
-                                      "bbox": norm_stats["bbox"], "nninteractive": norm_stats["version"]}
-        print(f"      Global normalization (nnInteractive {norm_stats['version']}): "
-              f"mean={float(norm_stats['mean']):.6g}, std={float(norm_stats['std']):.6g}, "
-              f"nonzero bbox {norm_stats['bbox']}")
 
     # 3. Load prompts
     print("\n[3/4] Loading prompts...")
@@ -377,7 +355,7 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
 
         pt_csv_path = Path(output_folder) / f"{Path(img_path).stem}_point_prompts.csv"
         
-        if rois:
+        if rois and seed_roi == "crop":
             # negatives outside a class's ROI would be dropped: sample them inside it
             default_point_config['neg_regions'] = {c: roi.bbox() for c, roi in rois.items()}
 
@@ -403,7 +381,7 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
         df_pt = None
     
     if prompt_type == "scribble":
-        scribble_mask = seed if seed is not None else tifffile.imread(seg_path)
+        scribble_mask = seed_img if seed_img is not None else tifffile.imread(seg_path)
         
         # Validate scribble shape
         expected_shape = img.shape[1:]
@@ -452,8 +430,8 @@ def nninter_main(model_path, img_path, seg_path ,output_folder,device,
         on_class_predicted=save_class_mask if return_per_class_masks else None,
         on_class_prob_predicted=save_prob_map if save_prob_maps else None,
         rois=rois,
+        roi_apply="crop" if seed_roi == "crop" else "postmask",
         roi_stats=roi_stats,
-        norm_stats=norm_stats,
         seed=seed
     )
     if roi_stats is not None:
@@ -519,8 +497,8 @@ def nninter_predict(
     on_class_predicted=None,
     on_class_prob_predicted=None,
     rois: Optional[dict] = None,
+    roi_apply: Literal['crop', 'postmask'] = "crop",
     roi_stats: Optional[dict] = None,
-    norm_stats: Optional[dict] = None,
     seed: Optional[int] = 0
 ) -> Union[np.ndarray, Tuple[np.ndarray, Dict[int, np.ndarray]]]:
     """
@@ -541,14 +519,14 @@ def nninter_predict(
         scribble_config: Configuration for scribble prompt generation
         on_class_predicted: Optional callback function with signature (class_id, mask) called after each class is predicted. Useful for saving masks without keeping all in memory.
         on_class_prob_predicted: Optional callback function with signature (class_id, prob_map_float32) called after each class probability map is predicted.
-        rois: Optional {class_id: Roi} from seed_roi.seed_rois. A class with an ROI is
-              predicted on img[:, roi.bbox()] only (prompts cropped / shifted, points
-              outside dropped); its mask and prob map are pasted back to full size,
-              zero outside the ROI. Classes without an ROI use the full image.
+        rois: Optional {class_id: Roi} from seed_roi.seed_rois. The mask and prob map of a
+              class with an ROI are zero outside the ROI. Classes without an ROI are
+              predicted on the full image and not masked.
+        roi_apply: How rois are used. 'crop': a class with an ROI is predicted on
+                   img[:, roi.bbox()] only (prompts cropped / shifted, points outside
+                   dropped) and pasted back to full size. 'postmask': every class is
+                   predicted on the full image, then cleared outside its ROI.
         roi_stats: Optional dict, filled with {class_id: ROI log} when rois is given
-        norm_stats: Optional output of nni_global_norm_stats(img) (roi_norm='global'): every
-                    image window set in the session (ROI crops) is z-scored with these
-                    full-image stats instead of the window's own mean/std
         seed: np.random.seed(seed + class_id) after each class's reset (default 0; None = no
               seeding). nnInteractive's refinement draws from np.random: with a seed per class the
               result of a class does not depend on the classes run before it (the napari Prompt
@@ -581,10 +559,14 @@ def nninter_predict(
                 f"image shape {expected_shape}"
             )
     
-    # Set image (once; with ROIs it is set per class crop in the loop, and the
+    if roi_apply not in ("crop", "postmask"):
+        raise ValueError(f"roi_apply must be 'crop' or 'postmask', got {roi_apply!r}")
+    crop_mode = bool(rois) and roi_apply == "crop"
+
+    # Set image (once; in crop mode it is set per class crop in the loop, and the
     # full image is never converted to float32 unless a class has no ROI)
     full_window = tuple(slice(0, n) for n in img.shape[1:])
-    if not rois:
+    if not crop_mode:
         session.set_image(img.astype(np.float32))
         current_window = full_window
     else:
@@ -614,20 +596,22 @@ def nninter_predict(
     for idx, class_id in enumerate(class_ids, 1):
         print(f"      [{idx}/{len(class_ids)}] Class {class_id}...", end=" ")
 
-        # ROI of this class (None: full image); 'union' ROIs share one window, so
+        # ROI of this class (None: no seed ROI, full image, not masked); crop_roi is the
+        # ROI the session works on (crop mode only). 'union' ROIs share one window, so
         # the image is only set again when the window changes
         roi = rois.get(int(class_id)) if rois else None
-        window = roi.bbox() if roi is not None else full_window
+        if rois and roi is None:
+            print("no seed ROI (full image, not masked)", end=" ")
+        crop_roi = roi if crop_mode else None
+        window = crop_roi.bbox() if crop_roi is not None else full_window
         if window != current_window:
             session.set_image(img[(slice(None),) + window].astype(np.float32))
             # set_image preprocesses in a background thread; wait for it so that
             # reset_interactions below sees the new image shape
             session._finish_preprocessing_and_initialize_interactions()
-            if norm_stats is not None:
-                _apply_global_norm(session, img[(slice(None),) + window], norm_stats)
             current_window = window
-        if roi is not None:
-            print(f"crop {_roi_text(roi)}", end=" ")
+        if crop_roi is not None:
+            print(f"crop {_roi_text(crop_roi)}", end=" ")
         work_shape = tuple(s.stop - s.start for s in window)
 
         # Reset interactions for new object
@@ -643,7 +627,7 @@ def nninter_predict(
 
         # add initial mask if provided
         if init_mask is not None:
-            class_init_mask = (_crop(init_mask, roi) == class_id).astype(np.uint8)
+            class_init_mask = (_crop(init_mask, crop_roi) == class_id).astype(np.uint8)
             print(f"      Initial mask pixels: {class_init_mask.sum():,}")
             if class_init_mask.sum() > 0:
                 session.add_initial_seg_interaction(
@@ -655,7 +639,7 @@ def nninter_predict(
         # 1. Add scribble interaction if available for this class
         if scribble_mask is not None:
             # Extract binary mask for current class
-            class_scribble_all = _crop(scribble_mask, roi)
+            class_scribble_all = _crop(scribble_mask, crop_roi)
             class_scribble = (class_scribble_all == class_id).astype(np.uint8)
            
             
@@ -681,9 +665,9 @@ def nninter_predict(
         # 2. Add point interactions if available for this class
         if df_pt is not None:
             class_df = df_pt[df_pt['class_id'] == class_id]
-            if roi is not None and len(class_df) > 0:
+            if crop_roi is not None and len(class_df) > 0:
                 # to crop coordinates; points outside the ROI are dropped
-                class_df, n_dropped = _points_to_roi(class_df, roi)
+                class_df, n_dropped = _points_to_roi(class_df, crop_roi)
                 if n_dropped > 0:
                     print(f"\n      {n_dropped} point(s) outside the ROI dropped")
 
@@ -707,8 +691,14 @@ def nninter_predict(
         
         # 4. Get result
         current_mask = session.target_buffer.cpu().numpy() > 0
+        n_removed = 0
+        if roi is not None and crop_roi is None:
+            # postmask: clear the prediction outside the class's ROI
+            n_full = int(current_mask.sum())
+            current_mask = roi.paste(roi.crop(current_mask), region="bbox")
+            n_removed = n_full - int(current_mask.sum())
         n_pixels = current_mask.sum()
-        
+
         # 5. Get probability map if available and callback is provided
         if on_class_prob_predicted is not None and hasattr(session, 'prob_buffer') and session.prob_buffer is not None:
             prob_map = session.prob_buffer
@@ -716,28 +706,34 @@ def nninter_predict(
                 prob_map = prob_map.cpu().numpy()
             prob_map = prob_map.copy().astype(np.float32)
             if roi is not None:
-                prob_map = roi.paste(prob_map, region="bbox")  # full size, 0 outside the ROI
+                # full size, 0 outside the ROI
+                prob_map = roi.paste(prob_map if crop_roi is not None else roi.crop(prob_map), region="bbox")
             on_class_prob_predicted(class_id, prob_map)
 
         # 6. Save mask
 
         if on_class_predicted is not None:
-            on_class_predicted(class_id, current_mask if roi is None else roi.paste(current_mask, region="bbox"))
+            on_class_predicted(class_id, current_mask if crop_roi is None else crop_roi.paste(current_mask, region="bbox"))
         # 7. Update total mask (current_mask is in ROI coordinates when cropped)
-        _crop(total_mask, roi)[current_mask] = class_id
+        _crop(total_mask, crop_roi)[current_mask] = class_id
 
         # ROI log: is the prediction cut by the ROI?
         if roi_stats is not None:
-            stats = {"cropped": roi is not None}
+            stats = {"cropped": crop_roi is not None}
             if roi is not None:
-                face = inner_face_fraction(current_mask, roi)
+                face = inner_face_fraction(current_mask if crop_roi is not None else roi.crop(current_mask), roi)
                 stats.update(roi_log(roi))
                 stats["inner_face_fraction"] = round(face, 5)
-                stats["n_points"] = int(n_points)
-                stats["n_points_dropped"] = int(n_dropped)
+                if crop_roi is not None:
+                    stats["n_points"] = int(n_points)
+                    stats["n_points_dropped"] = int(n_dropped)
+                else:
+                    stats["n_removed_outside_roi"] = int(n_removed)
                 if face > ROI_EDGE_WARN_FRACTION:
-                    print(f"\n      [WARNING] Class {class_id}: {face:.1%} of the prediction lies on the ROI edge "
-                          f"(prediction touches the ROI edge; margin may be too small)")
+                    removed = f", {n_removed:,} voxels outside it removed" if n_removed else ""
+                    print(f"\n      [WARNING] Class {class_id}: {face:.1%} of the prediction lies on the ROI edge"
+                          f"{removed}. Either it leaked into another part (then the ROI fixed it), or the "
+                          f"part extends beyond its seed (then check the seed or raise seed_roi_margin)")
             roi_stats[int(class_id)] = stats
 
         # Print summary
@@ -747,7 +743,8 @@ def nninter_predict(
         if n_points > 0:
             prompt_info.append(f"{n_points} points")
         
-        print(f"{', '.join(prompt_info)} → {n_pixels:,} pixels")
+        print(f"{', '.join(prompt_info)} → {n_pixels:,} pixels"
+              + (f" ({n_removed:,} outside the ROI removed)" if n_removed else ""))
     
     # Print final statistics
     print(f"\n      Final mask statistics:")
@@ -766,81 +763,6 @@ def nninter_predict(
     torch.cuda.empty_cache()
 
     return total_mask
-
-
-def _nni_norm_flavor():
-    """('v1' | 'v2', version) of the installed nnInteractive's set_image normalization.
-    v1 (1.1.x): crop the image to its nonzero bbox, x -= x.mean(); x /= x.std() (std of the
-                centred crop); preprocessed_image = the cropped tensor.
-    v2 (2.x):   no crop; mean/std over the nonzero bbox, the whole image is normalized.
-    The source of _background_set_image is checked so that another variant raises instead of
-    being emulated wrongly."""
-    try:
-        from importlib.metadata import version
-        ver = version("nnInteractive")
-    except Exception:
-        ver = "unknown"
-    src = inspect.getsource(nnInteractiveInferenceSession._background_set_image)
-    if ("image -= image.mean()" in src and "image /= image.std()" in src
-            and "bbox_used_for_cropping" in src):
-        return "v1", ver
-    if "mean = crop.mean()" in src and "std = crop.std()" in src and "image -= mean" in src:
-        return "v2", ver
-    raise NotImplementedError(f"roi_norm='global' is not implemented for nnInteractive {ver} "
-                              f"(unknown set_image normalization)")
-
-
-def _nonzero_bbox(img):
-    """[[lo, hi], ...] of the nonzero region of img on every axis (the bbox torch.where gives),
-    via per-axis projections."""
-    bbox = []
-    for ax in range(img.ndim):
-        occ = np.flatnonzero(np.any(img, axis=tuple(a for a in range(img.ndim) if a != ax)))
-        if occ.size == 0:
-            raise ValueError("Input image is entirely zero; cannot determine normalization statistics.")
-        bbox.append([int(occ[0]), int(occ[-1]) + 1])
-    return bbox
-
-
-def nni_global_norm_stats(img):
-    """Normalization stats nnInteractive's set_image computes for the full image img (C, Z, Y, X),
-    replicating the installed version (same voxel set, float32, same torch reductions), so that
-    a window normalized with them equals the corresponding region of the full-image
-    preprocessed tensor. Returns {mean, std (0-d float32 tensors), bbox (spatial nonzero bbox),
-    version, flavor}. Note: makes one temporary float32 copy of the full image.
-    Call it after the session is constructed: the constructor sets torch's thread count, and the
-    float32 reductions are only bit-identical to the session's with the same thread count."""
-    flavor, ver = _nni_norm_flavor()
-    bbox = _nonzero_bbox(img)
-    if flavor == "v2":
-        bbox[0] = [0, 1]  # 2.x takes the stats from channel 0
-    full = torch.from_numpy(np.array(img, dtype=np.float32))
-    view = full[tuple(slice(lo, hi) for lo, hi in bbox)]
-    mean = view.mean()
-    if flavor == "v1":
-        view -= mean            # 1.1.x: std of the centred (in-place) crop
-    std = view.std()
-    del full, view
-    return {"mean": mean, "std": std, "bbox": bbox[1:], "version": ver, "flavor": flavor}
-
-
-def _apply_global_norm(session, window_img, norm_stats):
-    """Replace the session's preprocessed image (set from window_img with the window's own
-    stats) by window_img z-scored with the full-image stats. Call after set_image and
-    _finish_preprocessing_and_initialize_interactions."""
-    x = torch.from_numpy(np.array(window_img, dtype=np.float32))
-    if norm_stats["flavor"] == "v1":
-        # 1.1.x keeps only the window's nonzero bbox
-        b = session.preprocessed_props["bbox_used_for_cropping"]
-        x = x[(slice(None),) + tuple(slice(lo, hi) for lo, hi in b)]
-    x -= norm_stats["mean"]
-    x /= norm_stats["std"]
-    if norm_stats["flavor"] == "v2":
-        x = x.to("cpu")
-    if tuple(x.shape) != tuple(session.preprocessed_image.shape):
-        raise RuntimeError(f"roi_norm='global': shape {tuple(x.shape)} != session preprocessed image "
-                           f"{tuple(session.preprocessed_image.shape)}")
-    session.preprocessed_image = x
 
 
 def _roi_text(roi):
@@ -928,12 +850,9 @@ def run_nninteractive_yaml(file_path):
         scribble_config=scribble_config,
         save_prob_maps=optional_params.get('save_prob_maps', False),
         do_autozoom=optional_params.get('do_autozoom', True),
-        roi_from_seed=optional_params.get('roi_from_seed', False),
-        roi_mode=optional_params.get('roi_mode', "class"),
-        roi_margin=optional_params.get('roi_margin', 32),
-        roi_margin_unit=optional_params.get('roi_margin_unit', "voxel"),
-        roi_min_size=optional_params.get('roi_min_size', 0),
-        roi_norm=optional_params.get('roi_norm', "crop"),
+        seed_roi=optional_params.get('seed_roi', "off"),
+        seed_roi_margin=optional_params.get('seed_roi_margin', 32),
+        seed_roi_margin_unit=optional_params.get('seed_roi_margin_unit', "voxel"),
         seed=optional_params['seed']
     )
 

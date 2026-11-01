@@ -33,25 +33,21 @@ save_prob_maps: false
 do_autozoom: true
 
 
-## Seed ROI: let nnInteractive see only a crop around each class's seed
-## (look-alike structures far from the seed are then not in its input)
+## Seed ROI: per class, the seed bbox + a margin
 
-# Crop the input to a seed-derived ROI per class; classes without seed voxels use the full image
-roi_from_seed: false
-
-# "class": one ROI per class seed bbox; "union": one ROI around all seeds
-roi_mode: "class"
+# "off": not used
+# "postmask": predict on the full image, then clear each class's prediction outside its ROI
+#             (removes leaks into other parts, e.g. an antenna prediction that reaches a leg)
+# "crop": nnInteractive only sees the ROI crop (faster, less memory; less accurate with scribbles)
+# A warning is printed when a prediction lies on the ROI edge: the part may extend beyond its seed
+seed_roi: "off"
 
 # Margin added around the seed bbox: one value or [z, y, x]
-roi_margin: 32
+seed_roi_margin: 32
 
-# Unit of roi_margin: "voxel", or "percent" of the seed bbox size on each axis
+# Unit of seed_roi_margin: "voxel", or "percent" of the seed bbox size on each axis
 # (e.g. 20 with "percent" adds 20% of the bbox size on each side, rounded up)
-roi_margin_unit: "voxel"
-
-# Grow the ROI to at least this size per axis: one value or [z, y, x]; 0 = off
-# 192 = the model patch size: a small ROI then gets real image context instead of padding
-roi_min_size: 0
+seed_roi_margin_unit: "voxel"
 
 
 ## Point prompt configuration
