@@ -10,6 +10,7 @@ from napari.layers import Labels
 from napari.utils.notifications import show_info
 
 from ..utils.status import LAYER_HEADER, NO_LAYER, StatusLine, style
+from ..utils.layer_lock import lock_layers, lock_note, unlock_layers
 
 # the run button style of the main panel (as in the Edit dock)
 RUN_STYLE = "QPushButton { font-weight: bold; } QPushButton:enabled { background-color: #45a049; }"
@@ -419,7 +420,9 @@ class LabelMapperWidget(QWidget):
 
         def on_done(new_data):
             # napari selects the new layer, so this dock now shows its (empty) mapping
-            new = self.viewer.add_labels(new_data, name=f"{layer_name}_mapped")
+            # at least uint16 (as the seeds): a brushed id above 255 would wrap in uint8
+            new = self.viewer.add_labels(new_data.astype(np.promote_types(new_data.dtype, np.uint16), copy=False),
+                                         name=f"{layer_name}_mapped")
             show_info(f"New mapped segmentation layer created from '{layer_name}'.")
             self.status.set(f"Created {new.name}. The mapping of {layer_name} is kept: select "
                             f"{layer_name} to see or change it.", "ok")
@@ -457,15 +460,29 @@ class LabelMapperWidget(QWidget):
 
         for btn in buttons_to_disable:
             btn.setEnabled(False)
+        # the layer whose own array the worker reads: no brush strokes into it meanwhile
+        locked = lock_layers(self.viewer, [a for a in args if isinstance(a, np.ndarray)])
+        note = lock_note(locked)
+        if note:
+            self.status.set(note, "info")
+
+        def release():
+            unlock_layers(locked)
+            if note and self.status.text() == note:
+                self.status.clear()
 
         def on_done(result):
             for btn in buttons_to_disable:
                 btn.setEnabled(True)
-            done_callback(result)
+            try:
+                done_callback(result)
+            finally:
+                release()
 
         def on_error(e):
             for btn in buttons_to_disable:
                 btn.setEnabled(True)
+            release()
             QMessageBox.warning(self, "Error", f"Operation failed:\n{e}")
 
         worker.returned.connect(on_done)

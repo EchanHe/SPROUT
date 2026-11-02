@@ -52,6 +52,7 @@ from sprout_core.boundary import Cancelled
 from sprout_core.nni_engine import NniEngine, nninteractive_status
 from sprout_core.prompt_engine import is_oom
 from sprout_core.roi import RoiError, parse_ids  # noqa: F401  (parse_ids: also importable from here)
+from sprout_core.sprout_core import label_dtype
 
 from ..utils import jobs
 from ..utils.fit_table import FitTable
@@ -93,6 +94,12 @@ BASE_SEED = 0                   # random seed of the point sampling (and of the 
 COLUMNS = ["", "id", "seed voxels", "points + / -", "status", "result voxels"]
 NEG_SLOW = "(slow on big images)"
 YAML_RULES = config_core.input_val_nninteractive_run
+
+
+def layer_dtype(max_id):
+    """dtype of the result layers: at least uint16 (as the seeds), so a brushed id above 255 does not
+    wrap; saved files keep the smallest dtype."""
+    return label_dtype(max_id, np.uint16)
 
 
 def yaml_default(key):
@@ -1604,7 +1611,7 @@ class PromptTab(QWidget):
         store, shape = ctx["store"], ctx["shape"]
         rule = OVERLAP_RULE
         ids = store.classes()
-        dtype = PS._label_dtype(max(ids) if ids else 0)
+        dtype = layer_dtype(max(ids) if ids else 0)
         lay = self._layer(ctx["out"], Labels)
         if lay is not None and (tuple(lay.data.shape) != shape or np.dtype(lay.data.dtype).itemsize < dtype.itemsize):
             lay = None
@@ -1637,7 +1644,7 @@ class PromptTab(QWidget):
     def _write_class_layer(self, ctx, r):
         """One Labels layer per class (its own mask, before overlaps; value = class id)."""
         name = self.class_layer_name(ctx["out"], r.class_id, ctx["roi"])
-        dtype = PS._label_dtype(r.class_id)
+        dtype = layer_dtype(r.class_id)
         data = np.zeros(ctx["shape"], dtype)
         data[r.slices][r.mask] = r.class_id
         lay = self._layer(name, Labels)

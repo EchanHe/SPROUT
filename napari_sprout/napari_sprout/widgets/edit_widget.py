@@ -22,6 +22,7 @@ if str(sprout_path) not in sys.path:
 from sprout_core.sprout_core import get_sub_binary_image_by_pos
 
 from ..utils.status import LAYER_HEADER, NO_LAYER, StatusLine, style
+from ..utils.layer_lock import lock_layers, lock_note, unlock_layers
 
 # One style for every run button, the same as the main panel's run buttons. Only the enabled
 # state is coloured, so a disabled run button keeps napari's disabled look.
@@ -146,6 +147,7 @@ class QtLabelSelector(QWidget):
         undo_btn = QPushButton("Undo")
         undo_btn.setToolTip("Undo the last operation, on the layer it changed (one step).")
         undo_btn.clicked.connect(self.undo_last_operation)
+        self.undo_btn = undo_btn   # disabled while an operation runs (it would replace the layer's data)
         layout.addWidget(undo_btn)
         self.status = StatusLine(hide_empty=True)
         layout.addWidget(self.status)
@@ -1657,20 +1659,36 @@ class QtLabelSelector(QWidget):
         self.status.clear()
         for btn in buttons_to_disable:
             btn.setEnabled(False)
+        self.undo_btn.setEnabled(False)
+        # the layers whose own array the worker reads: no brush strokes into it meanwhile
+        locked = lock_layers(self.viewer, [a for a in args if isinstance(a, np.ndarray)])
+        note = lock_note(locked)
+        if note:
+            self.status.set(note, "info")
+
+        def finish():
+            self._busy -= 1
+            for btn in buttons_to_disable:
+                btn.setEnabled(True)
+            self.undo_btn.setEnabled(not self._busy)
+            self._sync_target_buttons()
+
+        def release():
+            unlock_layers(locked)   # after the result is written (setting data resets editable)
+            if note and self.status.text() == note:
+                self.status.clear()
 
         def on_done(result):
             # when the background task is done, re-enable buttons
-            self._busy -= 1
-            for btn in buttons_to_disable:
-                btn.setEnabled(True)
-            self._sync_target_buttons()
-            done_callback(result)
+            finish()
+            try:
+                done_callback(result)
+            finally:
+                release()
 
         def on_error(e):
-            self._busy -= 1
-            for btn in buttons_to_disable:
-                btn.setEnabled(True)
-            self._sync_target_buttons()
+            finish()
+            release()
             QMessageBox.warning(self, "Error", f"Operation failed:\n{e}")
 
         worker.returned.connect(on_done)

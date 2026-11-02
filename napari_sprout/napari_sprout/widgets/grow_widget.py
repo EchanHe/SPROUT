@@ -35,6 +35,7 @@ if root_dir not in sys.path:
 
 from make_grow import grow_mp
 from sprout_core import roi as R
+from sprout_core.sprout_core import cast_labels
 from sprout_core.roi import RoiError
 
 
@@ -547,8 +548,9 @@ class SeedGrowthWidget(QWidget):
             kwargs = dict(self._run_layer_kwargs or {})   # the image's scale / translate
             if roi is not None:   # the names already hold the '<image>_roi' base name
                 kwargs["metadata"] = {R.META_KEY: roi.to_metadata()}
+            # at least uint16 in napari (as the seeds): a brushed id above 255 would wrap in uint8
             self.viewer.add_labels(
-                value,  
+                cast_labels(value, np.uint16, copy=False),
                 name=key,
                 **kwargs
             )
