@@ -330,25 +330,12 @@ def make_seeds(**kwargs):
         Output folder: {output_folder}
             """)      
 
-    # Create a list to hold the threads
-    threads = []
-
     seeds_dict = {}
-    # Start a new thread for each sublist
-    for sublist in sublists:
-
-        # thread = threading.Thread(target=find_seed_by_ero_mp, args=(img,sublist, segments,
-        #                                                             output_seed_sub_folder,output_json_path, footprints,
-        #                                                             boundary))
-
-        thread = threading.Thread(target=gen_seed_mp, args=(img,sublist, erosion_steps, segments,
-                                                                    boundary, seeds_dict, return_for_napari))
-        threads.append(thread)
-        thread.start()
-        
-    # Wait for all threads to complete
-    for thread in threads:
-        thread.join()
+    # Start a new thread for each sublist and wait for all of them;
+    # an exception in a thread is re-raised here (not only printed)
+    sprout_core.run_threads(gen_seed_mp, [(img,sublist, erosion_steps, segments,
+                                           boundary, seeds_dict, return_for_napari)
+                                          for sublist in sublists])
 
     # print(f"All threads have completed. Log is saved at {output_json_path},seeds are saved at {output_seed_folder}")
 

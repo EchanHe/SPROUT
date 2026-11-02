@@ -3,6 +3,7 @@ from skimage.morphology import binary_dilation, binary_erosion, cube,square, bin
 from skimage import measure
 from datetime import datetime
 import os
+import threading
 import tifffile
 
 from scipy.ndimage import binary_fill_holes
@@ -38,6 +39,27 @@ def assign_optional_params(config, keys_with_defaults):
     return config_values
 
 
+def run_threads(target, args_list):
+    """Run target(*args) in one thread per entry of `args_list` and wait for all of them.
+
+    An exception in a thread is not lost (threading only prints it): once every thread
+    has finished, the first exception raised is re-raised here, with its traceback.
+    """
+    errors = []
+
+    def run(*args):
+        try:
+            target(*args)
+        except Exception as e:
+            errors.append(e)
+
+    threads = [threading.Thread(target=run, args=tuple(args)) for args in args_list]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    if errors:
+        raise errors[0]
 
 
 
@@ -130,22 +152,47 @@ fp_Y_2d = np.array([[0, 1, 0],
                     [0, 1, 0],
                     [0, 1, 0]],  dtype=np.uint8)
 
+def _foreground(image):
+    """The voxels that `image == True` selects: a bool image as it is, else the voxels equal to 1."""
+    return image if image.dtype == bool else (image == True)
+
+
+def _foreground_min_max(fg):
+    """Per axis (min, max) index of the True voxels of bool `fg`, None if there are none.
+
+    Same values (np.intp) as np.argwhere(fg).min / max(axis=0), from any() projections:
+    no array of all coordinates (3 x 8 bytes per voxel) is made.
+    """
+    lo, hi = [], []
+    for _ in range(fg.ndim):
+        proj = fg.any(axis=tuple(range(1, fg.ndim))) if fg.ndim > 1 else fg
+        idx = np.flatnonzero(proj)
+        if idx.size == 0:
+            return None
+        lo.append(idx[0])
+        hi.append(idx[-1])
+        if fg.ndim > 1:
+            fg = fg[idx[0]:idx[-1] + 1].any(axis=0)
+    return lo, hi
+
+
 def get_sub_binary_image_by_pos(image_3d, margin):
 
 
-    # Find the indices where the image is 1
-    indices = np.argwhere(image_3d == True)
+    # Find the bounding box of the voxels where the image is 1
+    min_max = _foreground_min_max(_foreground(image_3d))
+    if min_max is None:
+        # what np.argwhere(...).min() raised for an empty image
+        raise ValueError("zero-size array to reduction operation minimum which has no identity")
 
 
     is_3d = (image_3d.ndim == 3)
     if is_3d:
         # Get the min and max indices along each dimension
-        min_z, min_y, min_x = indices.min(axis=0)
-        max_z, max_y, max_x = indices.max(axis=0)
+        (min_z, min_y, min_x), (max_z, max_y, max_x) = min_max
     else:
         # Get the min and max indices along each dimension
-        min_y, min_x = indices.min(axis=0)
-        max_y, max_x = indices.max(axis=0)
+        (min_y, min_x), (max_y, max_x) = min_max
     # print(f"Bounding box for 3D image: x_min={min_x}, x_max={max_x}, y_min={min_y}, y_max={max_y}, z_min={min_z}, z_max={max_z}")
 
     if is_3d:
@@ -208,7 +255,7 @@ def dilation_binary_img_on_sub(input, margin, kernal_size, is_round=True):
     is_3d = (input.ndim == 3)
     if is_3d:
         
-        if len(np.argwhere(input == True)) == 0:
+        if not _foreground(input).any():
             return input
         else:
             subset_3d , max_min_ids= get_sub_binary_image_by_pos(input, margin = margin)
@@ -246,7 +293,7 @@ def erosion_binary_img_on_sub(input, kernal_size = 1, footprint='ball'):
     
     is_3d = (input.ndim == 3)
     if is_3d:
-        if len(np.argwhere(input == True)) == 0:
+        if not _foreground(input).any():
             return input
         else:
             subset_3d , max_min_ids= get_sub_binary_image_by_pos(input, margin = 1)
@@ -309,7 +356,7 @@ def closing_binary_img_on_sub(input, margin, kernal_size, is_round=True):
         
     is_3d = (input.ndim == 3)
     if is_3d:
-        if len(np.argwhere(input == True)) == 0:
+        if not _foreground(input).any():
             return input
         else:
         
@@ -433,6 +480,35 @@ def keep_ccomps(input, top_n=None , threshold=0):
     return output
 
 
+_CHUNK = 1 << 22    # voxels per chunk in _bincount / _apply_lut (bounds their intp temporaries)
+
+
+def _bincount(labels, length):
+    """np.bincount(labels.ravel(), minlength=length) in chunks, without a full-size intp copy.
+
+    labels: non-negative integers below `length`, of a dtype that casts safely to intp.
+    """
+    flat = labels.reshape(-1)
+    step = max(_CHUNK, 4 * length)
+    counts = np.zeros(length, np.intp)
+    for s in range(0, flat.size, step):
+        counts += np.bincount(flat[s:s + step], minlength=length)
+    return counts
+
+
+def _apply_lut(lut, labels, out=None):
+    """lut[labels] in chunks (fancy indexing copies all of `labels` to intp first).
+
+    out: a C-contiguous array of labels' shape and lut's dtype; may be `labels` itself.
+    """
+    if out is None:
+        out = np.empty(labels.shape, lut.dtype)
+    src, dst = labels.reshape(-1), out.reshape(-1)
+    for s in range(0, src.size, _CHUNK):
+        dst[s:s + _CHUNK] = lut[src[s:s + _CHUNK]]
+    return out
+
+
 def get_ccomps_with_size_order(volume, segments=None, min_vol = None):
     """Get the largest ccomp
 
@@ -443,13 +519,13 @@ def get_ccomps_with_size_order(volume, segments=None, min_vol = None):
     Returns:
         _type_: _description_
     """
-    labeled_image = measure.label(volume, background=0, 
-                                  return_num=False)
-    component_sizes = np.bincount(labeled_image.ravel())[1:] 
-    
-    
-    
-    component_labels = np.unique(labeled_image)[1:]
+    labeled_image, n_labels = measure.label(volume, background=0,
+                                  return_num=True)
+    component_sizes = _bincount(labeled_image, n_labels + 1)[1:]
+
+
+    # measure.label numbers the components 1..n_labels, so no np.unique is needed
+    component_labels = np.arange(1, n_labels + 1)
     if min_vol is not None:
         valid_components = component_sizes >= min_vol
         component_labels = component_labels[valid_components]
@@ -462,11 +538,12 @@ def get_ccomps_with_size_order(volume, segments=None, min_vol = None):
         segments = len(component_sizes_sorted)
     # props = measure.regionprops(label_image)
     largest_labels = component_labels[np.argsort(component_sizes)[::-1][:segments]]
-    
-    output = np.zeros_like(labeled_image)
-    for label_id, label in enumerate(largest_labels):
-        output[labeled_image == label] = label_id+1
-    
+
+    # Relabel in place with one lookup table (was one full scan per component)
+    lut = np.zeros(n_labels + 1, labeled_image.dtype)
+    lut[largest_labels] = np.arange(1, len(largest_labels) + 1)
+    output = _apply_lut(lut, labeled_image, out=labeled_image)
+
     return output, component_sizes_sorted[:segments]
 
 
@@ -815,7 +892,8 @@ def find_seed_by_ero_custom(volume_array, threshold , segments, ero_iter,
                          compression ='zlib')
         
         if is_return_seeds:
-            seeds_dict[os.path.basename(output_dir) + "_" +seed_name] = seed
+            # the same dtype as the file (at least uint16), not measure.label's int32
+            seeds_dict[os.path.basename(output_dir) + "_" +seed_name] = cast_labels(seed, np.uint16)
         
         args_dict = {
             # "start_time": start_time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -920,12 +998,24 @@ def reorder_segmentation(segmentation, min_size=None, sort_ids=True, top_n=None)
             - reordered_segmentation (np.ndarray): Array with reordered class labels.
             - class_mapping (dict): Mapping from old to new class labels.
     """
-    # Find unique classes excluding background
-    unique_classes = np.unique(segmentation)
-    unique_classes = unique_classes[unique_classes != 0]
-    
-    # Calculate the size of each segment
-    sizes = {cls: np.sum(segmentation == cls) for cls in unique_classes}
+    # Non-negative integer ids up to 2**24: sizes from one bincount, relabelled with a
+    # lookup table (the loop below scans the whole array twice per class).
+    max_id = None
+    if segmentation.dtype.kind in 'iu' and np.can_cast(segmentation.dtype, np.intp) and segmentation.size:
+        max_id = int(segmentation.max())
+        if max_id >= 2 ** 24 or (segmentation.dtype.kind == 'i' and int(segmentation.min()) < 0):
+            max_id = None
+    if max_id is not None:
+        counts = _bincount(segmentation, max_id + 1)
+        unique_classes = np.flatnonzero(counts[1:]) + 1
+        sizes = dict(zip(unique_classes.astype(segmentation.dtype), counts[unique_classes]))
+    else:
+        # Find unique classes excluding background
+        unique_classes = np.unique(segmentation)
+        unique_classes = unique_classes[unique_classes != 0]
+
+        # Calculate the size of each segment
+        sizes = {cls: np.sum(segmentation == cls) for cls in unique_classes}
 
     # Print the size of each class
     # print("Original Class Sizes:")
@@ -950,9 +1040,18 @@ def reorder_segmentation(segmentation, min_size=None, sort_ids=True, top_n=None)
         class_mapping = {old: old for old in sorted_classes}
 
     # Create a new segmentation array with reordered class labels
-    reordered_segmentation = np.zeros_like(segmentation)
-    for old, new in class_mapping.items():
-        reordered_segmentation[segmentation == old] = new
+    if max_id is not None and not sort_ids and min_size is None and top_n is None:
+        # every class keeps its id
+        reordered_segmentation = segmentation.copy()
+    elif max_id is not None:
+        lut = np.zeros(max_id + 1, segmentation.dtype)
+        if class_mapping:
+            lut[np.fromiter(class_mapping.keys(), np.intp)] = np.fromiter(class_mapping.values(), np.int64)
+        reordered_segmentation = _apply_lut(lut, segmentation)
+    else:
+        reordered_segmentation = np.zeros_like(segmentation)
+        for old, new in class_mapping.items():
+            reordered_segmentation[segmentation == old] = new
 
     # Print the mapping and reordered sizes
     # print("\nReordered Class Mapping and Sizes:")

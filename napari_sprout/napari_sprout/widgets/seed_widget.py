@@ -17,7 +17,7 @@ from ..utils.util_widget import (create_output_folder_row, SeedOptionalParamGrou
 from ..utils.histogram_threshold_widget import HistogramThresholdWidget, append_threshold_row
 from ..utils.boundary_check import boundary_ok
 from ..utils.roi_widget import RoiSelect
-from ..utils.status import StatusLine
+from ..utils.status import RUN_BUTTON, STOP_BUTTON, StatusLine
 
 import yaml
 import sys
@@ -175,6 +175,21 @@ def input_combo():
     return c
 
 
+def combo_items(combo):
+    return [combo.itemText(i) for i in range(combo.count())]
+
+
+def put_in_tab_order(first, *widgets):
+    """Keyboard Tab reaches `widgets` (in this order) right before `first`, e.g. the
+    Import / Export YAML buttons of a group header before the group's first parameter."""
+    prev = first.previousInFocusChain()
+    while prev.focusPolicy() == Qt.NoFocus and prev is not first:   # setTabOrder ignores those
+        prev = prev.previousInFocusChain()
+    for w in widgets:
+        QWidget.setTabOrder(prev, w)
+        prev = w
+
+
 def rename_in_combos(layer, old, combos):
     """A layer was renamed in napari: rename its item in place (the selection stays)."""
     for combo in combos:
@@ -325,6 +340,8 @@ class SeedGenerationWidget(QWidget):
         output_layout = QVBoxLayout()
         output_dir_layout, self.output_folder_line = create_output_folder_row(label="Folder")
         self.save_every_iter_checkbox = QCheckBox("Save mid results")
+        self.save_every_iter_checkbox.setToolTip("Adaptive methods: also save the seed of every iteration "
+                                                 "(written to the folder and added as layers)")
         self.save_every_iter_checkbox.setChecked(False)
         output_layout.addLayout(output_dir_layout)
         output_layout.addWidget(self.save_every_iter_checkbox)
@@ -336,21 +353,12 @@ class SeedGenerationWidget(QWidget):
         btn_layout = QHBoxLayout()
         # Generate button
         self.generate_btn = QPushButton("Generate Seeds")
-        self.generate_btn.setStyleSheet("""QPushButton { font-weight: bold; background-color: #45a049;}""")
+        self.generate_btn.setStyleSheet(RUN_BUTTON)
         # layout.addWidget(self.generate_btn)
         
         self.stop_btn = QPushButton("Stop")
-        self.stop_btn.setStyleSheet("""
-            QPushButton {
-                font-weight: bold;
-                background-color: #d9534f;  
-                color: white;
-            }
-            QPushButton:disabled {
-                background-color: #aaa;
-                color: #eee;
-            }
-        """)
+        self.stop_btn.setStyleSheet(STOP_BUTTON)
+        self.stop_btn.setToolTip("Stop generating seeds (files already written stay in the folder)")
         self.stop_btn.setEnabled(False)        
         
 
@@ -389,6 +397,18 @@ class SeedGenerationWidget(QWidget):
         hub.layer_inserted.connect(self._on_layers_changed)
         hub.layer_removed.connect(self._on_layers_changed)
         hub.layer_renamed.connect(self._on_layer_renamed)
+        # Tab reaches Import / Export YAML where they are shown: before the parameters
+        put_in_tab_order(self.main_param_widget.seed_method_combo, self.import_btn, self.export_btn)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._combos_in_sync():         # a missed layer event: re-sync, keeping the selection
+            self._on_layers_changed()
+
+    def _combos_in_sync(self):
+        imgs = [l.name for l in self.viewer.layers if isinstance(l, Image)]
+        labs = [l.name for l in self.viewer.layers if isinstance(l, Labels)]
+        return combo_items(self.image_combo) == imgs and combo_items(self.boundary_combo) == ["None"] + labs
 
     def _toggle_seed_params_visibility(self, state: int):
         """Toggle visibility of advanced seed parameters."""

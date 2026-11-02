@@ -352,20 +352,12 @@ def make_adaptive_seed_ero(
             inter_log["inter_props"] = np.array([])
             
             sublists = [seed_ids[i::num_threads] for i in range(num_threads)]
-             # Create a list to hold the threads
-            threads = []
-            for sublist in sublists:
-                thread = threading.Thread(target=detect_inter, args=(ccomp_combine_seed,
-                                                                     seed,
-                                                                     sublist,
-                                                                     inter_log,
-                                                                     lock))
-                threads.append(thread)
-                thread.start()
-                
-            # Wait for all threads to complete
-            for thread in threads:
-                thread.join()
+            # One thread per sublist; an exception in a thread is re-raised here
+            sprout_core.run_threads(detect_inter, [(ccomp_combine_seed,
+                                                    seed,
+                                                    sublist,
+                                                    inter_log,
+                                                    lock) for sublist in sublists])
             # Threads append ids in whatever order they finish; sort so that new ids are
             # assigned in ascending order, exactly as with a single thread.
             _order = np.argsort(inter_log["inter_ids"], kind="stable")
@@ -774,20 +766,12 @@ def make_adaptive_seed_thre(
             inter_log["inter_props"] = np.array([])
             
             sublists = [seed_ids[i::num_threads] for i in range(num_threads)]
-             # Create a list to hold the threads
-            threads = []
-            for sublist in sublists:
-                thread = threading.Thread(target=detect_inter, args=(ccomp_combine_seed,
-                                                                     seed,
-                                                                     sublist,
-                                                                     inter_log,
-                                                                     lock))
-                threads.append(thread)
-                thread.start()
-                
-            # Wait for all threads to complete
-            for thread in threads:
-                thread.join()
+            # One thread per sublist; an exception in a thread is re-raised here
+            sprout_core.run_threads(detect_inter, [(ccomp_combine_seed,
+                                                    seed,
+                                                    sublist,
+                                                    inter_log,
+                                                    lock) for sublist in sublists])
             # Threads append ids in whatever order they finish; sort so that new ids are
             # assigned in ascending order, exactly as with a single thread.
             _order = np.argsort(inter_log["inter_ids"], kind="stable")

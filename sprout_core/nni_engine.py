@@ -82,9 +82,13 @@ def filter_kwargs(fn, kwargs, log=print):
 
 
 def resolve_device(device=None):
-    """'cuda' if available else 'cpu' for None; otherwise str(device). Imports torch only for None."""
+    """'cuda' if available else 'cpu' for None ('cpu' without torch); otherwise str(device).
+    Imports torch only for None."""
     if device is None:
-        import torch
+        try:
+            import torch
+        except ImportError:
+            return "cpu"
         return "cuda" if torch.cuda.is_available() else "cpu"
     return str(device)
 

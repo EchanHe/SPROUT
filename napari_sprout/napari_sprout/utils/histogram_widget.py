@@ -4,6 +4,8 @@ from qtpy.QtCore import QPointF, QRectF, Qt, Signal
 from qtpy.QtGui import QColor, QPainter, QPainterPath, QPen
 from qtpy.QtWidgets import QDoubleSpinBox, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
+from .status import style
+
 _LOWER_COLOR = QColor(80, 160, 255)
 _UPPER_COLOR = QColor(255, 150, 60)
 
@@ -136,7 +138,7 @@ class HistogramRangeWidget(QWidget):
         self.lower_note = QLabel("")
         self.upper_note = QLabel("")
         for n in (self.lower_note, self.upper_note):
-            n.setStyleSheet("color: gray")      # = utils.status INFO
+            n.setStyleSheet(style("info"))
 
         row = QHBoxLayout()
         lbl_l = QLabel("lower")

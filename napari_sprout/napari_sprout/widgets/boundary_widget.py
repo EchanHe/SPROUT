@@ -12,6 +12,7 @@ enforce separation. Workflow, top to bottom:
 All heavy work runs off the UI thread. The only work on the UI thread is the
 single-slice preview, which takes milliseconds.
 """
+import os
 import threading
 import time
 
@@ -29,11 +30,25 @@ from qtpy.QtWidgets import (
 from sprout_core import boundary as B
 
 from ..utils.histogram_widget import HistogramRangeWidget
-from ..utils.status import StatusLine, style
+from ..utils.roi_layers import get_roi_hub
+from ..utils.status import RUN_BUTTON, StatusLine, style, tab_hidden
 from ..utils.slice_preview import SlicePreview
 
 PREVIEW_NAME = "Boundary preview"
 META_KEY = "sprout_boundary"
+
+# GPU probe (imports torch, ~3 s): done once, when GPU is picked or on Compute, then cached
+_GPU_STATUS = None
+_GPU_LOCK = threading.Lock()
+
+
+def gpu_status():
+    """(available, description), probed once per session (any thread)."""
+    global _GPU_STATUS
+    with _GPU_LOCK:
+        if _GPU_STATUS is None:
+            _GPU_STATUS = B.gpu_status()
+        return _GPU_STATUS
 
 
 class _Progress(QObject):
@@ -77,7 +92,7 @@ class TophatPanel(QWidget):
         row.addWidget(self.black)
         row.addWidget(self.white)
         row.addStretch()
-        form.addRow("Type:", row)
+        form.addRow("Type", row)
 
         self.shape_combo = QComboBox()
         for i, (label, key, tip) in enumerate(self.SHAPES):
@@ -90,9 +105,9 @@ class TophatPanel(QWidget):
                                   "the footprint are extracted.")
         row = QHBoxLayout()
         row.addWidget(self.shape_combo)
-        row.addWidget(QLabel("Size:"))
+        row.addWidget(QLabel("Size"))
         row.addWidget(self.size_spin)
-        form.addRow("Shape:", row)
+        form.addRow("Shape", row)
 
         self.black.toggled.connect(self.params_changed)
         self.shape_combo.currentIndexChanged.connect(self.params_changed)
@@ -143,6 +158,7 @@ class BoundaryWidget(QWidget):
         self._slice_preview = SlicePreview(napari_viewer, PREVIEW_NAME,
                                            color=(1, 0.15, 0.15, 1), opacity=0.7)
         self._pending_threshold = None
+        self._hist_pending = False   # input histogram not computed yet (the tab was hidden)
 
         # Layer changes are handled on the next event-loop turn and coalesced.
         # This also means nothing is started while napari is closing: the timer
@@ -164,7 +180,7 @@ class BoundaryWidget(QWidget):
         l1 = QVBoxLayout(g1)
         form = QFormLayout()
         self.image_combo = QComboBox()
-        form.addRow("Image:", self.image_combo)
+        form.addRow("Image", self.image_combo)
         l1.addLayout(form)
         self.input_hist = HistogramRangeWidget(
             "Original intensity: only voxels in this range can become boundary")
@@ -175,14 +191,27 @@ class BoundaryWidget(QWidget):
         # 2. Method
         g2 = QGroupBox("2. Method")
         l2 = QVBoxLayout(g2)
+        # Import / Export YAML in the group's header row (as in Seeds / Grow / Prompt)
+        row = QHBoxLayout()
+        row.addStretch()
+        self.import_btn = QPushButton("Import YAML")
+        self.import_btn.setToolTip("Load the method, device, intensity range and threshold from a YAML file")
+        self.export_btn = QPushButton("Export YAML")
+        self.export_btn.setToolTip("Save the method, device, intensity range and threshold to a YAML file")
+        row.addWidget(self.import_btn)
+        row.addWidget(self.export_btn)
+        l2.addLayout(row)
+        self.yaml_status = StatusLine(hide_empty=True)
+        l2.addWidget(self.yaml_status)
         form = QFormLayout()
         self.method_combo = QComboBox()
+        self.method_combo.setToolTip("How the boundary response is computed from the image")
         self.method_stack = QStackedWidget()
         self.panels = [TophatPanel()]
         for p in self.panels:
             self.method_combo.addItem(p.name)
             self.method_stack.addWidget(p)
-        form.addRow("Method:", self.method_combo)
+        form.addRow("Method", self.method_combo)
         l2.addLayout(form)
         l2.addWidget(self.method_stack)
 
@@ -191,17 +220,16 @@ class BoundaryWidget(QWidget):
         self.device_combo.addItem("Auto", "auto")
         self.device_combo.addItem("GPU", "gpu")
         self.device_combo.addItem("CPU", "cpu")
-        # GPU detection imports torch (~3 s), so it is done in the background the
-        # first time this tab is shown, not when the SPROUT panel opens.
-        self.device_combo.model().item(1).setEnabled(False)
-        self.device_label = QLabel("checking for a GPU...")
+        self.device_combo.setToolTip("Auto: the GPU if torch finds one, else the CPU")
+        # GPU detection imports torch (~3 s): done when GPU is picked or on Compute, not when
+        # the panel opens or the tab is shown (gpu_status() caches it)
+        self.device_label = QLabel("GPU not checked yet")
         self.device_label.setStyleSheet(style("info"))
-        self._gpu_checked = False
         row = QHBoxLayout()
         row.addWidget(self.device_combo)
         row.addWidget(self.device_label)
         row.addStretch()
-        form.addRow("Device:", row)
+        form.addRow("Device", row)
         self.response_layer_cb = QCheckBox("Also add the response as an image layer")
         self.response_layer_cb.setToolTip("Useful to look at what the method highlights. "
                                           "Costs one more image worth of memory.")
@@ -210,15 +238,18 @@ class BoundaryWidget(QWidget):
 
         row = QHBoxLayout()
         self.compute_btn = QPushButton("Compute")
+        self.compute_btn.setStyleSheet(RUN_BUTTON)
+        self.compute_btn.setToolTip("Compute the response of the whole image (in the background)")
         self.progress = QProgressBar()
         self.progress.setTextVisible(True)
         self.stop_btn = QPushButton("Stop")
+        self.stop_btn.setToolTip("Stop computing (nothing is kept)")
         self.stop_btn.setEnabled(False)
         row.addWidget(self.compute_btn)
         row.addWidget(self.progress, 1)
         row.addWidget(self.stop_btn)
         l2.addLayout(row)
-        self.compute_status = StatusLine()           # info / warn ("click Compute") / error
+        self.compute_status = StatusLine(hide_empty=True)   # info / warn ("click Compute") / error
         l2.addWidget(self.compute_status)
         layout.addWidget(g2)
 
@@ -228,8 +259,7 @@ class BoundaryWidget(QWidget):
         self.resp_hist = HistogramRangeWidget(
             "Response (eligible voxels only): drag the range; the current slice previews live")
         l3.addWidget(self.resp_hist)
-        self.preview_label = QLabel("")
-        self.preview_label.setStyleSheet(style("info"))
+        self.preview_label = StatusLine(hide_empty=True)
         l3.addWidget(self.preview_label)
         layout.addWidget(g3)
 
@@ -237,17 +267,13 @@ class BoundaryWidget(QWidget):
         g4 = QGroupBox("4. Output")
         form = QFormLayout(g4)
         self.name_edit = QLineEdit()
-        form.addRow("Name:", self.name_edit)
+        form.addRow("Name", self.name_edit)
         self.use_cb = QCheckBox("Use as boundary in Seeds / Grow")
         self.use_cb.setChecked(True)
         form.addRow(self.use_cb)
         row = QHBoxLayout()
         self.create_btn = QPushButton("Create Boundary Layer")
-        self.import_btn = QPushButton("Import YAML")
-        self.export_btn = QPushButton("Export YAML")
         row.addWidget(self.create_btn, 1)
-        row.addWidget(self.import_btn)
-        row.addWidget(self.export_btn)
         form.addRow(row)
         self.output_status = StatusLine(hide_empty=True)   # Created (ok) / cannot create (error)
         form.addRow(self.output_status)
@@ -268,16 +294,20 @@ class BoundaryWidget(QWidget):
         self._update_buttons()
 
     def _connect(self):
-        self.viewer.layers.events.inserted.connect(lambda e: self._refresh_timer.start(0))
-        self.viewer.layers.events.removed.connect(lambda e: self._refresh_timer.start(0))
-        self.viewer.dims.events.current_step.connect(lambda e: self._update_preview())
-        self.viewer.dims.events.ndisplay.connect(lambda e: self._update_preview())
+        # napari events only through the viewer's hub (Qt signals, bound methods): a closed
+        # panel leaves nothing connected in napari
+        hub = get_roi_hub(self.viewer)
+        hub.layer_inserted.connect(self._schedule_refresh)
+        hub.layer_removed.connect(self._schedule_refresh)
+        hub.layer_renamed.connect(self._on_layer_renamed)
+        hub.dims_changed.connect(self._update_preview)
 
         self.image_combo.currentTextChanged.connect(self._on_image_changed)
         self.method_combo.currentIndexChanged.connect(self._on_method_changed)
         for p in self.panels:
             p.params_changed.connect(self._on_params_changed)
         self.device_combo.currentIndexChanged.connect(self._on_params_changed)
+        self.device_combo.currentIndexChanged.connect(self._on_device_changed)
 
         self.input_hist.range_changed.connect(lambda *_: self._update_preview())
         self.input_hist.range_committed.connect(lambda *_: self._on_intensity_range_committed())
@@ -291,14 +321,40 @@ class BoundaryWidget(QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
-        if not self._gpu_checked:
-            self._gpu_checked = True
-            self._run(B.gpu_status, self._on_gpu_status)
+        names = [l.name for l in self.viewer.layers if isinstance(l, Image)]
+        if [self.image_combo.itemText(i) for i in range(self.image_combo.count())] != names:
+            self.refresh_layers()          # a missed layer event: re-sync, keeping the selection
+        if self._hist_pending:             # the image changed while the tab was hidden
+            self._start_input_histogram()
+
+    def _schedule_refresh(self, *_):
+        self._refresh_timer.start(0)
+
+    def _on_layer_renamed(self, layer, old):
+        """Rename in place: the selection (and the computed response) stay."""
+        i = self.image_combo.findText(old)
+        if i >= 0 and isinstance(layer, Image):
+            self.image_combo.blockSignals(True)
+            self.image_combo.setItemText(i, layer.name)
+            self.image_combo.blockSignals(False)
+        if layer is self._img_layer and self.name_edit.text() == f"{old}_boundary":
+            self.name_edit.setText(f"{layer.name}_boundary")
+
+    def _on_device_changed(self, *_):
+        if self.device_combo.currentData() != "gpu":
+            return
+        if _GPU_STATUS is not None:
+            self._on_gpu_status(_GPU_STATUS)
+        else:
+            self.device_label.setText("checking for a GPU...")
+            self._run(gpu_status, self._on_gpu_status)
 
     def _on_gpu_status(self, res):
         ok, desc = res
         self.device_combo.model().item(1).setEnabled(ok)
         self.device_label.setText(f"GPU: {desc}" if ok else f"CPU only ({desc})")
+        if not ok and self.device_combo.currentData() == "gpu":
+            self.device_combo.setCurrentIndex(self.device_combo.findData("auto"))
 
     # ------------------------------------------------------------- helpers
     @property
@@ -386,7 +442,16 @@ class BoundaryWidget(QWidget):
         self._img = np.asarray(layer.data)
         self.name_edit.setText(f"{name}_boundary")
         self.input_hist.show_message("Computing...")
+        self._hist_pending = True
+        if not tab_hidden(self):          # a hidden tab computes it when shown (showEvent)
+            self._start_input_histogram()
+        self._update_buttons()
+
+    def _start_input_histogram(self):
+        self._hist_pending = False
         job, img = self._job["hist"], self._img
+        if img is None:
+            return
 
         def work():
             counts, edges = B.histogram(img)
@@ -400,7 +465,6 @@ class BoundaryWidget(QWidget):
             self.input_hist.set_data(counts, edges, integer=img.dtype.kind in "ui", lower=lo, upper=hi)
 
         self._run(work, done)
-        self._update_buttons()
 
     def _on_intensity_range_committed(self):
         if self._resp is None:
@@ -424,7 +488,7 @@ class BoundaryWidget(QWidget):
         self._resp_key = None
         self._slice_preview.remove()
         self.resp_hist.show_message(message)
-        self.preview_label.setText("")
+        self.preview_label.clear()
         self._update_buttons()
 
     def _compute(self):
@@ -452,6 +516,8 @@ class BoundaryWidget(QWidget):
             prog.changed.emit(done_, total)
 
         def work():
+            if device != "cpu":
+                gpu_status()                 # probed once, shown next to Device
             t0 = time.perf_counter()
             resp, info = panel.compute(img, params, device, emit, cancel)
             info["seconds"] = time.perf_counter() - t0
@@ -500,6 +566,8 @@ class BoundaryWidget(QWidget):
                 self.progress.setRange(0, 1)
                 self.progress.setValue(1 if self._resp is not None else 0)
                 self._update_buttons()
+                if device != "cpu" and _GPU_STATUS is not None:
+                    self._on_gpu_status(_GPU_STATUS)
 
         self._run(work, done, failed, finished)
 
@@ -567,10 +635,10 @@ class BoundaryWidget(QWidget):
 
         m = self._slice_preview.show_slice(mask)
         if m is None:
-            self.preview_label.setText("Preview: switch to a 2D view")
+            self.preview_label.set("Preview: switch to a 2D view")
             return
         n = int(m.sum())
-        self.preview_label.setText(f"Current slice: {n:,} boundary voxels ({n / m.size:.2%})")
+        self.preview_label.set(f"Current slice: {n:,} boundary voxels ({n / m.size:.2%})")
 
     # -------------------------------------------------------------- output
     def _params_record(self):
@@ -654,7 +722,8 @@ class BoundaryWidget(QWidget):
         rec["image"] = self._img_layer.name if self._img_layer is not None else None
         with open(path, "w", encoding="utf-8") as f:
             yaml.safe_dump(rec, f, sort_keys=False)
-        self.output_status.set(f"Saved {path}", "ok")
+        self.yaml_status.set(f"Saved {os.path.basename(path)}", "ok")
+        self.yaml_status.setToolTip(path)
 
     def _import_yaml(self):
         import yaml

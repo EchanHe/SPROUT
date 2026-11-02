@@ -132,8 +132,21 @@ def check_and_cast_boundary(boundary):
         # print("Boundary is a valid True/False matrix.")
         return boundary  # No changes needed
 
+    # Integer / float arrays without NaN: the same rule as below from min / max /
+    # count_nonzero, without sorting the whole array (np.unique, twice)
+    if isinstance(boundary, np.ndarray) and boundary.dtype.kind in 'iuf' and boundary.size:
+        lo, hi = boundary.min(), boundary.max()
+        if not (np.isnan(lo) or np.isnan(hi)):
+            # two values, one of them 0: lo == 0 < hi or lo < hi == 0, and every
+            # non-zero voxel holds the other one
+            other = hi if lo == 0 else lo if hi == 0 else None
+            if other is not None and other != 0 and \
+                    np.count_nonzero(boundary == other) == np.count_nonzero(boundary):
+                return boundary != 0
+            raise ValueError("Boundary is not supported. It must be a True/False matrix or have two values (0 and other).")
+
     # Check if the boundary has only two values: 0 and another value
-    elif isinstance(boundary, np.ndarray) and len(np.unique(boundary)) == 2:
+    if isinstance(boundary, np.ndarray) and len(np.unique(boundary)) == 2:
         unique_values = np.unique(boundary)
         if 0 in unique_values:
             # print("Boundary has two values: 0 and another. Casting to True/False.")

@@ -54,7 +54,7 @@ from sprout_core.prompt_engine import is_oom
 from sprout_core.roi import RoiError, parse_ids  # noqa: F401  (parse_ids: also importable from here)
 
 from ..utils.fit_table import FitTable
-from ..utils.status import StatusLine, style
+from ..utils.status import StatusLine, style, tab_hidden
 from ..utils.roi_layers import get_roi_hub
 from ..utils.roi_widget import RoiSelect
 from ..utils.util_widget import create_output_folder_row
@@ -227,6 +227,7 @@ class PromptTab(QWidget):
         self._roi_timer.setSingleShot(True)
         self._roi_timer.timeout.connect(self._on_roi_changed)
         self._last_roi = None            # display ROI the class counts were made for
+        self._stats_pending = False      # class counts wait for the tab to be shown
 
         self._build_ui()
         self._connect()
@@ -267,10 +268,10 @@ class PromptTab(QWidget):
         for c in (self.image_combo, self.seeds_combo):
             c.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
             c.setMinimumContentsLength(12)
-        f1.addRow("Image:", self.image_combo)
-        f1.addRow("Seeds:", self.seeds_combo)
+        f1.addRow("Image", self.image_combo)
+        f1.addRow("Seeds", self.seeds_combo)
         self.roi_select = RoiSelect(self.viewer, self._shape, "Prompt")
-        f1.addRow("ROI:", self.roi_select)
+        f1.addRow("ROI", self.roi_select)
         layout.addWidget(g1)
 
         # 2. Classes
@@ -291,7 +292,9 @@ class PromptTab(QWidget):
         l2.addWidget(self.table)
         row = QHBoxLayout()
         self.all_btn = QPushButton("All")
+        self.all_btn.setToolTip("Tick every class")
         self.none_btn = QPushButton("None")
+        self.none_btn.setToolTip("Untick every class")
         self.classes_label = QLabel("")
         self.classes_label.setStyleSheet(GREY)
         row.addWidget(self.all_btn)
@@ -306,7 +309,7 @@ class PromptTab(QWidget):
         self.model_combo = QComboBox()
         for label, _, _ in self.models:
             self.model_combo.addItem(label)
-        f3.addRow("Model:", self.model_combo)
+        f3.addRow("Model", self.model_combo)
         self.supports_label = QLabel("")
         self.supports_label.setStyleSheet(GREY)
         f3.addRow(self.supports_label)
@@ -314,12 +317,12 @@ class PromptTab(QWidget):
         self.model_edit.setPlaceholderText("folder of the model weights")
         self.model_edit.setToolTip("Folder of the weights, e.g. nnInteractive_v1.0 "
                                    "(remembered for the next session; model_path in the YAML).")
-        self.browse_btn = QPushButton("...")
+        self.browse_btn = QPushButton("Browse")
         self.browse_btn.setToolTip("Choose the weights folder")
         row = QHBoxLayout()
         row.addWidget(self.model_edit, 1)
         row.addWidget(self.browse_btn)
-        f3.addRow("Weights:", row)
+        f3.addRow("Weights", row)
         self.device_combo = QComboBox()
         self.device_combo.addItem("Auto", None)
         self.device_combo.addItem("GPU", "cuda")
@@ -330,7 +333,7 @@ class PromptTab(QWidget):
         row = QHBoxLayout()
         row.addWidget(self.device_combo)
         row.addWidget(self.cpu_label, 1)
-        f3.addRow("Device:", row)
+        f3.addRow("Device", row)
         row = QHBoxLayout()
         self.load_btn = QPushButton("Load")
         self.load_btn.setToolTip("Load the weights (once; kept until Release or another folder / device).")
@@ -339,7 +342,7 @@ class PromptTab(QWidget):
         row.addWidget(self.load_btn, 1)
         row.addWidget(self.release_btn)
         f3.addRow(row)
-        self.model_status = StatusLine()
+        self.model_status = StatusLine(hide_empty=True)
         f3.addRow(self.model_status)
         layout.addWidget(g3)
 
@@ -373,7 +376,7 @@ class PromptTab(QWidget):
         box.setSpacing(2)
         box.addWidget(self.scribble_rb)
         box.addWidget(self.points_rb)
-        f4.addRow("Prompt type:", box)
+        f4.addRow("Prompt type", box)
         l4.addLayout(f4)
 
         # -- Seeds as scribbles
@@ -457,14 +460,16 @@ class PromptTab(QWidget):
         self.init_combo.setMinimumContentsLength(12)
         self.init_combo.setToolTip("init_seg_path: an initial segmentation (any Labels layer, e.g. a Grow "
                                    "result). For each class, its voxels in this layer are the starting mask.")
-        f4b.addRow("Initial mask:", self.init_combo)
+        f4b.addRow("Initial mask", self.init_combo)
         l4.addLayout(f4b)
 
         # -- manual points
         gm = QGroupBox("Manual points")
         lm = QVBoxLayout(gm)
         self.pos_rb = QRadioButton("positive")
+        self.pos_rb.setToolTip("New points mark voxels that belong to the class")
         self.neg_rb = QRadioButton("negative")
+        self.neg_rb.setToolTip("New points mark voxels that do not belong to the class")
         self.pos_rb.setChecked(True)
         grp2 = QButtonGroup(self)
         grp2.addButton(self.pos_rb)
@@ -484,7 +489,7 @@ class PromptTab(QWidget):
         self.manual_hint.setStyleSheet(GREY)
         lm.addWidget(self.manual_hint)
         l4.addWidget(gm)
-        self.prompt_status = StatusLine()
+        self.prompt_status = StatusLine(hide_empty=True)
         l4.addWidget(self.prompt_status)
         layout.addWidget(g4)
 
@@ -497,19 +502,20 @@ class PromptTab(QWidget):
                                 "into the output layer as soon as it is done.")
         self.roi_select.set_run_button(self.run_btn, "Run checked")
         self.stop_btn = QPushButton("Stop")
+        self.stop_btn.setToolTip("Stop the run (the classes already done are kept), or stop generating points")
         row.addWidget(self.run_btn, 1)
         row.addWidget(self.stop_btn)
         f5.addRow(row)
         self.progress = QProgressBar()
         self.progress.setTextVisible(True)
         f5.addRow(self.progress)
-        self.run_status = StatusLine()
+        self.run_status = StatusLine(hide_empty=True)
         f5.addRow(self.run_status)
         self.output_edit = QLineEdit("")
         self.output_edit.setToolTip("Labels layer the results go to (full image size; classes not run are 0). "
                                     "Overlaps: a voxel claimed by two classes goes to the smaller id, as in "
                                     "the scripts.")
-        f5.addRow("Output:", self.output_edit)
+        f5.addRow("Output", self.output_edit)
         self.per_class_cb = QCheckBox("Also add each class as a separate layer")
         self.per_class_cb.setChecked(bool(yaml_default("return_per_class_masks")))
         self.per_class_cb.setToolTip("return_per_class_masks: one Labels layer per class "
@@ -546,6 +552,7 @@ class PromptTab(QWidget):
         # methods: Qt disconnects them when the tab is destroyed)
         self._roi_model.layer_inserted.connect(self._schedule_refresh)
         self._roi_model.layer_removed.connect(self._schedule_refresh)
+        self._roi_model.layer_renamed.connect(self._on_layer_renamed)
         self.image_combo.currentTextChanged.connect(lambda *_: self._on_inputs_changed())
         self.seeds_combo.currentTextChanged.connect(lambda *_: self._on_inputs_changed())
         self.roi_select.changed.connect(self._roi_timer.start)
@@ -588,6 +595,31 @@ class PromptTab(QWidget):
 
     def _schedule_refresh(self, *_):
         self._refresh_timer.start(0)
+
+    def _on_layer_renamed(self, layer, old):
+        """Rename in place: the selections (and the class table) stay."""
+        for combo in (self.image_combo, self.seeds_combo, self.init_combo):
+            i = combo.findData(old) if combo is self.init_combo else combo.findText(old)
+            if i >= 0:
+                combo.blockSignals(True)
+                combo.setItemText(i, layer.name)
+                if combo is self.init_combo:
+                    combo.setItemData(i, layer.name)
+                combo.blockSignals(False)
+
+    def _combos_in_sync(self):
+        images = [l.name for l in self.viewer.layers if isinstance(l, Image)]
+        labels = [l.name for l in self.viewer.layers if isinstance(l, Labels)]
+        texts = [[c.itemText(i) for i in range(c.count())]
+                 for c in (self.image_combo, self.seeds_combo, self.init_combo)]
+        return texts == [images, labels, ["None"] + labels]
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._combos_in_sync():     # a missed layer event: re-sync, keeping the selection
+            self.refresh_layers()
+        if self._stats_pending:            # the inputs changed while the tab was hidden
+            self.compute_stats()
 
     def _connect_layer_event(self, emitter, cb):
         emitter.connect(cb)
@@ -818,9 +850,13 @@ class PromptTab(QWidget):
         self._job["stats"] += 1
         job = self._job["stats"]
         seeds = self.seeds_layer
+        self._stats_pending = False
         if seeds is None or self.image_layer is None:
             self._stats = {}
             self._rebuild_table()
+            return
+        if tab_hidden(self):             # a hidden tab counts when it is shown (showEvent)
+            self._stats_pending = True
             return
         data = np.asarray(seeds.data)
         roi = self._last_roi = self._display_roi()
@@ -951,6 +987,15 @@ class PromptTab(QWidget):
                                        np.asarray(img.scale), np.asarray(img.translate),
                                        rotate=lay.rotate, shear=lay.shear)
         return PP.points_to_df(vox, lay.features, image_name=img.name)
+
+    def run_points(self, ptype=None):
+        """(points a run uses, number left out). Seeds as scribbles uses the manual points only:
+        points generated earlier in the points mode stay in the layer but are not sent."""
+        df = self.prompts_df()
+        if (ptype or self.input_type()[1]) != "scribble" or not len(df):
+            return df, 0
+        manual = (df["sample_method"] == "manual").to_numpy()
+        return df[manual].reset_index(drop=True), int((~manual).sum())
 
     def set_prompts(self, df):
         """Replace the Points layer content by a prompt table (creates the layer if needed)."""
@@ -1186,7 +1231,7 @@ class PromptTab(QWidget):
             notes.append("the ROI is not part of the YAML (the script runs on the whole image)")
         if len(self.checked_classes()) != len(self.class_ids()):
             notes.append("the script runs all classes, not only the checked ones")
-        if self.prompt_mode() == "scribble" and len(self.prompts_df()):
+        if self.prompt_mode() == "scribble" and len(self.run_points("scribble")[0]):
             notes.append("manual points are not part of a scribble YAML")
         if notes:
             self.yaml_status.set(f"Exported {Path(file_path).name}; " + "; ".join(notes), "warn")
@@ -1414,7 +1459,7 @@ class PromptTab(QWidget):
             if not save_dir:
                 self._set_run_status("Choose the output folder first (or untick 'Save results to folder')", "error")
                 return None
-        df = self.prompts_df()
+        df, n_unused = self.run_points(ptype)
         seeds_snap = np.array(seeds.data, copy=True)
         img_data = np.asarray(img.data)
         crop = PS.inference_crop(shape, roi, ROI_MARGIN)
@@ -1430,7 +1475,7 @@ class PromptTab(QWidget):
                    layer_kwargs=self._layer_kwargs(), image=img.name, seeds_name=seeds.name,
                    margin=ROI_MARGIN, base_seed=self.base_seed, mode=mode, classes=list(classes),
                    t0=time.perf_counter(), done=0, per_class=self.per_class_cb.isChecked(),
-                   save_dir=save_dir, stem=stem, df=df, config=self.yaml_config()[0],
+                   save_dir=save_dir, stem=stem, df=df, unused_points=n_unused, config=self.yaml_config()[0],
                    init=None if init_lay is None else init_lay.name)
         self._ctx = ctx
 
@@ -1521,7 +1566,9 @@ class PromptTab(QWidget):
         if "error" not in ctx:
             msg = (f"Done: {ctx['done']} classes in {time.perf_counter() - ctx['t0']:.1f} s"
                    + (f"; {ctx['store'].overlap_voxels():,} voxels claimed by more than one class (smaller id "
-                      f"wins)" if len(ctx["store"]) > 1 else ""))
+                      f"wins)" if len(ctx["store"]) > 1 else "")
+                   + (f"; {ctx['unused_points']} generated points not used (scribble mode uses manual "
+                      f"points only)" if ctx.get("unused_points") else ""))
             level = "ok"
             if ctx["save_dir"]:
                 try:

@@ -19,6 +19,8 @@ try:
 except ImportError:
     from napari.utils import thread_worker
 
+from ..utils.status import StatusLine
+
 class SizeReferenceGroupBox(QGroupBox):
     def __init__(self, viewer):
         super().__init__('Size Reference Preview')
@@ -71,22 +73,20 @@ class SizeReferenceGroupBox(QGroupBox):
 
     
     def showEvent(self, event):
-        # print("showEvent called")
+        super().showEvent(event)
         try:
             if self.store_click_position not in self.viewer.mouse_drag_callbacks:
                 self.viewer.mouse_drag_callbacks.append(self.store_click_position)
         except Exception:
-            print("Warning: Could not connect active layer change event.")
             pass
-        
-        
+
+
     def hideEvent(self, event):
-        # print("hideEvent called")
+        super().hideEvent(event)
         try:
             if self.store_click_position in self.viewer.mouse_drag_callbacks:
                 self.viewer.mouse_drag_callbacks.remove(self.store_click_position)
         except Exception:
-            print("Warning: Could not disconnect active layer change event.")
             pass
     
     # def closeEvent(self, event):
@@ -104,7 +104,6 @@ class SizeReferenceGroupBox(QGroupBox):
             return
         self.clicked_position = tuple(int(round(x)) for x in viewer.cursor.position)
         self.click_pos_label.setText(f"Clicked position: {self.clicked_position}")
-        print(f"Stored click position: {self.clicked_position}")
 
     def sync_size_from_radius(self):
         shape = self.shape_combo.currentText()
@@ -354,11 +353,16 @@ class CSVAlignerGroupBox(QGroupBox):
     def __init__(self, parent=None):
         super().__init__("Create CSV from Folder Alignment", parent)
         self.setLayout(QVBoxLayout())
+        form = QFormLayout()
+        self.layout().addLayout(form)
 
         # === Input folders ===
-        self.img_folder_line = self._add_path_row("Image Folder:")
-        self.seg_folder_line = self._add_path_row("Segmentation Folder:")
-        self.boundary_folder_line = self._add_path_row("Boundary Folder:")
+        self.img_folder_line = self._add_path_row(
+            "Image folder", form=form, tip="Folder with the input images (.tif / .tiff): one CSV row per image.")
+        self.seg_folder_line = self._add_path_row(
+            "Seeds folder", form=form, tip="Optional: folder with the seeds (.tif) matching the images (column seg_path).")
+        self.boundary_folder_line = self._add_path_row(
+            "Boundary folder", form=form, tip="Optional: folder with the boundary masks (.tif) matching the images.")
 
         # === Prefix/suffix ===
         # self.seg_prefix_line = self._add_kv_row("Seg Prefix:")
@@ -375,90 +379,107 @@ class CSVAlignerGroupBox(QGroupBox):
         # self.layout().addLayout(match_layout)
 
         row_layout = QHBoxLayout()
-        self.match_type_label = QLabel("Match Type:")
+        self.match_type_label = QLabel("Match type")
         self.match_type_combo = QComboBox()
         self.match_type_combo.addItems(["Same Name", "Image Name + Prefix/Suffix", "File Order"])
+        self.match_type_combo.setToolTip("How seeds / boundary files are paired with the images (? explains).")
         self.match_type_combo.currentTextChanged.connect(self.toggle_prefix_suffix)
 
         self.explain_btn = QPushButton("?")
         self.explain_btn.setFixedWidth(20)
+        self.explain_btn.setToolTip("Explain the match types.")
         self.explain_btn.clicked.connect(self.show_explanation)
 
-        row_layout.addWidget(self.match_type_label)
-        row_layout.addWidget(self.match_type_combo)
+        row_layout.addWidget(self.match_type_combo, 1)
         row_layout.addWidget(self.explain_btn)
-        self.layout().addLayout(row_layout)
+        form.addRow(self.match_type_label, row_layout)
+        self._row_labels.append(self.match_type_label)
 
         # === Prefix/Suffix panel ===
-        self.prefix_suffix_box = QGroupBox("Prefix/Suffix Settings")
-        self.prefix_suffix_box.setLayout(QVBoxLayout())
+        self.prefix_suffix_box = QGroupBox("Prefix / suffix")
+        self.prefix_suffix_box.setLayout(QFormLayout())
         self.prefix_suffix_box.setVisible(False)
         self.layout().addWidget(self.prefix_suffix_box)
 
         # === Prefix/Suffix inputs ===
-        self.seg_prefix_line = self._add_kv_row("Seg Prefix:", self.prefix_suffix_box)
-        self.seg_suffix_line = self._add_kv_row("Seg Suffix:", self.prefix_suffix_box)
-        self.boundary_prefix_line = self._add_kv_row("Boundary Prefix:", self.prefix_suffix_box)
-        self.boundary_suffix_line = self._add_kv_row("Boundary Suffix:", self.prefix_suffix_box)
+        self.seg_prefix_line = self._add_kv_row("Seeds prefix", self.prefix_suffix_box,
+                                                "Text before the image name in the seeds file names.")
+        self.seg_suffix_line = self._add_kv_row("Seeds suffix", self.prefix_suffix_box,
+                                                "Text after the image name in the seeds file names.")
+        self.boundary_prefix_line = self._add_kv_row("Boundary prefix", self.prefix_suffix_box,
+                                                     "Text before the image name in the boundary file names.")
+        self.boundary_suffix_line = self._add_kv_row("Boundary suffix", self.prefix_suffix_box,
+                                                     "Text after the image name in the boundary file names.")
 
         # === Auto-generate threshold parameters ===
-        self.auto_threshold_checkbox = QCheckBox("Auto-generate Thresholds")
+        self.auto_threshold_checkbox = QCheckBox("Auto-generate thresholds")
         self.auto_threshold_checkbox.setChecked(False)
+        self.auto_threshold_checkbox.setToolTip(
+            "Add thresholds / upper_thresholds columns, computed per image with the settings below.")
         self.auto_threshold_checkbox.stateChanged.connect(self.toggle_threshold_widget)
         self.layout().addWidget(self.auto_threshold_checkbox)
 
-        # === Threshold Param Box ===
+        # === Threshold Param Box (shown only while Auto-generate is ticked) ===
         self.threshold_param_box = ThresholdParamWidget()
-        self.threshold_param_box.setVisible(False)
-        self.layout().addWidget(self.threshold_param_box)
-        
-        threshold_group = QGroupBox("Adaptive Threshold Settings")
-        threshold_group.setLayout(QVBoxLayout())
-        threshold_group.layout().addWidget(self.threshold_param_box)
-        self.layout().addWidget(threshold_group)
-        
+        self.threshold_group = QGroupBox("Adaptive threshold settings")
+        self.threshold_group.setLayout(QVBoxLayout())
+        self.threshold_group.layout().addWidget(self.threshold_param_box)
+        self.threshold_group.setVisible(False)
+        self.layout().addWidget(self.threshold_group)
 
         # === Save CSV path ===
-        self.save_csv_line = self._add_path_row("Save CSV As:", file_dialog=True)
+        save_form = QFormLayout()
+        self.layout().addLayout(save_form)
+        self.save_csv_line = self._add_path_row("Save CSV as", file_dialog=True, form=save_form,
+                                                tip="The CSV file to write (.csv is added if missing).")
 
         # === Run + Preview Buttons ===
         # run_layout = QHBoxLayout()
         self.run_btn = QPushButton("Generate CSV")
+        self.run_btn.setToolTip("Pair the files and write the CSV.")
         self.run_btn.clicked.connect(self.run_alignment)
         self.preview_btn = QPushButton("Preview")
+        self.preview_btn.setToolTip("Show the table that Generate CSV would write.")
         self.preview_btn.clicked.connect(self.preview_alignment)
         # run_layout.addWidget(run_btn)
         # run_layout.addWidget(preview_btn)
         # self.layout().addLayout(run_layout)
         self.layout().addWidget(self.preview_btn)
         self.layout().addWidget(self.run_btn)
-        
+        self.status = StatusLine(hide_empty=True)
+        self.layout().addWidget(self.status)
 
-    def _add_path_row(self, label_text, file_dialog=False):
+        # the two forms (folders, save) share one label column
+        width = max(l.sizeHint().width() for l in self._row_labels)
+        for l in self._row_labels:
+            l.setMinimumWidth(width)
+
+
+    def _add_path_row(self, label_text, file_dialog=False, form=None, tip=""):
         layout = QHBoxLayout()
-        label = QLabel(label_text)
         line_edit = QLineEdit()
+        line_edit.setToolTip(tip)
         btn = QPushButton("Browse")
+        btn.setToolTip("Choose the file." if file_dialog else "Choose the folder.")
         if file_dialog:
             btn.clicked.connect(lambda: self._browse_file(line_edit))
         else:
             btn.clicked.connect(lambda: self._browse_folder(line_edit))
-        layout.addWidget(label)
         layout.addWidget(line_edit)
         layout.addWidget(btn)
-        self.layout().addLayout(layout)
+        label = QLabel(label_text)
+        label.setToolTip(tip)
+        form.addRow(label, layout)
+        self._row_labels = getattr(self, "_row_labels", []) + [label]
         return line_edit
 
-    def _add_kv_row(self, label_text, parent=None):
+    def _add_kv_row(self, label_text, parent=None, tip=""):
         if parent is None:
             parent = self.prefix_suffix_box
 
-        layout = QHBoxLayout()
-        label = QLabel(label_text)
         line_edit = QLineEdit()
-        layout.addWidget(label)
-        layout.addWidget(line_edit)
-        parent.layout().addLayout(layout)
+        line_edit.setToolTip(tip)
+        parent.layout().addRow(QLabel(label_text), line_edit)
         return line_edit
     
     # def _add_kv_row(self, label_text):
@@ -504,7 +525,6 @@ class CSVAlignerGroupBox(QGroupBox):
             if self.auto_threshold_checkbox.isChecked():
                 # Collect threshold parameters
                 threshold_params = self.collect_threshold_params()
-                print("Threshold Parameters:", threshold_params)
                 add_thresholds_to_df(df, threshold_params)
 
             save_path = self.save_csv_line.text().strip()
@@ -513,7 +533,6 @@ class CSVAlignerGroupBox(QGroupBox):
             df.to_csv(save_path, index=False)
             QMessageBox.information(self, "Success", f"CSV saved to:\n{save_path}")
         except Exception as e:
-            print(f"[CSV Align Error] {e}")
             QMessageBox.critical(self, "Error", f"CSV creation failed:\n{str(e)}")
 
     def preview_alignment_no_background_thread(self):
@@ -526,7 +545,6 @@ class CSVAlignerGroupBox(QGroupBox):
             if self.auto_threshold_checkbox.isChecked():
                 # Collect threshold parameters
                 threshold_params = self.collect_threshold_params()
-                print("Threshold Parameters:", threshold_params)
                 add_thresholds_to_df(df, threshold_params)
             
             dialog = QDialog(self)
@@ -548,7 +566,6 @@ class CSVAlignerGroupBox(QGroupBox):
             dialog.exec_()
 
         except Exception as e:
-            print(f"[CSV Align Error] {e}")
             QMessageBox.critical(self, "Error", f"CSV preview failed:\n{str(e)}")
             
 
@@ -573,25 +590,31 @@ class CSVAlignerGroupBox(QGroupBox):
     def run_alignment(self):
         save_path = self.save_csv_line.text().strip()
         if not save_path:
-            QMessageBox.warning(self, "Missing Output File", "Please specify an output file using the Browse button.")
+            self.status.set("Choose the output CSV file first (Save CSV as \u2192 Browse).", "error")
             return
         if not save_path.endswith(".csv"):
             save_path += ".csv"
 
-        self.set_buttons_enabled(False)  
+        self.status.set("Generating CSV\u2026", "info")
+        self.set_buttons_enabled(False)
         worker = self.run_alignment_worker()
 
         def handle_success(df):
-            df.to_csv(save_path, index=False)
-            self.show_info(f"CSV saved to:\n{save_path}")
-            self.set_buttons_enabled(True)
-            
-            # clear the csv path to avoid overwriting
-            self.save_csv_line.setText("")
+            # whatever happens, the buttons come back (a failed write used to leave them disabled)
+            try:
+                df.to_csv(save_path, index=False)
+            except Exception as e:
+                self.status.set(f"CSV creation failed: {e}", "error")
+            else:
+                self.status.set(f"CSV saved to {save_path} ({len(df)} rows)", "ok")
+            finally:
+                self.set_buttons_enabled(True)
 
         def handle_error(e):
-            self.show_error(f"CSV creation failed:\n{str(e)}")
-            self.set_buttons_enabled(True)
+            try:
+                self.status.set(f"CSV creation failed: {e}", "error")
+            finally:
+                self.set_buttons_enabled(True)
 
         worker.returned.connect(handle_success)
         worker.errored.connect(handle_error)
@@ -613,16 +636,23 @@ class CSVAlignerGroupBox(QGroupBox):
         return self.do_alignment_and_threshold()
 
     def preview_alignment(self):
+        self.status.clear()
         self.set_buttons_enabled(False)
         worker = self.preview_alignment_worker()
 
         def handle_success(df):
-            self._show_preview_dialog(df)
-            self.set_buttons_enabled(True)
+            try:
+                self._show_preview_dialog(df)
+            except Exception as e:
+                self.status.set(f"Preview failed: {e}", "error")
+            finally:
+                self.set_buttons_enabled(True)
 
         def handle_error(e):
-            self.show_error(f"Preview failed:\n{str(e)}")
-            self.set_buttons_enabled(True)
+            try:
+                self.status.set(f"Preview failed: {e}", "error")
+            finally:
+                self.set_buttons_enabled(True)
 
         worker.returned.connect(handle_success)
         worker.errored.connect(handle_error)
@@ -649,7 +679,7 @@ class CSVAlignerGroupBox(QGroupBox):
 
 
     def toggle_threshold_widget(self):
-        self.threshold_param_box.setVisible(self.auto_threshold_checkbox.isChecked())
+        self.threshold_group.setVisible(self.auto_threshold_checkbox.isChecked())
         # self.setVisible(self.auto_threshold_checkbox.isChecked())
             
     def toggle_prefix_suffix(self, text):
@@ -663,7 +693,7 @@ class CSVAlignerGroupBox(QGroupBox):
             "<b>Same Name:</b> Match only when filenames are exactly the same (excluding extension). "
             "Use when all files share identical names.<br><br>"
             
-            "<b>Image Name + Prefix/Suffix:</b> Use image names as base and strip prefix/suffix from segmentation and boundary files. "
+            "<b>Image Name + Prefix/Suffix:</b> Use image names as base and strip prefix/suffix from seeds and boundary files. "
             "Set those in the options below.<br><br>"
             
             "<b>File Order:</b> Match by sorting filenames in each folder and aligning row-by-row. "
@@ -787,11 +817,12 @@ class ThresholdParamWidget(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Threshold Parameter Controls")
-        self.setLayout(QVBoxLayout())
+        self.setLayout(QFormLayout())
+        self.layout().setContentsMargins(0, 0, 0, 0)
 
         # === Mode selector + Help button ===
         mode_layout = QHBoxLayout()
-        mode_label = QLabel("Threshold Mode:")
+        mode_label = QLabel("Threshold mode")
         self.mode_combo = QComboBox()
         self.mode_combo.addItems(["otsu_factor", "mean_factor", "actual_values"])
         self.mode_combo.setToolTip(
@@ -806,47 +837,40 @@ class ThresholdParamWidget(QWidget):
         help_btn.setToolTip("Click for explanation of threshold parameters")
         help_btn.clicked.connect(self.show_explanation)
 
-        mode_layout.addWidget(mode_label)
-        mode_layout.addWidget(self.mode_combo)
+        mode_layout.addWidget(self.mode_combo, 1)
         mode_layout.addWidget(help_btn)
-        self.layout().addLayout(mode_layout)
+        self.layout().addRow(mode_label, mode_layout)
 
         # === Threshold range inputs ===
         thresh_layout = QHBoxLayout()
-        thresh_layout.addWidget(QLabel("Lower Threshold Range\n(Start, Stop):"))
         self.thresh_min = QLineEdit("1")
+        self.thresh_min.setPlaceholderText("start")
         self.thresh_min.setToolTip("Left bound of threshold factor or value")
         self.thresh_max = QLineEdit("")
+        self.thresh_max.setPlaceholderText("stop")
         self.thresh_max.setToolTip("Right bound of threshold factor or value")
         thresh_layout.addWidget(self.thresh_min)
         thresh_layout.addWidget(self.thresh_max)
-        self.layout().addLayout(thresh_layout)
+        self.layout().addRow(QLabel("Lower threshold range"), thresh_layout)
 
        # === Upper threshold range inputs ===
         upper_layout = QHBoxLayout()
-        upper_layout.addWidget(QLabel("Upper Threshold Range\n(Start, Stop):"))
         self.upper_min = QLineEdit("")
+        self.upper_min.setPlaceholderText("start")
         self.upper_min.setToolTip("Left bound of upper threshold (optional)")
         self.upper_max = QLineEdit("")
+        self.upper_max.setPlaceholderText("stop")
         self.upper_max.setToolTip("Right bound of upper threshold (optional)")
         upper_layout.addWidget(self.upper_min)
         upper_layout.addWidget(self.upper_max)
-        self.layout().addLayout(upper_layout)
+        self.layout().addRow(QLabel("Upper threshold range"), upper_layout)
 
         # Number of steps
-        step_layout = QHBoxLayout()
-        step_layout.addWidget(QLabel("Range Steps:"))
         self.num_steps = QSpinBox()
         self.num_steps.setMinimum(1)
         self.num_steps.setValue(1)
         self.num_steps.setToolTip("Number of values to generate. 1 = single value")
-        step_layout.addWidget(self.num_steps)
-        self.layout().addLayout(step_layout)
-
-        # Run button
-        run_btn = QPushButton("test params")
-        run_btn.clicked.connect(self.print_params)
-        self.layout().addWidget(run_btn)
+        self.layout().addRow(QLabel("Range steps"), self.num_steps)
 
     def get_params(self):
         """Collect thresholding parameters from UI."""
@@ -888,10 +912,6 @@ class ThresholdParamWidget(QWidget):
             "upper_factor_range": upper_factor_range,
             "num_steps": num_steps
         }
-
-    def print_params(self):
-        params = self.get_params()
-        print("Threshold Parameters:", params)
 
     def show_explanation(self):
         text = (
@@ -936,10 +956,3 @@ class SPROUTToolWidget(QWidget):
         # e.g. self.other_tool = OtherGroupBox(viewer)
         # self.layout().addWidget(self.other_tool)
 
-
-    def showEvent(self, event):
-        print("showEvent called")
-
-        
-    def hideEvent(self, event):
-        print("hideEvent called")

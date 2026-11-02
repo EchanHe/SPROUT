@@ -1,5 +1,6 @@
 import numpy as np
 import json
+import weakref
 from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QComboBox, QListWidget, QLineEdit, QMessageBox, QFileDialog, QRadioButton, QButtonGroup
@@ -8,6 +9,11 @@ from qtpy.QtCore import Qt
 from napari.layers import Labels
 from napari.utils.notifications import show_info
 
+from ..utils.status import LAYER_HEADER, NO_LAYER, StatusLine, style
+
+# the run button style of the main panel (as in the Edit dock)
+RUN_STYLE = "QPushButton { font-weight: bold; } QPushButton:enabled { background-color: #45a049; }"
+
 class LabelMapperWidget(QWidget):
     def __init__(self, viewer):
         super().__init__()
@@ -15,26 +21,29 @@ class LabelMapperWidget(QWidget):
         self.label_layer = None
 
         self.scheme = []  # e.g., ["a", "b", "c"]
-        self.label2class = {}  # {label: class_name}
+        self.label2class = {}  # {label: class_name}, of the bound Labels layer
         self.undo_stack = []
+        # one (label2class, undo_stack) per Labels layer; a removed layer takes its mapping along
+        self._mappings = weakref.WeakKeyDictionary()
         self.current_class_index = 0
 
         self.setWindowTitle("Semantic Label Mapper")
         self.setLayout(QVBoxLayout())
 
         # --- Layer Info ---
-        self.layer_label = QLabel("Active Label Layer: (none)")
-        self.layer_label.setStyleSheet("""
-            QLabel {
-                font-weight: bold;
-                color: white;
-                background-color: #007ACC;  
-                padding: 4px;
-                border-radius: 4px;
-            }
-        """)
-        self.layer_label.setToolTip("Currently active label layer in the viewer. Labels will be assigned based on this layer.")
+        self.layer_label = QLabel(NO_LAYER)
+        self.layer_label.setStyleSheet(LAYER_HEADER)
+        self.layer_label.setWordWrap(True)
+        self.layer_label.setToolTip("The active Labels layer in napari. Each Labels layer keeps its own mapping.")
         self.layout().addWidget(self.layer_label)
+
+        hint = QLabel("Ctrl+click a region in the viewer to assign it to the current class "
+                      "(Auto: then the next class is selected).")
+        hint.setWordWrap(True)
+        hint.setStyleSheet(style("info"))
+        self.layout().addWidget(hint)
+        self.status = StatusLine(hide_empty=True)
+        self.layout().addWidget(self.status)
 
         # --- Scheme Controls (more compact layout) ---
         # Top row: Load / Save
@@ -82,8 +91,8 @@ class LabelMapperWidget(QWidget):
         self.mode_group.addButton(self.radio_auto)
         self.mode_group.addButton(self.radio_manual)
         
-        self.radio_auto.setToolTip("Automatically switch to the next class after assigning a label.")
-        self.radio_manual.setToolTip("Manually select the class to assign labels to.")
+        self.radio_auto.setToolTip("After each Ctrl+click assignment, switch to the next class.")
+        self.radio_manual.setToolTip("Ctrl+click assigns to the class chosen in Current Class until you change it.")
         
         mode_layout.addWidget(QLabel("Operation Mode:"))
         mode_layout.addWidget(self.radio_auto)
@@ -98,7 +107,7 @@ class LabelMapperWidget(QWidget):
         self.clear_current_btn = QPushButton("Reset This Mapping")
         self.clear_all_btn = QPushButton("Reset All")
 
-        self.class_dropdown.setToolTip("Select the class to which labels will be assigned.")
+        self.class_dropdown.setToolTip("The class that Ctrl+click in the viewer assigns regions to.")
         self.undo_btn.setToolTip("Undo the last label-to-class assignment operation.")
         self.clear_current_btn.setToolTip("Remove all label assignments associated with the currently selected class.")
         self.clear_all_btn.setToolTip("Remove all label-to-class mappings across all classes.")
@@ -124,18 +133,17 @@ class LabelMapperWidget(QWidget):
 
         # --- Label Assign Summary ---
         self.mapping_summary = QListWidget()
-        self.mapping_summary.setToolTip("Shows all label IDs and their assigned semantic classes.")
+        self.mapping_summary.setToolTip("The label IDs of the active Labels layer and their classes (assigned with Ctrl+click).")
         self.layout().addWidget(QLabel("Current Mapping:"))
         self.layout().addWidget(self.mapping_summary)
 
         self.new_seg_button = QPushButton("Apply Mapping to Segmentation")
-        self.new_seg_button.setStyleSheet("""QPushButton { font-weight: bold; background-color: #45a049;}""")
+        self.new_seg_button.setStyleSheet(RUN_STYLE)
         self.new_seg_button.setToolTip("Create a new label image based on current label-to-class mapping.")
         self.new_seg_button.clicked.connect(self.apply_mapping_to_segmentation)
         self.layout().addWidget(self.new_seg_button)
 
         self.save_mapping_button = QPushButton("Export Mapping to JSON")
-        self.save_mapping_button.setStyleSheet("""QPushButton { font-weight: bold; background-color: #45a049;}""")
         self.save_mapping_button.setToolTip("Save current label-to-class mapping to a JSON file.")
         self.save_mapping_button.clicked.connect(self.export_mapping_to_json)
         self.layout().addWidget(self.save_mapping_button)
@@ -154,18 +162,20 @@ class LabelMapperWidget(QWidget):
         self.clear_all_btn.clicked.connect(self.clear_all_mappings)
 
         self.viewer.layers.selection.events.active.connect(self.update_active_label_layer_binding)
-        self.viewer.window.qt_viewer.canvas.events.key_press.connect(self.on_keypress)
         self.class_dropdown.currentIndexChanged.connect(self.sync_class_index)
+
+        # Bind the layer that is already active (no re-selection needed).
+        self._bind_layer(self.viewer.layers.selection.active)
 
     def sync_class_index(self, idx):
         self.current_class_index = idx
 
     def update_active_label_layer_binding(self, event):
-        layer = event.value
+        self._bind_layer(event.value)
 
-        layer_changed = (self.label_layer != layer)
-        if layer_changed and self.label2class:
-            self.clear_all_mappings()
+    def _bind_layer(self, layer):
+        # Each Labels layer keeps its own mapping; selecting another layer (of any type)
+        # clears nothing.
         # unbind from the last layer if it exists
         if self.label_layer and self.on_click in self.label_layer.mouse_drag_callbacks:
             self.label_layer.mouse_drag_callbacks.remove(self.on_click)
@@ -173,13 +183,17 @@ class LabelMapperWidget(QWidget):
         if isinstance(layer, Labels):
             if self.on_click not in layer.mouse_drag_callbacks:
                 layer.mouse_drag_callbacks.append(self.on_click)
-                
+
             self.label_layer = layer
             self.layer_label.setText(f"Active Label Layer: {layer.name}")
-            print(f"Bound to active label layer: {layer.name}")
+            if layer not in self._mappings:
+                self._mappings[layer] = ({}, [])
+            self.label2class, self.undo_stack = self._mappings[layer]
+            self.update_mapping_summary()
+            self.update_scheme_ui(update_dropdown=False)
         else:
             self.label_layer = None
-            self.layer_label.setText("Active Label Layer: (none)")
+            self.layer_label.setText(NO_LAYER)
 
     def load_scheme(self):
         path, _ = QFileDialog.getOpenFileName(self, "Load Scheme", filter="JSON files (*.json)")
@@ -208,9 +222,10 @@ class LabelMapperWidget(QWidget):
         if name in self.scheme:
             # remove class and also drop any mappings for that class
             self.scheme.remove(name)
-            labels_to_remove = [k for k, v in self.label2class.items() if v == name]
-            for lbl in labels_to_remove:
-                del self.label2class[lbl]
+            for label2class in self._all_mappings():
+                labels_to_remove = [k for k, v in label2class.items() if v == name]
+                for lbl in labels_to_remove:
+                    del label2class[lbl]
             self.update_scheme_ui()
             self.update_mapping_summary()
             self.class_input.clear()
@@ -238,6 +253,11 @@ class LabelMapperWidget(QWidget):
                 self.current_class_index = clamped
             self.class_dropdown.blockSignals(False)
 
+    def _all_mappings(self):
+        """The label2class dicts of every Labels layer (and the shown one)."""
+        maps = [m for m, _ in self._mappings.values()]
+        return maps if any(m is self.label2class for m in maps) else maps + [self.label2class]
+
     def get_labels_for_class(self, cls):
         return [k for k, v in self.label2class.items() if v == cls]
 
@@ -248,7 +268,6 @@ class LabelMapperWidget(QWidget):
         self.class_dropdown.blockSignals(True)
         self.class_dropdown.setCurrentIndex(self.current_class_index)
         self.class_dropdown.blockSignals(False)
-        print(f"Switched to next class: {self.scheme[self.current_class_index]}")
 
     def prev_class(self):
         if not self.scheme:
@@ -257,7 +276,6 @@ class LabelMapperWidget(QWidget):
         self.class_dropdown.blockSignals(True)
         self.class_dropdown.setCurrentIndex(self.current_class_index)
         self.class_dropdown.blockSignals(False)
-        print(f"Switched to prev class: {self.scheme[self.current_class_index]}")
 
     def assign_label(self, label):
         cls = self.class_dropdown.currentText()
@@ -288,8 +306,9 @@ class LabelMapperWidget(QWidget):
         # Not add mapping if no current class is selected / current class is empty
         current_cls = self.class_dropdown.currentText()
         if not current_cls:
-            print("No current class selected; Ctrl+click ignored.")
+            self.status.set("Add a class first: Ctrl+click assigns regions to the current class.", "warn")
             return
+        self.status.clear()
 
         self.assign_label(label)
 
@@ -352,14 +371,12 @@ class LabelMapperWidget(QWidget):
         for lbl in labels_to_remove:
             del self.label2class[lbl]
         self.update_mapping_summary()
-        self.update_scheme_ui(preserve_index=True)    
-        print(f"Cleared mappings for class '{current_cls}'.")
+        self.update_scheme_ui(preserve_index=True)
 
     def clear_all_mappings(self):
         self.label2class.clear()
         self.update_mapping_summary()
         self.update_scheme_ui(preserve_index=True)
-        print("Cleared all mappings.")
 
     def clear_all_classes(self):
         """Clear the entire scheme (all classes) and any associated mappings."""
@@ -378,11 +395,11 @@ class LabelMapperWidget(QWidget):
             return
 
         self.scheme.clear()
-        self.label2class.clear()
-        self.undo_stack.clear()
+        for label2class, undo_stack in list(self._mappings.values()) + [(self.label2class, self.undo_stack)]:
+            label2class.clear()
+            undo_stack.clear()
         self.update_mapping_summary()
         self.update_scheme_ui()
-        print("Cleared all classes and mappings.")
 
     def apply_mapping_to_segmentation(self):
         if self.label_layer is None:
@@ -401,9 +418,11 @@ class LabelMapperWidget(QWidget):
         layer_name = self.label_layer.name
 
         def on_done(new_data):
-            self.viewer.add_labels(new_data, name=f"{layer_name}_mapped")
+            # napari selects the new layer, so this dock now shows its (empty) mapping
+            new = self.viewer.add_labels(new_data, name=f"{layer_name}_mapped")
             show_info(f"New mapped segmentation layer created from '{layer_name}'.")
-            print("New mapped segmentation layer created.")
+            self.status.set(f"Created {new.name}. The mapping of {layer_name} is kept: select "
+                            f"{layer_name} to see or change it.", "ok")
 
         # Disable the button while the (potentially heavy) remap runs in the background,
         # mirroring the behaviour of the edit widget.
@@ -445,7 +464,6 @@ class LabelMapperWidget(QWidget):
             done_callback(result)
 
         def on_error(e):
-            print(f"Background task failed: {e}")
             for btn in buttons_to_disable:
                 btn.setEnabled(True)
             QMessageBox.warning(self, "Error", f"Operation failed:\n{e}")
@@ -471,4 +489,4 @@ class LabelMapperWidget(QWidget):
         with open(path, 'w') as f:
             json.dump(export_data, f, indent=4)
 
-        print(f"Mapping exported to {path}.")
+        self.status.set(f"Mapping exported to {path}", "ok")

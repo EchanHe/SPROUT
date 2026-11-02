@@ -202,6 +202,13 @@ class RoiSelect(QWidget):
         self._removed = removed_now
         self.refresh()
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        listed = [(d(), self.combo.itemData(i, Qt.ToolTipRole)) for i in range(self.combo.count())
+                  for d in [self.combo.itemData(i)] if callable(d)]
+        if listed != [(l, l.name) for l in self.hub.layers()]:
+            self._rebuild()            # a missed ROI event: re-sync, keeping the selection
+
     def _on_activated(self, index):
         data = self.combo.itemData(index)
         if data == "removed":
@@ -278,6 +285,19 @@ class RoiReminder(QLabel):
 # --------------------------------------------------------------------------
 class _LayerCombo(QComboBox):
     """Layer names, middle-elided; the full name is the item data and tooltip."""
+
+    def names(self):
+        return [self.itemData(i) for i in range(self.count())]
+
+    def rename(self, old, new):
+        """A layer was renamed: rename its item in place (the selection stays)."""
+        i = self.findData(old)
+        if i >= 0:
+            self.blockSignals(True)
+            self.setItemText(i, elide(new))
+            self.setItemData(i, new)
+            self.setItemData(i, new, Qt.ToolTipRole)
+            self.blockSignals(False)
 
     def set_names(self, names):
         cur = self.name()
@@ -456,6 +476,7 @@ class RoiTools(QWidget):
         self.hub.users_changed.connect(self._show)
         self.hub.layer_inserted.connect(self._on_layers_changed)
         self.hub.layer_removed.connect(self._on_layers_changed)
+        self.hub.layer_renamed.connect(self._on_layer_renamed)
         self.hub.dims_changed.connect(self._on_dims)
         self.hub.draw_finished.connect(self._on_drawn)
         self.hub.draw_note.connect(self._on_draw_note)
@@ -476,6 +497,15 @@ class RoiTools(QWidget):
     def showEvent(self, event):
         self._align_labels()          # the font may have changed with the napari stylesheet
         super().showEvent(event)
+        imgs, labs = self._layer_names()
+        if self.image_combo.names() != imgs or self.labels_combo.names() != labs \
+                or [self.roi_combo.itemData(i)() for i in range(self.roi_combo.count())] != self.hub.layers():
+            self.refresh_layers()     # a missed layer event: re-sync, keeping the selection
+
+    def _on_layer_renamed(self, layer, old):
+        self.image_combo.rename(old, layer.name)
+        self.labels_combo.rename(old, layer.name)
+        self._refresh_timer.start(0)  # e.g. renamed to / from a preview name: what is offered
 
     def _label(self, text):
         lab = QLabel(text)
@@ -516,15 +546,20 @@ class RoiTools(QWidget):
         lay = self.viewer.layers[name] if name and name in self.viewer.layers else None
         return lay if isinstance(lay, Image) else None
 
-    def refresh_layers(self):
+    def _layer_names(self):
+        """(images, labels) the combos offer."""
         imgs = [l.name for l in self.viewer.layers
                 if isinstance(l, Image) and not l.rgb and not l.multiscale and l.ndim in (2, 3)]
+        labs = [l.name for l in self.viewer.layers if isinstance(l, Labels) and not l.name.startswith(_PREVIEW_LAYERS)]
+        return imgs, labs
+
+    def refresh_layers(self):
+        imgs, labs = self._layer_names()
         active = self.viewer.layers.selection.active
         self.image_combo.set_names(imgs)
         if self.image_combo.name() is None and imgs:
             self.image_combo.setCurrentIndex(imgs.index(active.name) if isinstance(active, Image) and
                                              active.name in imgs else 0)
-        labs = [l.name for l in self.viewer.layers if isinstance(l, Labels) and not l.name.startswith(_PREVIEW_LAYERS)]
         self.labels_combo.set_names(labs)
         self._on_rois_changed()
 

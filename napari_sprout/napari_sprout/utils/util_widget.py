@@ -20,6 +20,7 @@ if str(sprout_path) not in sys.path:
     sys.path.insert(0, str(sprout_path))
 
 from sprout_core.config_core import support_footprints, support_footprints_2d
+from sprout_core.roi import parse_ids
 from .fit_table import FitTable
 from .status import StatusLine
 from sprout_core.sprout_core import get_ccomps_with_size_order,erosion_binary_img_on_sub
@@ -55,7 +56,7 @@ class ElidedLineEdit(QLineEdit):
         p.end()
 
 
-def create_output_folder_row(default_folder=None, label="Output Folder:"):
+def create_output_folder_row(default_folder=None, label="Output folder"):
 
     layout = QHBoxLayout()
     label = QLabel(label)
@@ -445,9 +446,14 @@ class MainSeedParamWidget(_ParamGroup):
         grid.setHorizontalSpacing(8)
         self.seed_method_combo = QComboBox()
         self.seed_method_combo.addItems(["Original", "Adaptive (Erosion)", "Adaptive (Thresholds)"])
+        self.seed_method_combo.setToolTip(
+            "Original: one seed layer per threshold row and erosion step.\n"
+            "Adaptive (Erosion) / Adaptive (Thresholds): combine the seeds across the erosion\n"
+            "steps / the threshold rows into one final seed.")
         self.thread_spin = _param_spin(1, os.cpu_count(), min(4, os.cpu_count() - 1), 60)
         self.erosion_spin = _param_spin(0, 1000, 0)
         self.segments_spin = _param_spin(1, 100000, 10)
+        self.segments_spin.setToolTip("Number of largest connected components to keep in each seed")
         self.param_labels = [QLabel("Method"), QLabel("Threads"), QLabel("Erosion steps"), QLabel("Segments")]
         grid.addWidget(self.param_labels[0], 0, 0)
         grid.addWidget(self.seed_method_combo, 0, 1)
@@ -463,7 +469,7 @@ class MainSeedParamWidget(_ParamGroup):
 
         # thresholds, then footprints: each full width, as high as its rows
         self.threshold_table = FitTable(0, 2, max_rows=8)
-        self.threshold_table.setHorizontalHeaderLabels(["Lower Threshold", "Upper Threshold"])
+        self.threshold_table.setHorizontalHeaderLabels(["Lower threshold", "Upper threshold"])
         self.threshold_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         layout.addWidget(self.threshold_table)
         self.add_threshold_btn = QPushButton("Add Threshold")
@@ -745,6 +751,9 @@ class MainGrowParamWidget(_ParamGroup):
         self.thread_spin = _param_spin(1, os.cpu_count(), min(4, os.cpu_count() - 1), 60)
         self.touch_rule_combo = QComboBox()
         self.touch_rule_combo.addItems(["stop", "overwrite"])
+        self.touch_rule_combo.setToolTip("When a growing region reaches another region:\n"
+                                         "stop: it never grows into the other region's voxels\n"
+                                         "overwrite: it may take them over")
         self.param_labels = [QLabel("Threads"), QLabel("Touch rule")]
         grid.addWidget(self.param_labels[0], 0, 0)
         grid.addWidget(self.thread_spin, 0, 1)
@@ -757,7 +766,7 @@ class MainGrowParamWidget(_ParamGroup):
         # thresholds table: full width, as high as its rows
         self.threshold_table = FitTable(0, 3, max_rows=8)
         self.threshold_table.setHorizontalHeaderLabels(
-            ["Lower Threshold", "Upper Threshold", "Dilation Steps"])
+            ["Lower threshold", "Upper threshold", "Dilation steps"])
         self.threshold_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         layout.addWidget(self.threshold_table)
 
@@ -979,7 +988,7 @@ def set_compact(widget, minw=None, maxw=None):
 
 class SeedOptionalParamGroupBox(QGroupBox):
     def __init__(self, default_output=None):
-        super().__init__("Advanced Seed Parameters")
+        super().__init__("Advanced seed parameters")
         layout = QFormLayout()
 
         # sort (bool)
@@ -1019,18 +1028,16 @@ class SeedOptionalParamGroupBox(QGroupBox):
         # add to the split parameters row
         layout.addRow("No split iterations", self.no_split_spin)
         
-        split_ratio_row_layout = QHBoxLayout()
-        self.split_ratio_label = QLabel("Split Ratios:")
+        # one form row each: side by side in one row the labels were cut ("Split Rati")
+        self.split_ratio_label = QLabel("Min split ratio")
         self.split_ratio_label.setToolTip("Minimum ratios of a sub-segment to be considered as a split")
-        split_ratio_row_layout.addWidget(self.split_ratio_label)
-        split_ratio_row_layout.addWidget(self.min_split_ratio_spin)
-        
-        self.total_ratio_label = QLabel("Total Ratio:")
+        self.min_split_ratio_spin.setToolTip(self.split_ratio_label.toolTip())
+        layout.addRow(self.split_ratio_label, self.min_split_ratio_spin)
+
+        self.total_ratio_label = QLabel("Min total split ratio")
         self.total_ratio_label.setToolTip("Minimum proportion of all sub-segments to current to be considered as a split")
-        split_ratio_row_layout.addWidget(self.total_ratio_label)
-        split_ratio_row_layout.addWidget(self.min_split_total_ratio_spin)
-        
-        layout.addRow("Split Parameters", split_ratio_row_layout)
+        self.min_split_total_ratio_spin.setToolTip(self.total_ratio_label.toolTip())
+        layout.addRow(self.total_ratio_label, self.min_split_total_ratio_spin)
 
         # # min_split_ratio (float)
         # self.min_split_ratio_spin = QDoubleSpinBox()
@@ -1071,7 +1078,7 @@ class SeedOptionalParamGroupBox(QGroupBox):
         self.size_upper_label.setToolTip("Upper limit (-1 means no limit)")
         size_layout.addWidget(self.size_upper_label)
         size_layout.addWidget(self.size_upper_spin)
-        layout.addRow("Split size:", size_layout)
+        layout.addRow("Split size", size_layout)
 
         # split_convex_hull_limit (tuple of float or None)
         self.hull_lower_spin = QSpinBox()
@@ -1107,8 +1114,6 @@ class SeedOptionalParamGroupBox(QGroupBox):
             self.size_upper_label,
             self.hull_lower_label,
             self.hull_upper_label,
-            self.split_ratio_label,
-            self.total_ratio_label
         ]:
             set_compact(w, minw=40, maxw=80)
 
@@ -1173,7 +1178,7 @@ class SeedOptionalParamGroupBox(QGroupBox):
 
 class GrowOptionalParamGroupBox(QGroupBox):
     def __init__(self, default_output=None):
-        super().__init__("Advanced Grow Parameters")
+        super().__init__("Advanced grow parameters")
 
 
         layout = QFormLayout()
@@ -1194,10 +1199,14 @@ class GrowOptionalParamGroupBox(QGroupBox):
         self.sort_checkbox = QCheckBox("Sort the result by size")
         layout.addRow(self.sort_checkbox)
 
-        # Grow specific IDs
+        # Grow specific IDs ("3,5-7", as in the ROI tools); a typo is a red line, the run is refused
         self.id_list_line = QLineEdit()
-        self.id_list_line.setPlaceholderText("e.g. 1,3,5")
-        layout.addRow(QLabel("IDs to Grow (optional):"), self.id_list_line)
+        self.id_list_line.setPlaceholderText("e.g. 3,5-7 (empty: all)")
+        self.id_list_line.setToolTip("Seed ids to grow, e.g. 3,5-7; empty: all seeds")
+        layout.addRow(QLabel("IDs to grow"), self.id_list_line)
+        self.ids_error = StatusLine(hide_empty=True)
+        layout.addRow(self.ids_error)
+        self.id_list_line.textChanged.connect(lambda *_: self.ids_error.clear())
 
         self.early_stop_checkbox = QCheckBox("Early stop if no growth")
         self.early_stop_checkbox.setToolTip("Stop growing if no growth occurs for a specified number of iterations.")
@@ -1209,14 +1218,14 @@ class GrowOptionalParamGroupBox(QGroupBox):
         self.no_growth_spin.setRange(1, 100)
         self.no_growth_spin.setValue(3)
         self.no_growth_spin.setEnabled(True)
-        layout.addRow(QLabel("Max No-Growth Iterations:"), self.no_growth_spin)
+        layout.addRow(QLabel("Max no-growth iterations"), self.no_growth_spin)
 
         # Min growth size
         self.min_growth_spin = QSpinBox()
         self.min_growth_spin.setRange(0, 1000000)
         self.min_growth_spin.setValue(50)
         self.min_growth_spin.setEnabled(True)
-        layout.addRow(QLabel("Minimum Growth Size:"), self.min_growth_spin)
+        layout.addRow(QLabel("Min growth size"), self.min_growth_spin)
 
 
 
@@ -1264,22 +1273,24 @@ class GrowOptionalParamGroupBox(QGroupBox):
         if 'min_growth_size' in params:
             self.min_growth_spin.setValue(params['min_growth_size'])
 
-    def get_params(self):
-        to_grow_text = self.id_list_line.text().strip()
-        to_grow_text.replace(" ", "")  # remove any spaces
-
+    def to_grow_ids(self):
+        """The ids to grow (sorted), None for all. ValueError on a typo, also shown as a red line."""
+        text = self.id_list_line.text().strip()
+        if not text:
+            return None
         try:
-            to_grow_ids = [int(x) for x in to_grow_text.split(",") if x.strip().isdigit()]
-        except:
-            to_grow_ids = None
-            # show error in napari message box
-            from napari.utils.notifications import show_error
-            show_error("Invalid IDs format. Please enter a comma-separated list of integers.")
-       
-        # if to_grow_ids is empty, set to None
-        if not to_grow_ids:
-            to_grow_ids = None
-       
+            ids = sorted(parse_ids(text))
+        except ValueError:
+            ids = None
+        if not ids:
+            msg = f"IDs to grow: enter ids like 3,5-7, or nothing for all (got '{text}')"
+            self.ids_error.set(msg, "error")
+            raise ValueError(msg)
+        return ids
+
+    def get_params(self):
+        to_grow_ids = self.to_grow_ids()
+
         if not self.early_stop_checkbox.isChecked():
             no_growth_max_iter = None
         else:

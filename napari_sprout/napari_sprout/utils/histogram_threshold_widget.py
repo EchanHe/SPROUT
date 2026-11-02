@@ -34,9 +34,10 @@ from sprout_core.roi import RoiError
 from sprout_core.sprout_core import erosion_binary_img_on_sub, get_ccomps_with_size_order
 
 from .histogram_widget import HistogramRangeWidget
+from .roi_layers import get_roi_hub
 from .roi_widget import RoiReminder
 from .slice_preview import SlicePreview
-from .status import StatusLine, style
+from .status import StatusLine, tab_hidden
 
 PREVIEW_NAME = "Threshold Preview"
 
@@ -181,6 +182,7 @@ class HistogramThresholdWidget(QGroupBox):
         self._auto_range = None
         self._roi_refresh = False
         self._slice_roi = False
+        self._dims_pending = False     # the slice changed while the tab was hidden
 
         lay = QVBoxLayout(self)
         self.hist = HistogramRangeWidget()
@@ -190,27 +192,37 @@ class HistogramThresholdWidget(QGroupBox):
         self.live_cb.setToolTip("While dragging, show the threshold on the displayed slice "
                                 f"(layer '{PREVIEW_NAME}'). Untick to remove it.")
         lay.addWidget(self.live_cb)
-        self.status = QLabel("")
-        self.status.setStyleSheet(style("info"))
-        self.status.setWordWrap(True)
+        self.status = StatusLine(hide_empty=True)
         lay.addWidget(self.status)
 
         if add_connected_components:
             # same attribute names as the old ThresholdWidget
-            self.use_connected_components_checkbox = QCheckBox("Connected Components")
+            self.use_connected_components_checkbox = QCheckBox("Connected components")
+            self.use_connected_components_checkbox.setToolTip(
+                "Create Preview Layer keeps only the N largest connected components")
             self.connected_components_spin = QSpinBox()
             self.connected_components_spin.setRange(1, 100000)
             self.connected_components_spin.setValue(100)
             self.connected_components_spin.setEnabled(False)
+            self.connected_components_spin.setToolTip("N: how many of the largest connected components "
+                                                      "the preview layer keeps")
             self.use_connected_components_checkbox.toggled.connect(self.connected_components_spin.setEnabled)
             self.erosion_spin = QSpinBox()
             self.erosion_spin.setRange(0, 100)
+            ero_tip = ("Erosion steps for the preview layer only (Create Preview Layer); the run uses "
+                       "'Erosion steps' in Parameters")
+            self.erosion_spin.setToolTip(ero_tip)
+            self.erosion_label = QLabel("Preview erosions")
+            self.erosion_label.setToolTip(ero_tip)
+            row = QHBoxLayout()           # two rows: in one, the panel no longer fits 500 px
+            row.addWidget(self.erosion_label)
+            row.addWidget(self.erosion_spin)
+            row.addStretch()
+            lay.addLayout(row)
             row = QHBoxLayout()
             row.addWidget(self.use_connected_components_checkbox)
-            row.addWidget(QLabel("N:"))
+            row.addWidget(QLabel("N"))
             row.addWidget(self.connected_components_spin)
-            row.addWidget(QLabel("Erosions"))
-            row.addWidget(self.erosion_spin)
             row.addStretch()
             lay.addLayout(row)
             self.use_connected_components_checkbox.toggled.connect(lambda *_: self._show_status())
@@ -236,8 +248,8 @@ class HistogramThresholdWidget(QGroupBox):
         self.preview_btn = self.create_btn   # old name, used by the host widgets
 
         self.hist.range_changed.connect(lambda *_: self._update_slice())
-        self.viewer.dims.events.current_step.connect(lambda e: self._on_dims())
-        self.viewer.dims.events.ndisplay.connect(lambda e: self._on_dims())
+        # paging / 2D-3D through the viewer's hub (a Qt signal: nothing left in napari when closed)
+        get_roi_hub(viewer).dims_changed.connect(self._on_dims)
         self.live_cb.toggled.connect(self._on_live_toggled)
         self.create_btn.clicked.connect(self._create_preview_layer)
         self.add_btn.clicked.connect(lambda: self.add_to_table_requested.emit(*self.get_thresholds()))
@@ -368,8 +380,17 @@ class HistogramThresholdWidget(QGroupBox):
             self._set_live_line("Live preview off")
 
     def _on_dims(self):
+        if tab_hidden(self):           # a hidden tab: its live slice is redrawn when it is shown
+            self._dims_pending = True
+            return
         if self.live_cb.isChecked() and self._preview.active():
             self._update_slice()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self._dims_pending:
+            self._dims_pending = False
+            self._on_dims()
 
     def _update_slice(self):
         if not self.live_cb.isChecked() or self._img is None or not self.hist._ready():
@@ -420,7 +441,7 @@ class HistogramThresholdWidget(QGroupBox):
             lines.append("Erosion / connected components: whole volume only, see Create Preview Layer")
         if self._created_line:
             lines.append(self._created_line)
-        self.status.setText("\n".join(lines))
+        self.status.set("\n".join(lines), "info")
 
     # ---- whole-volume result as a new layer
     def _create_preview_layer(self):

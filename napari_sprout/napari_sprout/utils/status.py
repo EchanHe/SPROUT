@@ -13,12 +13,27 @@ Everything else is a StatusLine (a line of a tab) or an inline note under a cont
 """
 from qtpy.QtWidgets import QLabel
 
-INFO = "gray"
+INFO = "darkgray"        # #a9a9a9: 6:1 on napari's dark background ("gray" was 3.7:1)
 OK = "#3fa34d"
 WARN = "#cc7a00"
 ERROR = "#d9534f"
 COLORS = {"info": INFO, "ok": OK, "warn": WARN, "error": ERROR}
 CHECK = "✓ "
+
+# run / stop buttons of the tabs; only while enabled, so a disabled one looks disabled
+RUN_BUTTON = "QPushButton:enabled { font-weight: bold; background-color: #45a049; }"
+STOP_BUTTON = "QPushButton:enabled { font-weight: bold; background-color: #d9534f; color: white; }"
+
+# the target layer header of the Edit and Label Mapping docks (white on blue)
+LAYER_HEADER = ("QLabel { font-weight: bold; color: white; background-color: #007ACC; padding: 4px; "
+                "border-radius: 4px; }")
+NO_LAYER = "Active Label Layer: (none) - select a Labels layer in the layer list"
+
+
+def tab_hidden(widget):
+    """True while `widget` is in a shown window but not visible itself (another tab is
+    shown): its work can wait for its showEvent. Never True before the window is shown."""
+    return widget.window().isVisible() and not widget.isVisible()
 
 
 def style(level):

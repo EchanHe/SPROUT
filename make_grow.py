@@ -409,6 +409,8 @@ def grow_mp(**kwargs):
     # ids {7, 300} used to be cast to uint8, turning 300 into 44 (and merging it
     # with an existing label 44). uint8 is still used whenever every id fits.
     result = sprout_core.cast_labels(seg, np.uint8)
+    # Non-zero voxels of `result`, kept up to date: each iteration counts only its output
+    result_size = np.count_nonzero(result)
         
     # Iterate through and make growth results
     for i, (threshold ,upper_threshold,dilate_iter) in enumerate(zip(thresholds , upper_thresholds,dilation_steps)):
@@ -430,8 +432,8 @@ def grow_mp(**kwargs):
         for i_dilate in range(1, dilate_iter+1):
 
             
-            # Get the input size for the log
-            input_size = np.sum(result!=0)
+            # Get the input size for the log (the previous iteration's output size)
+            input_size = result_size
             result = dilation_one_iter_mp(result, threshold_binary ,
                                           num_threads=num_threads,
                                             touch_rule = touch_rule,
@@ -441,7 +443,7 @@ def grow_mp(**kwargs):
             ## Check if output size and input 's diff is bigger than min_growth_size
 
             # Get the output size for the log
-            output_size = np.sum(result!=0)
+            output_size = result_size = np.count_nonzero(result)
             if output_size - input_size < min_growth_size:
                 count_below_threshold += 1
             else:

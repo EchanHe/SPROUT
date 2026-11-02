@@ -19,8 +19,8 @@ from ..utils.histogram_threshold_widget import HistogramThresholdWidget, append_
 from ..utils.boundary_check import boundary_ok
 from ..utils.roi_layers import is_roi_layer
 from ..utils.roi_widget import RoiSelect, range_text
-from ..utils.status import StatusLine, style
-from .seed_widget import input_combo, rename_in_combos
+from ..utils.status import RUN_BUTTON, STOP_BUTTON, StatusLine, style
+from .seed_widget import combo_items, input_combo, put_in_tab_order, rename_in_combos
 
 import yaml
 import sys
@@ -243,19 +243,10 @@ class SeedGrowthWidget(QWidget):
         # Control buttons        # Control buttons
         btn_layout = QHBoxLayout()
         self.grow_btn = QPushButton("Start Growth")
-        self.grow_btn.setStyleSheet("""QPushButton { font-weight: bold; background-color: #45a049;}""")
+        self.grow_btn.setStyleSheet(RUN_BUTTON)
         self.stop_btn = QPushButton("Stop")
-        self.stop_btn.setStyleSheet("""
-            QPushButton {
-                font-weight: bold;
-                background-color: #d9534f;  
-                color: white;
-            }
-            QPushButton:disabled {
-                background-color: #aaa;
-                color: #eee;
-            }
-        """)
+        self.stop_btn.setStyleSheet(STOP_BUTTON)
+        self.stop_btn.setToolTip("Stop growing (files already written stay in the folder)")
         self.stop_btn.setEnabled(False)
 
         
@@ -290,6 +281,8 @@ class SeedGrowthWidget(QWidget):
         hub.layer_inserted.connect(self._on_layers_changed)
         hub.layer_removed.connect(self._on_layers_changed)
         hub.layer_renamed.connect(self._on_layer_renamed)
+        # Tab reaches Import / Export YAML where they are shown: before the parameters
+        put_in_tab_order(self.main_param_widget.thread_spin, self.import_btn, self.export_btn)
         
         # Add default threshold
         # self._add_threshold_row(100, None, 5)
@@ -304,6 +297,17 @@ class SeedGrowthWidget(QWidget):
         self.import_btn.clicked.connect(lambda: self.import_yaml())
         self.export_btn.clicked.connect(lambda: self.export_yaml())
         self.boundary_combo.currentTextChanged.connect(self._on_boundary_changed)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._combos_in_sync():         # a missed layer event: re-sync, keeping the selection
+            self._on_layers_changed()
+
+    def _combos_in_sync(self):
+        imgs = [l.name for l in self.viewer.layers if isinstance(l, Image)]
+        labs = [l.name for l in self.viewer.layers if isinstance(l, Labels)]
+        return (combo_items(self.image_combo) == imgs and combo_items(self.seeds_combo) == labs
+                and combo_items(self.boundary_combo) == ["None"] + labs)
 
     def _on_layers_changed(self, *_):
         self._refreshing = True
@@ -426,6 +430,12 @@ class SeedGrowthWidget(QWidget):
         # Get inputs
         if not self.image_combo.currentText() or not self.seeds_combo.currentText():
             self.status_label.set("Please select both an image and seeds layer", "error")
+            return
+        try:
+            self.advanced_params_box.to_grow_ids()      # a typo: red line in the advanced box, no run
+        except ValueError as e:
+            self.show_advanced_checkbox.setChecked(True)
+            self.status_label.set(str(e), "error")
             return
         
         try:
