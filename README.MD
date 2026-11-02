@@ -316,34 +316,15 @@ To launch **napari-sprout**:
 
 From here, you can use a set of tools to load, view, and edit your data.  
 
--   **SPROUT_main**  
-    GUI for running **seed generation**, **adaptive seed generation**, and **growth**.  
-    Parameters match those used in the command-line scripts.
-    
--   **SPROUT_load**  
-    Batch loader for multiple images or segmentations.
-    
--   **SPROUT_edit**  
-    Interactive editing of segmentation results such as:
-    
-    -   Click to keep or remove regions
-        
-    -   Re-assign class numbers (e.g. merge `i → j`, delete `i → 0`)
-        
-    -   Split disconnected regions
-        
--   **SPROUT_map**  
-    Map regions to a semantic class scheme, e.g. `1 → bone_1`, `2 → bone_2`.
-    
--   **SPROUT_tools**  
-    Miscellaneous tools, including:
-    
-    -   Inspect reference shapes (e.g. show a ball of radius 10 pixels)
-        
-    -   Generate batch-processing CSVs, can provide per-image adaptive thresholds (e.g. Otsu)
-        
--   **SPROUT_info**  
-    Inspect information (e.g., resolutions, how many segmentation classes) of images or segmentations.
+-   **SPROUT**: tabs for the whole pipeline. Parameters match the YAML configs (Import / Export YAML).
+    -   **1. Seeds**: seed and adaptive seed generation.
+    -   **2. Grow**: grow seeds into a segmentation.
+    -   **3. Prompt (AI)**: seeds as prompts for nnInteractive ([install](#-external-model-prediction)).
+    -   **ROI & Boundary**: run a tab inside a region of interest; make a boundary mask (top-hat).
+-   **Edit**: keep or remove regions (Ctrl+click), replace ids, merge layers, split, filter, fill holes, morphology.
+-   **Label Mapping**: map regions to classes, e.g. `1 → bone_1`, `2 → bone_2`.
+-   **Batch Builder**: batch CSVs, optionally with per-image thresholds (e.g. Otsu); reference shapes.
+-   **Data Info**: shape, value range, label count and sizes of the selected layer.
 
 
 In addition to `napari-sprout`, **napari** also provides powerful editing options (e.g. **Brush** to add regions, **Erase** to remove).
