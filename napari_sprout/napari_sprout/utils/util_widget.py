@@ -2,10 +2,11 @@ import os, sys
 from qtpy.QtWidgets import (
     QGroupBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,QDoubleSpinBox,
     QSpinBox, QCheckBox, QFileDialog , QVBoxLayout , QComboBox , QTableWidget,QWidget,QSlider,
-     QHeaderView, QSizePolicy
-    
+     QHeaderView, QSizePolicy, QGridLayout, QStyle, QStyleOptionFrame
+
 )
 from qtpy.QtCore import Signal, Qt ,QThreadPool,QObject,QRunnable,Slot
+from qtpy.QtGui import QPainter, QPalette
 from napari.utils.notifications import show_error, show_info
 import numpy as np
 
@@ -19,22 +20,54 @@ if str(sprout_path) not in sys.path:
     sys.path.insert(0, str(sprout_path))
 
 from sprout_core.config_core import support_footprints, support_footprints_2d
+from sprout_core.roi import parse_ids
+from .fit_table import FitTable
+from .status import StatusLine
 from sprout_core.sprout_core import get_ccomps_with_size_order,erosion_binary_img_on_sub
 
 
 
 
-def create_output_folder_row(default_folder=None):
+class ElidedLineEdit(QLineEdit):
+    """A line edit that shows a long text middle-elided while it has no focus.
+
+    text() / setText() are the real value; the tooltip is the full text. While editing
+    (focused) the whole text is shown as usual.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.textChanged.connect(self.setToolTip)
+
+    def paintEvent(self, event):
+        text = self.text()
+        if self.hasFocus() or not text:
+            return super().paintEvent(event)
+        opt = QStyleOptionFrame()
+        self.initStyleOption(opt)
+        rect = self.style().subElementRect(QStyle.SE_LineEditContents, opt, self).adjusted(2, 0, -2, 0)
+        if self.fontMetrics().horizontalAdvance(text) <= rect.width():
+            return super().paintEvent(event)
+        p = QPainter(self)
+        self.style().drawPrimitive(QStyle.PE_PanelLineEdit, opt, p, self)
+        p.setPen(self.palette().color(QPalette.Text))
+        p.drawText(rect, int(Qt.AlignVCenter | Qt.AlignLeft),
+                   self.fontMetrics().elidedText(text, Qt.ElideMiddle, rect.width()))
+        p.end()
+
+
+def create_output_folder_row(default_folder=None, label="Output folder"):
 
     layout = QHBoxLayout()
-    label = QLabel("Output Folder:")
-    folder_edit = QLineEdit()
+    label = QLabel(label)
+    folder_edit = ElidedLineEdit()
+    folder_edit.setMinimumWidth(80)
     browse_btn = QPushButton("Browse")
 
-    # set default folder if provided, otherwise use current working directory
+    # set default folder if provided, otherwise use current working directory. It is only shown
+    # here: the writers create it (os.makedirs(..., exist_ok=True)) when a run writes files.
     if default_folder is None:
         default_folder = os.path.join(os.getcwd(), "sprout_temp")
-    os.makedirs(default_folder, exist_ok=True)
     folder_edit.setText(default_folder)
 
     def browse():
@@ -45,8 +78,10 @@ def create_output_folder_row(default_folder=None):
     browse_btn.clicked.connect(browse)
 
     layout.addWidget(label)
-    layout.addWidget(folder_edit)
+    layout.addWidget(folder_edit, 1)
     layout.addWidget(browse_btn)
+    layout.label = label            # for hosts that align it with a form
+    layout.browse_btn = browse_btn
 
     return layout, folder_edit
 
@@ -361,174 +396,105 @@ def apply_threshold_preview(
     else:
         return (image >= threshold) & (image <= upper_threshold)
 
-class MainSeedParamWidget(QGroupBox):
+def _param_spin(lo, hi, value, width=70):
+    sp = QSpinBox()
+    sp.setRange(lo, hi)
+    sp.setValue(value)
+    sp.setMinimumWidth(width)
+    return sp
+
+
+def _table_buttons(*buttons):
+    row = QHBoxLayout()
+    for b in buttons:
+        row.addWidget(b)
+    row.addStretch()
+    return row
+
+
+class _ParamGroup(QGroupBox):
+    """Parameters group: a header row (hosts add Import / Export YAML), a status line
+    (YAML / table messages), then the parameters."""
+
+    def _init_header(self, layout):
+        self.header_row = QHBoxLayout()
+        self.header_row.addStretch()
+        layout.addLayout(self.header_row)
+        self.status_line = StatusLine(hide_empty=True)
+        layout.addWidget(self.status_line)
+
+    def add_header_widget(self, w):
+        self.header_row.addWidget(w)
+
+    def add_bottom_widget(self, w):
+        self.layout().addWidget(w)
+
+
+class MainSeedParamWidget(_ParamGroup):
     def __init__(self, title="Parameters", viewer=None, image_combo=None):
         super().__init__(title)
 
-        # set min height of self
-        self.setMinimumHeight(350)
-        
         self.viewer = viewer
         self.image_combo = image_combo  # ComboBox for selecting image layer
-        # self.show_touch_rule = show_touch_rule
-        
+
         layout = QVBoxLayout()
+        layout.setSpacing(4)
+        self._init_header(layout)
 
-        # Top rowlayout 
-        top_row_layout = QHBoxLayout()
-        
-        # second row layout
-        second_row_layout = QHBoxLayout()
-
-        # seed method
-        top_row_layout.addWidget(QLabel("Seed Method:"))
+        # method / threads / erosion steps / segments
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(8)
         self.seed_method_combo = QComboBox()
         self.seed_method_combo.addItems(["Original", "Adaptive (Erosion)", "Adaptive (Thresholds)"])
-        self.seed_method_combo.setFixedWidth(150)
-        top_row_layout.addWidget(self.seed_method_combo)
+        self.seed_method_combo.setToolTip(
+            "Original: one seed layer per threshold row and erosion step.\n"
+            "Adaptive (Erosion) / Adaptive (Thresholds): combine the seeds across the erosion\n"
+            "steps / the threshold rows into one final seed.")
+        self.thread_spin = _param_spin(1, os.cpu_count(), min(4, os.cpu_count() - 1), 60)
+        self.erosion_spin = _param_spin(0, 1000, 0)
+        self.segments_spin = _param_spin(1, 100000, 10)
+        self.segments_spin.setToolTip("Number of largest connected components to keep in each seed")
+        self.param_labels = [QLabel("Method"), QLabel("Threads"), QLabel("Erosion steps"), QLabel("Segments")]
+        grid.addWidget(self.param_labels[0], 0, 0)
+        grid.addWidget(self.seed_method_combo, 0, 1)
+        grid.addWidget(self.param_labels[1], 0, 2)
+        grid.addWidget(self.thread_spin, 0, 3)
+        grid.addWidget(self.param_labels[2], 1, 0)
+        grid.addWidget(self.erosion_spin, 1, 1)
+        grid.addWidget(self.param_labels[3], 1, 2)
+        grid.addWidget(self.segments_spin, 1, 3)
+        grid.setColumnStretch(1, 1)
+        grid.setColumnStretch(4, 1)
+        layout.addLayout(grid)
 
-        # erosion steps
-        second_row_layout.addWidget(QLabel("Erosion Steps:"))
-        self.erosion_spin = QSpinBox()
-        self.erosion_spin.setRange(0, 1000)
-        self.erosion_spin.setValue(0)
-        self.erosion_spin.setFixedWidth(40)
-        second_row_layout.addWidget(self.erosion_spin)
-        
-        # Threads
-        top_row_layout.addWidget(QLabel("Threads:"))
-        self.thread_spin = QSpinBox()
-        self.thread_spin.setMinimum(1)
-        self.thread_spin.setMaximum(os.cpu_count())
-        self.thread_spin.setValue(min(4, os.cpu_count() - 1))
-        self.thread_spin.setFixedWidth(30)
-        top_row_layout.addWidget(self.thread_spin)
-
-
-
-
-        second_row_layout.addWidget(QLabel("Segments:"))
-        self.segments_spin = QSpinBox()
-        self.segments_spin.setRange(1, 100000)
-        self.segments_spin.setValue(10)
-        self.segments_spin.setFixedWidth(40)
-        second_row_layout.addWidget(self.segments_spin)
-
-    
-        
-
-        top_row_layout.addStretch()
-        layout.addLayout(top_row_layout)
-        second_row_layout.addStretch()
-        layout.addLayout(second_row_layout) 
-
-
-        
-
-        
-
-        # #  Threshold Table
-        # self.threshold_table = QTableWidget()
-        # self.threshold_table.setColumnCount(2)
-            
-        # self.threshold_table.setHorizontalHeaderLabels(
-        #     ["Lower Threshold", "Upper Threshold"]
-        # )
-        
-        # header = self.threshold_table.horizontalHeader()
-        # header.setSectionResizeMode(QHeaderView.Stretch)    
-        
-        # self.threshold_table.setMaximumHeight(200)
-        # layout.addWidget(self.threshold_table)
-
-        # # ▶️ Add/Remove Buttons
-        # btn_layout = QHBoxLayout()
-        # self.add_threshold_btn = QPushButton("Add Threshold")
-        # self.remove_threshold_btn = QPushButton("Remove Selected")
-        # btn_layout.addWidget(self.add_threshold_btn)
-        # btn_layout.addWidget(self.remove_threshold_btn)
-        # btn_layout.addStretch()
-        # layout.addLayout(btn_layout)
-
-        # self.footprint_table = QTableWidget()
-        # self.footprint_table.setColumnCount(1)
-        # self.footprint_table.setHorizontalHeaderLabels(["Footprint"])
-        # self.footprint_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)  
-        
-        # layout.addWidget(self.footprint_table)
-        # # Add a button to add a new threshold row
-        # self.add_footprint_btn = QPushButton("Add Footprint")
-        # self.remove_footprint_btn = QPushButton("Remove Selected")
-        # self.remove_footprint_btn_all = QPushButton("Remove All Footprints")
-        # footprint_btn_layout = QHBoxLayout()
-        
-        # footprint_btn_layout.addWidget(self.add_footprint_btn)
-        # footprint_btn_layout.addWidget(self.remove_footprint_btn)
-        # footprint_btn_layout.addWidget(self.remove_footprint_btn_all)
-        # footprint_btn_layout.addStretch()
-        # layout.addLayout(footprint_btn_layout)
-    
-        
-        # === Threshold Table + Buttons as VBox ===
-        threshold_vbox = QVBoxLayout()
-        self.threshold_table = QTableWidget()
-        self.threshold_table.setColumnCount(2)
-        self.threshold_table.setHorizontalHeaderLabels(["Lower Threshold", "Upper Threshold"])
+        # thresholds, then footprints: each full width, as high as its rows
+        self.threshold_table = FitTable(0, 2, max_rows=8)
+        self.threshold_table.setHorizontalHeaderLabels(["Lower threshold", "Upper threshold"])
         self.threshold_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.threshold_table.setMaximumHeight(200)
-
-        threshold_vbox.addWidget(self.threshold_table)
-
-        # Buttons for threshold table
-        btn_layout = QHBoxLayout()
+        layout.addWidget(self.threshold_table)
         self.add_threshold_btn = QPushButton("Add Threshold")
         self.remove_threshold_btn = QPushButton("Remove Selected")
-        btn_layout.addWidget(self.add_threshold_btn)
-        btn_layout.addWidget(self.remove_threshold_btn)
-        btn_layout.addStretch()
-        threshold_vbox.addLayout(btn_layout)
+        layout.addLayout(_table_buttons(self.add_threshold_btn, self.remove_threshold_btn))
 
-        # === Footprint Table + Buttons as VBox ===
-        footprint_vbox = QVBoxLayout()
-
-        self.footprint_table = QTableWidget()
-        self.footprint_table.setColumnCount(1)
+        self.footprint_table = FitTable(0, 1, max_rows=8)
         self.footprint_table.setHorizontalHeaderLabels(["Footprint"])
         self.footprint_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.footprint_table.setMaximumHeight(200)
-        self.footprint_table.setMaximumWidth(150)
-
-        footprint_vbox.addWidget(self.footprint_table)
-
-        footprint_btn_layout = QHBoxLayout()
+        layout.addWidget(self.footprint_table)
         self.add_footprint_btn = QPushButton("Add Footprint")
         self.remove_footprint_btn = QPushButton("Remove Selected")
         self.remove_footprint_btn_all = QPushButton("Remove All")
-        footprint_btn_layout.addWidget(self.add_footprint_btn)
-        footprint_btn_layout.addWidget(self.remove_footprint_btn)
-        footprint_btn_layout.addWidget(self.remove_footprint_btn_all)
-        footprint_btn_layout.addStretch()
-        footprint_vbox.addLayout(footprint_btn_layout)
-
-        # === Combine into a HBox ===
-        combined_table_layout = QHBoxLayout()
-        combined_table_layout.addLayout(threshold_vbox)
-        combined_table_layout.addLayout(footprint_vbox)
-
-        # Add to main layout
-        layout.addLayout(combined_table_layout)
-
-
+        layout.addLayout(_table_buttons(self.add_footprint_btn, self.remove_footprint_btn,
+                                        self.remove_footprint_btn_all))
 
         self.setLayout(layout)
-        
+
         self.add_threshold_btn.clicked.connect(self._add_threshold_row_adaptive)
         self.remove_threshold_btn.clicked.connect(self._remove_threshold_row)
-        
+
         self.add_footprint_btn.clicked.connect(self._add_footprint_row)
         self.remove_footprint_btn.clicked.connect(self._remove_footprint_row)
         self.remove_footprint_btn_all.clicked.connect(lambda: self.footprint_table.setRowCount(0))
-        
+
 
     def get_params(self):
         # return parameters as a dictionary
@@ -545,7 +511,7 @@ class MainSeedParamWidget(QGroupBox):
             footprints = footprints * self.erosion_spin.value()
         elif len(footprints) != self.erosion_spin.value():
             raise ValueError(
-                f"Please add {self.erosion_spin.value()} footprints, got {len(footprints)}"
+                f"Add {self.erosion_spin.value()} footprints (one per erosion step), got {len(footprints)}"
             )
 
         return {
@@ -605,7 +571,7 @@ class MainSeedParamWidget(QGroupBox):
 
         
         if self.image_combo is None or not self.image_combo.currentText():
-            show_error("Please select an image layer first")
+            self.status_line.set("Select an image layer first", "error")
             return
 
         row = self.footprint_table.rowCount()
@@ -622,6 +588,18 @@ class MainSeedParamWidget(QGroupBox):
         
         self.footprint_table.setCellWidget(row, 0, footprint_combo)
     
+    def set_footprints(self, footprints):
+        """Footprint table rows from a list (YAML import); None or [] = no rows."""
+        self.footprint_table.setRowCount(0)
+        for fp in footprints or []:
+            self._add_footprint_row()
+            combo = self.footprint_table.cellWidget(self.footprint_table.rowCount() - 1, 0)
+            if combo is None:
+                return
+            i = combo.findText(str(fp))
+            if i >= 0:
+                combo.setCurrentIndex(i)
+
     def _remove_footprint_row(self):
         """Remove selected footprint row."""
         current_row = self.footprint_table.currentRow()
@@ -634,7 +612,7 @@ class MainSeedParamWidget(QGroupBox):
 
         # not image
         if self.image_combo is None or not self.image_combo.currentText():
-            show_error("Please select an image layer first")
+            self.status_line.set("Select an image layer first", "error")
             return
 
         row = self.threshold_table.rowCount()
@@ -753,83 +731,56 @@ class MainSeedParamWidget(QGroupBox):
             self.threshold_table.setCellWidget(row, 1, upper_spin)
 
 
-class MainGrowParamWidget(QGroupBox):
+class MainGrowParamWidget(_ParamGroup):
     def __init__(self, title="Parameters", viewer=None, image_combo=None,
                  mode = "grow",  # "grow" or "seed"
                  colnames=None):
         super().__init__(title)
-        # set min height of self
-        self.setMinimumHeight(350)
-        
+
         self.viewer = viewer
         self.image_combo = image_combo  # ComboBox for selecting image layer
-        # self.show_touch_rule = show_touch_rule
-        
         self.mode = mode  # "grow" or "seed"
-        
+
         layout = QVBoxLayout()
+        layout.setSpacing(4)
+        self._init_header(layout)
 
-        # Top rowlayout 
-        top_row_layout = QHBoxLayout()
-
-        # Threads
-        top_row_layout.addWidget(QLabel("Threads:"))
-        self.thread_spin = QSpinBox()
-        self.thread_spin.setMinimum(1)
-        self.thread_spin.setMaximum(os.cpu_count())
-        self.thread_spin.setValue(min(4, os.cpu_count() - 1))
-        self.thread_spin.setFixedWidth(80)
-        top_row_layout.addWidget(self.thread_spin)
-
-        # Add some space between the two sections
-        top_row_layout.addSpacing(20)
-
- 
-        top_row_layout.addWidget(QLabel("Touch Rule:"))
+        # threads / touch rule
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(8)
+        self.thread_spin = _param_spin(1, os.cpu_count(), min(4, os.cpu_count() - 1), 60)
         self.touch_rule_combo = QComboBox()
         self.touch_rule_combo.addItems(["stop", "overwrite"])
-        self.touch_rule_combo.setFixedWidth(100)
-        top_row_layout.addWidget(self.touch_rule_combo)
+        self.touch_rule_combo.setToolTip("When a growing region reaches another region:\n"
+                                         "stop: it never grows into the other region's voxels\n"
+                                         "overwrite: it may take them over")
+        self.param_labels = [QLabel("Threads"), QLabel("Touch rule")]
+        grid.addWidget(self.param_labels[0], 0, 0)
+        grid.addWidget(self.thread_spin, 0, 1)
+        grid.addWidget(self.param_labels[1], 0, 2)
+        grid.addWidget(self.touch_rule_combo, 0, 3)
+        grid.setColumnStretch(1, 1)
+        grid.setColumnStretch(4, 1)
+        layout.addLayout(grid)
 
-
-
-
-        top_row_layout.addStretch()
-        layout.addLayout(top_row_layout)
-
-        # ▶️ Threshold Table
-        self.threshold_table = QTableWidget()
-        self.threshold_table.setColumnCount(3)
-        
-        
-        
+        # thresholds table: full width, as high as its rows
+        self.threshold_table = FitTable(0, 3, max_rows=8)
         self.threshold_table.setHorizontalHeaderLabels(
-            ["Lower Threshold", "Upper Threshold", "Dilation Steps"])
-
-
-        
-        header = self.threshold_table.horizontalHeader()
-        header.setSectionResizeMode(QHeaderView.Stretch)    
-        
-        self.threshold_table.setMaximumHeight(200)
+            ["Lower threshold", "Upper threshold", "Dilation steps"])
+        self.threshold_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         layout.addWidget(self.threshold_table)
 
-        # ▶️ Add/Remove Buttons
-        btn_layout = QHBoxLayout()
         self.add_threshold_btn = QPushButton("Add Threshold")
         self.remove_threshold_btn = QPushButton("Remove Selected")
         self.remove_all_threshold_btn = QPushButton("Remove All Thresholds")
-        btn_layout.addWidget(self.add_threshold_btn)
-        btn_layout.addWidget(self.remove_threshold_btn)
-        btn_layout.addWidget(self.remove_all_threshold_btn)
-        btn_layout.addStretch()
-        layout.addLayout(btn_layout)
+        layout.addLayout(_table_buttons(self.add_threshold_btn, self.remove_threshold_btn,
+                                        self.remove_all_threshold_btn))
 
         self.setLayout(layout)
-        
+
         self.add_threshold_btn.clicked.connect(self._add_threshold_row_adaptive)
         self.remove_threshold_btn.clicked.connect(self._remove_threshold_row)
-        self.remove_all_threshold_btn.clicked.connect(lambda: self.footprint_table.setRowCount(0))
+        self.remove_all_threshold_btn.clicked.connect(lambda: self.threshold_table.setRowCount(0))
 
     def get_params(self):
         # return parameters as a dictionary
@@ -875,7 +826,7 @@ class MainGrowParamWidget(QGroupBox):
 
         # not image
         if self.image_combo is None or not self.image_combo.currentText():
-            show_error("Please select an image layer first")
+            self.status_line.set("Select an image layer first", "error")
             return
         row = self.threshold_table.rowCount()
         self.threshold_table.insertRow(row)
@@ -1037,7 +988,7 @@ def set_compact(widget, minw=None, maxw=None):
 
 class SeedOptionalParamGroupBox(QGroupBox):
     def __init__(self, default_output=None):
-        super().__init__("Advanced Seed Parameters")
+        super().__init__("Advanced seed parameters")
         layout = QFormLayout()
 
         # sort (bool)
@@ -1077,18 +1028,16 @@ class SeedOptionalParamGroupBox(QGroupBox):
         # add to the split parameters row
         layout.addRow("No split iterations", self.no_split_spin)
         
-        split_ratio_row_layout = QHBoxLayout()
-        self.split_ratio_label = QLabel("Split Ratios:")
+        # one form row each: side by side in one row the labels were cut ("Split Rati")
+        self.split_ratio_label = QLabel("Min split ratio")
         self.split_ratio_label.setToolTip("Minimum ratios of a sub-segment to be considered as a split")
-        split_ratio_row_layout.addWidget(self.split_ratio_label)
-        split_ratio_row_layout.addWidget(self.min_split_ratio_spin)
-        
-        self.total_ratio_label = QLabel("Total Ratio:")
+        self.min_split_ratio_spin.setToolTip(self.split_ratio_label.toolTip())
+        layout.addRow(self.split_ratio_label, self.min_split_ratio_spin)
+
+        self.total_ratio_label = QLabel("Min total split ratio")
         self.total_ratio_label.setToolTip("Minimum proportion of all sub-segments to current to be considered as a split")
-        split_ratio_row_layout.addWidget(self.total_ratio_label)
-        split_ratio_row_layout.addWidget(self.min_split_total_ratio_spin)
-        
-        layout.addRow("Split Parameters", split_ratio_row_layout)
+        self.min_split_total_ratio_spin.setToolTip(self.total_ratio_label.toolTip())
+        layout.addRow(self.total_ratio_label, self.min_split_total_ratio_spin)
 
         # # min_split_ratio (float)
         # self.min_split_ratio_spin = QDoubleSpinBox()
@@ -1129,7 +1078,7 @@ class SeedOptionalParamGroupBox(QGroupBox):
         self.size_upper_label.setToolTip("Upper limit (-1 means no limit)")
         size_layout.addWidget(self.size_upper_label)
         size_layout.addWidget(self.size_upper_spin)
-        layout.addRow("Split size:", size_layout)
+        layout.addRow("Split size", size_layout)
 
         # split_convex_hull_limit (tuple of float or None)
         self.hull_lower_spin = QSpinBox()
@@ -1165,8 +1114,6 @@ class SeedOptionalParamGroupBox(QGroupBox):
             self.size_upper_label,
             self.hull_lower_label,
             self.hull_upper_label,
-            self.split_ratio_label,
-            self.total_ratio_label
         ]:
             set_compact(w, minw=40, maxw=80)
 
@@ -1231,7 +1178,7 @@ class SeedOptionalParamGroupBox(QGroupBox):
 
 class GrowOptionalParamGroupBox(QGroupBox):
     def __init__(self, default_output=None):
-        super().__init__("Advanced Grow Parameters")
+        super().__init__("Advanced grow parameters")
 
 
         layout = QFormLayout()
@@ -1252,10 +1199,14 @@ class GrowOptionalParamGroupBox(QGroupBox):
         self.sort_checkbox = QCheckBox("Sort the result by size")
         layout.addRow(self.sort_checkbox)
 
-        # Grow specific IDs
+        # Grow specific IDs ("3,5-7", as in the ROI tools); a typo is a red line, the run is refused
         self.id_list_line = QLineEdit()
-        self.id_list_line.setPlaceholderText("e.g. 1,3,5")
-        layout.addRow(QLabel("IDs to Grow (optional):"), self.id_list_line)
+        self.id_list_line.setPlaceholderText("e.g. 3,5-7 (empty: all)")
+        self.id_list_line.setToolTip("Seed ids to grow, e.g. 3,5-7; empty: all seeds")
+        layout.addRow(QLabel("IDs to grow"), self.id_list_line)
+        self.ids_error = StatusLine(hide_empty=True)
+        layout.addRow(self.ids_error)
+        self.id_list_line.textChanged.connect(lambda *_: self.ids_error.clear())
 
         self.early_stop_checkbox = QCheckBox("Early stop if no growth")
         self.early_stop_checkbox.setToolTip("Stop growing if no growth occurs for a specified number of iterations.")
@@ -1267,14 +1218,14 @@ class GrowOptionalParamGroupBox(QGroupBox):
         self.no_growth_spin.setRange(1, 100)
         self.no_growth_spin.setValue(3)
         self.no_growth_spin.setEnabled(True)
-        layout.addRow(QLabel("Max No-Growth Iterations:"), self.no_growth_spin)
+        layout.addRow(QLabel("Max no-growth iterations"), self.no_growth_spin)
 
         # Min growth size
         self.min_growth_spin = QSpinBox()
         self.min_growth_spin.setRange(0, 1000000)
         self.min_growth_spin.setValue(50)
         self.min_growth_spin.setEnabled(True)
-        layout.addRow(QLabel("Minimum Growth Size:"), self.min_growth_spin)
+        layout.addRow(QLabel("Min growth size"), self.min_growth_spin)
 
 
 
@@ -1296,9 +1247,11 @@ class GrowOptionalParamGroupBox(QGroupBox):
 
     def set_params(self, params):
         """Set advanced grow parameters for the widget from a dictionary."""
-        if 'save_every_n_iters' in params and params['save_every_n_iters'] is not None:
-            self.save_iter_checkbox.setChecked(True)
-            self.save_every_n_spin.setValue(params['save_every_n_iters'])
+        if 'save_every_n_iters' in params:
+            # None (not saved) unticks the box: a YAML round trip restores every value
+            self.save_iter_checkbox.setChecked(params['save_every_n_iters'] is not None)
+            if params['save_every_n_iters'] is not None:
+                self.save_every_n_spin.setValue(params['save_every_n_iters'])
         
         if 'grow_to_end' in params:
             self.grow_to_end_checkbox.setChecked(params['grow_to_end'])
@@ -1306,9 +1259,9 @@ class GrowOptionalParamGroupBox(QGroupBox):
         if 'is_sort' in params:
             self.sort_checkbox.setChecked(params['is_sort'])
         
-        if 'to_grow_ids' in params and params['to_grow_ids'] is not None:
-            id_str = ",".join(map(str, params['to_grow_ids']))
-            self.id_list_line.setText(id_str)
+        if 'to_grow_ids' in params:
+            ids = params['to_grow_ids']
+            self.id_list_line.setText("" if ids is None else ",".join(map(str, ids)))
         
         if 'no_growth_max_iter' in params:
             if params['no_growth_max_iter'] is None:
@@ -1320,22 +1273,24 @@ class GrowOptionalParamGroupBox(QGroupBox):
         if 'min_growth_size' in params:
             self.min_growth_spin.setValue(params['min_growth_size'])
 
-    def get_params(self):
-        to_grow_text = self.id_list_line.text().strip()
-        to_grow_text.replace(" ", "")  # remove any spaces
-
+    def to_grow_ids(self):
+        """The ids to grow (sorted), None for all. ValueError on a typo, also shown as a red line."""
+        text = self.id_list_line.text().strip()
+        if not text:
+            return None
         try:
-            to_grow_ids = [int(x) for x in to_grow_text.split(",") if x.strip().isdigit()]
-        except:
-            to_grow_ids = None
-            # show error in napari message box
-            from napari.utils.notifications import show_error
-            show_error("Invalid IDs format. Please enter a comma-separated list of integers.")
-       
-        # if to_grow_ids is empty, set to None
-        if not to_grow_ids:
-            to_grow_ids = None
-       
+            ids = sorted(parse_ids(text))
+        except ValueError:
+            ids = None
+        if not ids:
+            msg = f"IDs to grow: enter ids like 3,5-7, or nothing for all (got '{text}')"
+            self.ids_error.set(msg, "error")
+            raise ValueError(msg)
+        return ids
+
+    def get_params(self):
+        to_grow_ids = self.to_grow_ids()
+
         if not self.early_stop_checkbox.isChecked():
             no_growth_max_iter = None
         else:

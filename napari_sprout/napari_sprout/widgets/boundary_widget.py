@@ -1,0 +1,742 @@
+"""Boundary tab for napari-sprout.
+
+Builds a boundary mask (e.g. skull sutures) that Seeds / Grow can use to
+enforce separation. Workflow, top to bottom:
+
+    1. Input      pick an image; optionally restrict by ORIGINAL intensity
+    2. Method     Top-hat parameters -> Compute (background, with progress)
+    3. Threshold  drag a range on the response histogram; the current slice
+                  previews live
+    4. Output     Create Boundary Layer (whole volume, background)
+
+All heavy work runs off the UI thread. The only work on the UI thread is the
+single-slice preview, which takes milliseconds.
+"""
+import os
+import threading
+import time
+
+import numpy as np
+from napari.layers import Image, Labels
+from napari.qt.threading import thread_worker
+from napari.utils.notifications import show_error, show_info, show_warning
+from qtpy.QtCore import QTimer, Signal
+from qtpy.QtWidgets import (
+    QButtonGroup, QCheckBox, QComboBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
+    QLabel, QLineEdit, QProgressBar, QPushButton, QRadioButton, QScrollArea, QSpinBox,
+    QStackedWidget, QVBoxLayout, QWidget,
+)
+
+from sprout_core import boundary as B
+
+from ..utils import jobs
+from ..utils.histogram_widget import HistogramRangeWidget
+from ..utils.roi_layers import get_roi_hub
+from ..utils.status import RUN_BUTTON, StatusLine, style, tab_hidden
+from ..utils.slice_preview import SlicePreview
+
+PREVIEW_NAME = "Boundary preview"
+META_KEY = "sprout_boundary"
+
+# GPU probe (imports torch, ~3 s): done once, when GPU is picked or on Compute, then cached
+_GPU_STATUS = None
+_GPU_LOCK = threading.Lock()
+
+
+def gpu_status():
+    """(available, description), probed once per session (any thread)."""
+    global _GPU_STATUS
+    with _GPU_LOCK:
+        if _GPU_STATUS is None:
+            _GPU_STATUS = B.gpu_status()
+        return _GPU_STATUS
+
+
+# --------------------------------------------------------------------------
+# Method panels. A method turns (image, params) into a response image of the
+# same shape; sections 1, 3 and 4 are shared by every method.
+# --------------------------------------------------------------------------
+class TophatPanel(QWidget):
+    """Parameters of the grey top-hat."""
+
+    name = "Top-hat"
+    params_changed = Signal()
+
+    SHAPES = [
+        ("Ball (exact sphere)", "ball",
+         "Exact Euclidean ball of radius = size."),
+        ("Cube", "cube",
+         "Cube of side 2*size+1. Same as Avizo: Cube, neighbourhood 26, size."),
+        ("Octahedron", "octahedron",
+         "|dz|+|dy|+|dx| <= size. Same as Avizo: Cube, neighbourhood 6, size."),
+    ]
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        form = QFormLayout(self)
+        form.setContentsMargins(0, 0, 0, 0)
+
+        self.black = QRadioButton("black")
+        self.white = QRadioButton("white")
+        self.black.setChecked(True)
+        self.black.setToolTip("closing - image: small DARK structures (sutures, gaps)")
+        self.white.setToolTip("image - opening: small BRIGHT structures")
+        grp = QButtonGroup(self)
+        grp.addButton(self.black)
+        grp.addButton(self.white)
+        row = QHBoxLayout()
+        row.addWidget(self.black)
+        row.addWidget(self.white)
+        row.addStretch()
+        form.addRow("Type", row)
+
+        self.shape_combo = QComboBox()
+        for i, (label, key, tip) in enumerate(self.SHAPES):
+            self.shape_combo.addItem(label, key)
+            self.shape_combo.setItemData(i, tip, 3)  # 3 == Qt.ToolTipRole
+        self.size_spin = QSpinBox()
+        self.size_spin.setRange(1, 50)
+        self.size_spin.setValue(3)
+        self.size_spin.setToolTip("Footprint radius in voxels. Structures narrower than "
+                                  "the footprint are extracted.")
+        row = QHBoxLayout()
+        row.addWidget(self.shape_combo)
+        row.addWidget(QLabel("Size"))
+        row.addWidget(self.size_spin)
+        form.addRow("Shape", row)
+
+        self.black.toggled.connect(self.params_changed)
+        self.shape_combo.currentIndexChanged.connect(self.params_changed)
+        self.size_spin.valueChanged.connect(self.params_changed)
+
+    def params(self):
+        return {"kind": "black" if self.black.isChecked() else "white",
+                "shape": self.shape_combo.currentData(),
+                "size": self.size_spin.value()}
+
+    def set_params(self, p):
+        if "kind" in p:
+            (self.black if p["kind"] == "black" else self.white).setChecked(True)
+        if "shape" in p:
+            i = self.shape_combo.findData(p["shape"])
+            if i >= 0:
+                self.shape_combo.setCurrentIndex(i)
+        if "size" in p:
+            self.size_spin.setValue(int(p["size"]))
+
+    @staticmethod
+    def describe(p):
+        return f"{p['kind']} top-hat, {p['shape']}, size {p['size']}"
+
+    @staticmethod
+    def compute(img, p, device, progress, cancel):
+        return B.tophat(img, p["kind"], p["shape"], p["size"], device, progress, cancel)
+
+
+# --------------------------------------------------------------------------
+class BoundaryWidget(QWidget):
+    """Boundary tab: image -> response -> threshold -> boundary Labels layer."""
+
+    boundary_created = Signal(str)   # layer name; connect to Seeds / Grow
+
+    def __init__(self, napari_viewer):
+        super().__init__()
+        self.viewer = napari_viewer
+        self._img_layer = None
+        self._img = None
+        self._resp = None            # cached response for the current image + params
+        self._resp_key = None
+        self._resp_desc = ""
+        self._job = {"hist": 0, "compute": 0, "resp_hist": 0, "create": 0}
+        self._computing = False
+        self._workers = set()
+        self._slice_preview = SlicePreview(napari_viewer, PREVIEW_NAME,
+                                           color=(1, 0.15, 0.15, 1), opacity=0.7)
+        self._pending_threshold = None
+        self._hist_pending = False   # input histogram not computed yet (the tab was hidden)
+
+        # Layer changes are handled on the next event-loop turn and coalesced.
+        # This also means nothing is started while napari is closing: the timer
+        # dies with the widget.
+        self._refresh_timer = QTimer(self)
+        self._refresh_timer.setSingleShot(True)
+        self._refresh_timer.timeout.connect(self.refresh_layers)
+
+        self._build_ui()
+        self._connect()
+        self.refresh_layers()
+
+    # ------------------------------------------------------------------ UI
+    def _build_ui(self):
+        layout = QVBoxLayout()
+
+        # 1. Input
+        g1 = QGroupBox("1. Input")
+        l1 = QVBoxLayout(g1)
+        form = QFormLayout()
+        self.image_combo = QComboBox()
+        form.addRow("Image", self.image_combo)
+        l1.addLayout(form)
+        self.input_hist = HistogramRangeWidget(
+            "Original intensity: only voxels in this range can become boundary")
+        self.input_hist.setToolTip("A zero background is excluded by default.")
+        l1.addWidget(self.input_hist)
+        layout.addWidget(g1)
+
+        # 2. Method
+        g2 = QGroupBox("2. Method")
+        l2 = QVBoxLayout(g2)
+        # Import / Export YAML in the group's header row (as in Seeds / Grow / Prompt)
+        row = QHBoxLayout()
+        row.addStretch()
+        self.import_btn = QPushButton("Import YAML")
+        self.import_btn.setToolTip("Load the method, device, intensity range and threshold from a YAML file")
+        self.export_btn = QPushButton("Export YAML")
+        self.export_btn.setToolTip("Save the method, device, intensity range and threshold to a YAML file")
+        row.addWidget(self.import_btn)
+        row.addWidget(self.export_btn)
+        l2.addLayout(row)
+        self.yaml_status = StatusLine(hide_empty=True)
+        l2.addWidget(self.yaml_status)
+        form = QFormLayout()
+        self.method_combo = QComboBox()
+        self.method_combo.setToolTip("How the boundary response is computed from the image")
+        self.method_stack = QStackedWidget()
+        self.panels = [TophatPanel()]
+        for p in self.panels:
+            self.method_combo.addItem(p.name)
+            self.method_stack.addWidget(p)
+        form.addRow("Method", self.method_combo)
+        l2.addLayout(form)
+        l2.addWidget(self.method_stack)
+
+        form = QFormLayout()
+        self.device_combo = QComboBox()
+        self.device_combo.addItem("Auto", "auto")
+        self.device_combo.addItem("GPU", "gpu")
+        self.device_combo.addItem("CPU", "cpu")
+        self.device_combo.setToolTip("Auto: the GPU if torch finds one, else the CPU")
+        # GPU detection imports torch (~3 s): done when GPU is picked or on Compute, not when
+        # the panel opens or the tab is shown (gpu_status() caches it)
+        self.device_label = QLabel("GPU not checked yet")
+        self.device_label.setStyleSheet(style("info"))
+        row = QHBoxLayout()
+        row.addWidget(self.device_combo)
+        row.addWidget(self.device_label)
+        row.addStretch()
+        form.addRow("Device", row)
+        self.response_layer_cb = QCheckBox("Also add the response as an image layer")
+        self.response_layer_cb.setToolTip("Useful to look at what the method highlights. "
+                                          "Costs one more image worth of memory.")
+        form.addRow(self.response_layer_cb)
+        l2.addLayout(form)
+
+        row = QHBoxLayout()
+        self.compute_btn = QPushButton("Compute")
+        self.compute_btn.setStyleSheet(RUN_BUTTON)
+        self.compute_btn.setToolTip("Compute the response of the whole image (in the background)")
+        self.progress = QProgressBar()
+        self.progress.setTextVisible(True)
+        self.stop_btn = QPushButton("Stop")
+        self.stop_btn.setToolTip("Stop computing (nothing is kept)")
+        self.stop_btn.setEnabled(False)
+        row.addWidget(self.compute_btn)
+        row.addWidget(self.progress, 1)
+        row.addWidget(self.stop_btn)
+        l2.addLayout(row)
+        self.compute_status = StatusLine(hide_empty=True)   # running / ✓ done / Stopped / failed / "click Compute"
+        l2.addWidget(self.compute_status)
+        layout.addWidget(g2)
+        # start / Stop / progress / end messages of Compute (utils/jobs.py)
+        self.run_control = jobs.RunControl(self, self.compute_status, [self.compute_btn], self.stop_btn,
+                                           self.progress, hide_bar=False, notify=self._notify)
+
+        # 3. Threshold
+        g3 = QGroupBox("3. Threshold")
+        l3 = QVBoxLayout(g3)
+        self.resp_hist = HistogramRangeWidget(
+            "Response (eligible voxels only): drag the range; the current slice previews live")
+        l3.addWidget(self.resp_hist)
+        self.preview_label = StatusLine(hide_empty=True)
+        l3.addWidget(self.preview_label)
+        layout.addWidget(g3)
+
+        # 4. Output
+        g4 = QGroupBox("4. Output")
+        form = QFormLayout(g4)
+        self.name_edit = QLineEdit()
+        form.addRow("Name", self.name_edit)
+        self.use_cb = QCheckBox("Use as boundary in Seeds / Grow")
+        self.use_cb.setChecked(True)
+        form.addRow(self.use_cb)
+        row = QHBoxLayout()
+        self.create_btn = QPushButton("Create Boundary Layer")
+        row.addWidget(self.create_btn, 1)
+        form.addRow(row)
+        self.output_status = StatusLine(hide_empty=True)   # Created (ok) / cannot create (error)
+        form.addRow(self.output_status)
+        layout.addWidget(g4)
+        layout.addStretch()
+
+        container = QWidget()
+        container.setLayout(layout)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(container)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(scroll)
+
+        self.input_hist.show_message("Select an image")
+        self.resp_hist.show_message("Click Compute")
+        self._update_buttons()
+
+    def _connect(self):
+        # napari events only through the viewer's hub (Qt signals, bound methods): a closed
+        # panel leaves nothing connected in napari
+        hub = get_roi_hub(self.viewer)
+        hub.layer_inserted.connect(self._schedule_refresh)
+        hub.layer_removed.connect(self._schedule_refresh)
+        hub.layer_renamed.connect(self._on_layer_renamed)
+        hub.dims_changed.connect(self._update_preview)
+
+        self.image_combo.currentTextChanged.connect(self._on_image_changed)
+        self.method_combo.currentIndexChanged.connect(self._on_method_changed)
+        for p in self.panels:
+            p.params_changed.connect(self._on_params_changed)
+        self.device_combo.currentIndexChanged.connect(self._on_params_changed)
+        self.device_combo.currentIndexChanged.connect(self._on_device_changed)
+
+        self.input_hist.range_changed.connect(lambda *_: self._update_preview())
+        self.input_hist.range_committed.connect(lambda *_: self._on_intensity_range_committed())
+        self.resp_hist.range_changed.connect(lambda *_: self._update_preview())
+
+        self.compute_btn.clicked.connect(self._compute)
+        self.stop_btn.clicked.connect(self._stop)
+        self.create_btn.clicked.connect(self._create)
+        self.import_btn.clicked.connect(self._import_yaml)
+        self.export_btn.clicked.connect(self._export_yaml)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        names = [l.name for l in self.viewer.layers if isinstance(l, Image)]
+        if [self.image_combo.itemText(i) for i in range(self.image_combo.count())] != names:
+            self.refresh_layers()          # a missed layer event: re-sync, keeping the selection
+        if self._hist_pending:             # the image changed while the tab was hidden
+            self._start_input_histogram()
+
+    def _schedule_refresh(self, *_):
+        self._refresh_timer.start(0)
+
+    def _on_layer_renamed(self, layer, old):
+        """Rename in place: the selection (and the computed response) stay."""
+        i = self.image_combo.findText(old)
+        if i >= 0 and isinstance(layer, Image):
+            self.image_combo.blockSignals(True)
+            self.image_combo.setItemText(i, layer.name)
+            self.image_combo.blockSignals(False)
+        if layer is self._img_layer and self.name_edit.text() == f"{old}_boundary":
+            self.name_edit.setText(f"{layer.name}_boundary")
+
+    def _on_device_changed(self, *_):
+        if self.device_combo.currentData() != "gpu":
+            return
+        if _GPU_STATUS is not None:
+            self._on_gpu_status(_GPU_STATUS)
+        else:
+            self.device_label.setText("checking for a GPU…")
+            self._run(gpu_status, self._on_gpu_status)
+
+    def _on_gpu_status(self, res):
+        ok, desc = res
+        self.device_combo.model().item(1).setEnabled(ok)
+        self.device_label.setText(f"GPU: {desc}" if ok else f"CPU only ({desc})")
+        if not ok and self.device_combo.currentData() == "gpu":
+            self.device_combo.setCurrentIndex(self.device_combo.findData("auto"))
+
+    # ------------------------------------------------------------- helpers
+    @property
+    def panel(self):
+        return self.method_stack.currentWidget()
+
+    def _run(self, fn, on_return, on_error=None, on_finish=None):
+        """Run fn() on a worker thread; callbacks run on the UI thread.
+
+        Errors are handled here (ignore_errors=True stops napari from also
+        dumping a traceback, e.g. every time the user presses Stop).
+        """
+        w = thread_worker(fn, ignore_errors=True)()
+        w.returned.connect(on_return)
+        w.errored.connect(on_error or self._report_error)
+        if on_finish:
+            w.finished.connect(on_finish)
+        self._workers.add(w)
+        w.finished.connect(lambda: self._workers.discard(w))
+        w.start()
+        return w
+
+    @staticmethod
+    def _report_error(e):
+        import traceback
+        traceback.print_exception(type(e), e, e.__traceback__)   # full detail in the console
+        show_error(f"Boundary: {type(e).__name__}: {e}")
+
+    @staticmethod
+    def _notify(level, text):
+        """The one napari notification of a Compute run (finished / failed)."""
+        (show_error if level == "error" else show_info)(text)
+
+    def _intensity_range(self):
+        """(lower, upper) on the ORIGINAL image, or (None, None) if unrestricted."""
+        if not self.input_hist._ready():
+            return None, None
+        return self.input_hist.get_bounds()
+
+    def _current_key(self):
+        name = self._img_layer.name if self._img_layer is not None else None
+        return (id(self._img_layer), name, self.method_combo.currentIndex(),
+                tuple(sorted(self.panel.params().items())), self.device_combo.currentData())
+
+    def _layer_kwargs(self):
+        lay = self._img_layer
+        return {"scale": lay.scale, "translate": lay.translate}
+
+    def _update_buttons(self):
+        has_img = self._img is not None
+        has_resp = self._resp is not None
+        self.compute_btn.setEnabled(has_img and not self._computing)
+        self.stop_btn.setEnabled(self._computing)
+        self.create_btn.setEnabled(has_resp and not self._computing)
+        self.export_btn.setEnabled(has_img)
+
+    # --------------------------------------------------------------- input
+    def refresh_layers(self):
+        current = self.image_combo.currentText()
+        names = [l.name for l in self.viewer.layers if isinstance(l, Image)]
+        self.image_combo.blockSignals(True)
+        self.image_combo.clear()
+        self.image_combo.addItems(names)
+        if current in names:
+            self.image_combo.setCurrentText(current)
+        self.image_combo.blockSignals(False)
+        self._on_image_changed(self.image_combo.currentText())
+
+    def _on_image_changed(self, name):
+        layer = self.viewer.layers[name] if name and name in self.viewer.layers else None
+        if layer is self._img_layer:
+            return
+        self._stop()
+        self._reset_response("Click Compute")
+        self.compute_status.set("")
+        self.output_status.clear()
+        self._img_layer, self._img = None, None
+        self._job["hist"] += 1
+
+        if layer is None:
+            self.input_hist.show_message("Select an image")
+            self._update_buttons()
+            return
+        if layer.multiscale or layer.rgb or layer.ndim not in (2, 3):
+            self.input_hist.show_message("Unsupported image (needs 2D or 3D, single channel)")
+            self._update_buttons()
+            return
+
+        self._img_layer = layer
+        self._img = np.asarray(layer.data)
+        self.name_edit.setText(f"{name}_boundary")
+        self.input_hist.show_message("Computing…")
+        self._hist_pending = True
+        if not tab_hidden(self):          # a hidden tab computes it when shown (showEvent)
+            self._start_input_histogram()
+        self._update_buttons()
+
+    def _start_input_histogram(self):
+        self._hist_pending = False
+        job, img = self._job["hist"], self._img
+        if img is None:
+            return
+
+        def work():
+            counts, edges = B.histogram(img)
+            lo, hi, _, _ = B.default_intensity_range(img)
+            return counts, edges, lo, hi
+
+        def done(res):
+            if job != self._job["hist"]:
+                return  # the user picked another image meanwhile
+            counts, edges, lo, hi = res
+            self.input_hist.set_data(counts, edges, integer=img.dtype.kind in "ui", lower=lo, upper=hi)
+
+        self._run(work, done)
+
+    def _on_intensity_range_committed(self):
+        if self._resp is None:
+            return
+        self._compute_response_histogram(keep_range=True)
+
+    # -------------------------------------------------------------- method
+    def _on_method_changed(self, i):
+        self.method_stack.setCurrentIndex(i)
+        self._on_params_changed()
+
+    def _on_params_changed(self, *_):
+        if self._computing:
+            return  # the running result is discarded on return (stale key)
+        if self._resp is not None:
+            self._reset_response("Parameters changed: click Compute")
+            self.compute_status.set("Parameters changed: click Compute", "warn")
+
+    def _reset_response(self, message):
+        self._resp = None
+        self._resp_key = None
+        self._slice_preview.remove()
+        self.resp_hist.show_message(message)
+        self.preview_label.clear()
+        self._update_buttons()
+
+    def _compute(self):
+        if self._img is None:
+            self.compute_status.set("Select an image first", "error")
+            return
+        if self.run_control.running:     # stopping: Compute is enabled again once it has stopped
+            self._stop()
+            return
+        self._job["compute"] += 1
+        job, img, key = self._job["compute"], self._img, self._current_key()
+        params, device, panel = self.panel.params(), self.device_combo.currentData(), self.panel
+        ilo, ihi = self._intensity_range()
+        desc = panel.describe(params)
+
+        self._computing = True
+        self._reset_response("Computing…")
+        self.output_status.clear()
+
+        def work(cancel, progress):
+            if device != "cpu":
+                gpu_status()                 # probed once, shown next to Device
+            t0 = time.perf_counter()
+            resp, info = panel.compute(img, params, device, lambda d, t: progress(d, t, ""), cancel)
+            info["seconds"] = time.perf_counter() - t0
+            if cancel.is_set():
+                raise B.Cancelled()
+            counts, edges = B.histogram(resp, img=img, lower=ilo, upper=ihi)
+            suggest = B.suggest_threshold(resp, img, ilo, ihi)
+            return resp, info, counts, edges, suggest
+
+        def done(res, secs):
+            if job != self._job["compute"]:
+                return None
+            if key != self._current_key():
+                self._reset_response("Parameters changed during computing: click Compute")
+                self.compute_status.set("Parameters changed during computing: click Compute", "warn")
+                return None
+            resp, info, counts, edges, suggest = res
+            self._resp, self._resp_key = resp, key
+            self._resp_desc = desc
+            self._resp_info = info
+            dev = "GPU" if info["device"] == "cuda" else "CPU"
+            note = "" if dev == "GPU" or device == "cpu" else f" ({info['device_reason']})"
+            lo, hi = self._pending_threshold or (suggest, None)   # None -> axis end = no limit
+            self._pending_threshold = None
+            self.resp_hist.set_data(counts, edges, integer=resp.dtype.kind in "ui", lower=lo, upper=hi)
+            if self.response_layer_cb.isChecked():
+                self._show_response_layer()
+            self._update_preview()
+            return f"Boundary response: {desc} on {dev}", note
+
+        def stopped(e, done_, total):
+            self.resp_hist.show_message("Stopped: click Compute")
+            if total and done_ >= total:            # the chunks run in parallel: all were done
+                return f"Stopped after all {total} chunks (before the histogram); nothing kept"
+            return jobs.stopped_text(done_, total, "chunks") + "; nothing kept"
+
+        def failed(e):
+            self.resp_hist.show_message("Failed: see the line under Compute")
+            return jobs.reason(e)
+
+        def finished(kind):
+            if job == self._job["compute"]:
+                self._computing = False
+                self.progress.setRange(0, 1)
+                self.progress.setValue(1 if self._resp is not None else 0)
+                self.progress.setFormat("%p%")       # idle: 100% (a response) or 0%
+                self._update_buttons()
+                if device != "cpu" and _GPU_STATUS is not None:
+                    self._on_gpu_status(_GPU_STATUS)
+
+        w = self.run_control.start(work, "Boundary compute", f"Computing the {desc}…",
+                                   done=done, stopped=stopped, failed=failed, after=finished)
+        self._workers.add(w)                     # the checks wait for _workers to drain
+        w.finished.connect(lambda: self._workers.discard(w))
+        self._update_buttons()
+
+    def _stop(self):
+        self.run_control.stop()
+
+    def _compute_response_histogram(self, keep_range):
+        self._job["resp_hist"] += 1
+        job, resp, img = self._job["resp_hist"], self._resp, self._img
+        ilo, ihi = self._intensity_range()
+        old = self.resp_hist.get_bounds()   # keep "no limit" as no limit
+        self.resp_hist.show_message("Computing…")
+
+        def work():
+            return B.histogram(resp, img=img, lower=ilo, upper=ihi)
+
+        def done(res):
+            if job != self._job["resp_hist"] or resp is not self._resp:
+                return
+            counts, edges = res
+            lo, hi = old if keep_range else (None, None)
+            self.resp_hist.set_data(counts, edges, integer=resp.dtype.kind in "ui", lower=lo, upper=hi)
+            self._update_preview()
+
+        self._run(work, done)
+
+    def _show_response_layer(self):
+        name = f"{self._img_layer.name}_response"
+        md = {META_KEY + "_response": self._resp_desc}
+        if name in self.viewer.layers and META_KEY + "_response" in self.viewer.layers[name].metadata:
+            lay = self.viewer.layers[name]
+            lay.data = self._resp
+            lay.metadata = md
+        else:
+            self.viewer.add_image(self._resp, name=name, colormap="magma", metadata=md,
+                                  **self._layer_kwargs())
+
+    # ------------------------------------------------------------- preview
+    @property
+    def _preview_buf(self):
+        return self._slice_preview._buf
+
+    def _update_preview(self):
+        """Threshold only the displayed slice: milliseconds, so it runs on the UI thread."""
+        if self._resp is None or not self.resp_hist._ready() or self._img is None:
+            return
+        self._slice_preview.set_reference(self._img_layer)
+        lo, hi = self.resp_hist.get_bounds()
+        ilo, ihi = self._intensity_range()
+        resp, img = self._resp, self._img
+
+        def mask(sl):
+            r = resp[sl]
+            m = np.ones(r.shape, bool) if lo is None else r >= lo
+            if hi is not None:
+                m &= r <= hi
+            if ilo is not None or ihi is not None:
+                m &= B.intensity_mask(img[sl], ilo, ihi)
+            return m
+
+        m = self._slice_preview.show_slice(mask)
+        if m is None:
+            self.preview_label.set("Preview: switch to a 2D view")
+            return
+        n = int(m.sum())
+        self.preview_label.set(f"Current slice: {n:,} boundary voxels ({n / m.size:.2%})")
+
+    # -------------------------------------------------------------- output
+    def _params_record(self):
+        lo, hi = self.resp_hist.get_bounds()   # None = no limit
+        ilo, ihi = self._intensity_range()
+        rec = {"method": self.method_combo.currentText(), **self.panel.params(),
+               "device": self.device_combo.currentData(),
+               "intensity_lower": ilo, "intensity_upper": ihi,
+               "threshold_lower": lo, "threshold_upper": hi}
+        return {k: (float(v) if isinstance(v, np.floating) else v) for k, v in rec.items()}
+
+    def _create(self):
+        if self._resp is None:
+            self.output_status.set("Compute first", "error")
+            return
+        self._job["create"] += 1
+        job, resp, img = self._job["create"], self._resp, self._img
+        rec = self._params_record()
+        rec["image"] = self._img_layer.name
+        lo, hi = rec["threshold_lower"], rec["threshold_upper"]
+        ilo, ihi = rec["intensity_lower"], rec["intensity_upper"]
+        self.create_btn.setEnabled(False)
+        self.create_btn.setText("Creating…")
+
+        def work():
+            mask = B.threshold_mask(resp, lo, hi, img, ilo, ihi)
+            return mask, int(np.count_nonzero(mask))
+
+        def done(res):
+            if job != self._job["create"]:
+                return
+            mask, n = res
+            if n == 0:
+                self.output_status.set("No voxel is in the threshold range: lower the threshold", "error")
+                return
+            if n == mask.size:
+                self.output_status.set("Every voxel is in the threshold range: raise the threshold", "error")
+                return
+            self._name_note = ""
+            name = self._add_or_update_output(mask, rec)
+            self._slice_preview.remove()
+            # the line under the button only (no notification: it would repeat it)
+            if self._name_note:     # created under another name: say so (orange)
+                self.output_status.set(f"Created '{name}': {n:,} voxels ({n / mask.size:.2%})\n"
+                                       f"{self._name_note}", "warn")
+            else:
+                self.output_status.set(f"Created '{name}': {n:,} voxels ({n / mask.size:.2%})", "ok")
+            if self.use_cb.isChecked():
+                self.boundary_created.emit(name)
+
+        def finished():
+            self.create_btn.setText("Create Boundary Layer")
+            self._update_buttons()
+
+        self._run(work, done, on_finish=finished)
+
+    def _add_or_update_output(self, mask, rec):
+        name = self.name_edit.text().strip() or f"{self._img_layer.name}_boundary"
+        if name in self.viewer.layers:
+            lay = self.viewer.layers[name]
+            if isinstance(lay, Labels) and META_KEY in lay.metadata:
+                lay.data = mask            # our own earlier result: overwrite
+                lay.metadata = {META_KEY: rec}
+                return name
+            base, i = name, 1              # someone else's layer: never overwrite
+            while name in self.viewer.layers:
+                name = f"{base}_{i}"
+                i += 1
+            self._name_note = f"A layer named '{base}' already exists; created '{name}'"
+        self.viewer.add_labels(mask, name=name, metadata={META_KEY: rec}, **self._layer_kwargs())
+        return name
+
+    # ---------------------------------------------------------------- YAML
+    def _export_yaml(self):
+        import yaml
+        path, _ = QFileDialog.getSaveFileName(self, "Export boundary parameters", "boundary.yaml",
+                                              "YAML (*.yaml *.yml)")
+        if not path:
+            return
+        rec = self._params_record()
+        rec["image"] = self._img_layer.name if self._img_layer is not None else None
+        with open(path, "w", encoding="utf-8") as f:
+            yaml.safe_dump(rec, f, sort_keys=False)
+        self.yaml_status.set(f"Saved {os.path.basename(path)}", "ok")
+        self.yaml_status.setToolTip(path)
+
+    def _import_yaml(self):
+        import yaml
+        path, _ = QFileDialog.getOpenFileName(self, "Import boundary parameters", "", "YAML (*.yaml *.yml)")
+        if not path:
+            return
+        with open(path, encoding="utf-8") as f:
+            rec = yaml.safe_load(f) or {}
+        i = self.method_combo.findText(rec.get("method", ""))
+        if i >= 0:
+            self.method_combo.setCurrentIndex(i)
+        self.panel.set_params(rec)
+        j = self.device_combo.findData(rec.get("device"))
+        if j >= 0 and self.device_combo.model().item(j).isEnabled():
+            self.device_combo.setCurrentIndex(j)
+        if self.input_hist._ready():
+            h = self.input_hist
+            ilo, ihi = rec.get("intensity_lower"), rec.get("intensity_upper")
+            h.set_range(h._xmin if ilo is None else ilo, h._xmax if ihi is None else ihi)
+        if "threshold_lower" in rec or "threshold_upper" in rec:
+            self._pending_threshold = (rec.get("threshold_lower"), rec.get("threshold_upper"))
+        self.compute_status.set("Parameters loaded: click Compute", "warn")

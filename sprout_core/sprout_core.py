@@ -3,16 +3,48 @@ from skimage.morphology import binary_dilation, binary_erosion, cube,square, bin
 from skimage import measure
 from datetime import datetime
 import os
+import threading
 import tifffile
 
 from scipy.ndimage import binary_fill_holes
 
 from sprout_core import config_core
+# One Stop exception for all of SPROUT (also raised by boundary, prompt_points, prompt_seg)
+from sprout_core.boundary import Cancelled, _is_cancelled
 
 
+def check_cancel(cancel):
+    """Raise Cancelled if `cancel` (a threading.Event, a callable returning bool, or None) is set."""
+    if _is_cancelled(cancel):
+        raise Cancelled()
 
 
+class StepProgress:
+    """Counts done steps for progress(done, total, text); step() may be called from any thread.
 
+    progress=None: step() does nothing (CLI / scripts / YAML runs).
+    """
+
+    def __init__(self, progress, total):
+        self.progress = progress
+        self.total = max(int(total), 1)
+        self.done = 0
+        self._lock = threading.Lock()
+
+    def step(self, text="", n=1):
+        if self.progress is None:
+            return
+        with self._lock:                 # reported in order (progress should be quick)
+            self.done = min(self.done + n, self.total)
+            self.progress(self.done, self.total, text)
+
+    def jump(self, done, text=""):
+        """Set the done count (e.g. a stage that stopped early counts as done)."""
+        if self.progress is None:
+            return
+        with self._lock:
+            self.done = min(max(int(done), self.done), self.total)
+            self.progress(self.done, self.total, text)
 
 
 def assign_optional_params(config, keys_with_defaults):
@@ -38,6 +70,27 @@ def assign_optional_params(config, keys_with_defaults):
     return config_values
 
 
+def run_threads(target, args_list):
+    """Run target(*args) in one thread per entry of `args_list` and wait for all of them.
+
+    An exception in a thread is not lost (threading only prints it): once every thread
+    has finished, the first exception raised is re-raised here, with its traceback.
+    """
+    errors = []
+
+    def run(*args):
+        try:
+            target(*args)
+        except Exception as e:
+            errors.append(e)
+
+    threads = [threading.Thread(target=run, args=tuple(args)) for args in args_list]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    if errors:
+        raise errors[0]
 
 
 
@@ -130,22 +183,47 @@ fp_Y_2d = np.array([[0, 1, 0],
                     [0, 1, 0],
                     [0, 1, 0]],  dtype=np.uint8)
 
+def _foreground(image):
+    """The voxels that `image == True` selects: a bool image as it is, else the voxels equal to 1."""
+    return image if image.dtype == bool else (image == True)
+
+
+def _foreground_min_max(fg):
+    """Per axis (min, max) index of the True voxels of bool `fg`, None if there are none.
+
+    Same values (np.intp) as np.argwhere(fg).min / max(axis=0), from any() projections:
+    no array of all coordinates (3 x 8 bytes per voxel) is made.
+    """
+    lo, hi = [], []
+    for _ in range(fg.ndim):
+        proj = fg.any(axis=tuple(range(1, fg.ndim))) if fg.ndim > 1 else fg
+        idx = np.flatnonzero(proj)
+        if idx.size == 0:
+            return None
+        lo.append(idx[0])
+        hi.append(idx[-1])
+        if fg.ndim > 1:
+            fg = fg[idx[0]:idx[-1] + 1].any(axis=0)
+    return lo, hi
+
+
 def get_sub_binary_image_by_pos(image_3d, margin):
 
 
-    # Find the indices where the image is 1
-    indices = np.argwhere(image_3d == True)
+    # Find the bounding box of the voxels where the image is 1
+    min_max = _foreground_min_max(_foreground(image_3d))
+    if min_max is None:
+        # what np.argwhere(...).min() raised for an empty image
+        raise ValueError("zero-size array to reduction operation minimum which has no identity")
 
 
     is_3d = (image_3d.ndim == 3)
     if is_3d:
         # Get the min and max indices along each dimension
-        min_z, min_y, min_x = indices.min(axis=0)
-        max_z, max_y, max_x = indices.max(axis=0)
+        (min_z, min_y, min_x), (max_z, max_y, max_x) = min_max
     else:
         # Get the min and max indices along each dimension
-        min_y, min_x = indices.min(axis=0)
-        max_y, max_x = indices.max(axis=0)
+        (min_y, min_x), (max_y, max_x) = min_max
     # print(f"Bounding box for 3D image: x_min={min_x}, x_max={max_x}, y_min={min_y}, y_max={max_y}, z_min={min_z}, z_max={max_z}")
 
     if is_3d:
@@ -173,15 +251,42 @@ def get_sub_binary_image_by_pos(image_3d, margin):
     return subset_3d, max_min_ids
 
 
+# ---------------------------------------------------------------------------
+# Footprint size convention used throughout SPROUT
+#
+#   kernal_size / size is a RADIUS for every footprint shape:
+#     ball(r) / disk(r)              -> diameter 2r + 1
+#     cube_fp(r) / square_fp(r)      -> edge     2r + 1   (r = 1 -> 3x3x3 / 3x3)
+#
+# skimage's cube(n) / square(n) take the EDGE length instead, so cube(1) is a
+# single voxel and eroding with it does nothing. Always build cubes/squares
+# through cube_fp / square_fp, never with cube(kernal_size) directly.
+# The Boundary tab (sprout_core/boundary.py) uses the same radius convention,
+# which also matches Avizo's "Cube, neighbourhood 26, size s".
+# ---------------------------------------------------------------------------
+def cube_fp(radius):
+    """3D cube footprint of the given radius: edge 2*radius + 1."""
+    return cube(2 * int(radius) + 1)
+
+
+def square_fp(radius):
+    """2D square footprint of the given radius: edge 2*radius + 1."""
+    return square(2 * int(radius) + 1)
+
+
 def dilation_binary_img_on_sub(input, margin, kernal_size, is_round=True):
-    
+    """Binary dilation on the bounding box of the foreground.
+
+    kernal_size is a radius: ball/disk(kernal_size) if is_round, else a cube/square
+    with edge 2*kernal_size + 1.
+    """
     if margin <=kernal_size:
         margin = kernal_size + 1
     
     is_3d = (input.ndim == 3)
     if is_3d:
         
-        if len(np.argwhere(input == True)) == 0:
+        if not _foreground(input).any():
             return input
         else:
             subset_3d , max_min_ids= get_sub_binary_image_by_pos(input, margin = margin)
@@ -190,7 +295,7 @@ def dilation_binary_img_on_sub(input, margin, kernal_size, is_round=True):
             if is_round:
                 subset_3d = binary_dilation(subset_3d, ball(kernal_size))
             else:
-                subset_3d = binary_dilation(subset_3d, cube(kernal_size))
+                subset_3d = binary_dilation(subset_3d, cube_fp(kernal_size))
 
 
             input[min_z:max_z+1, min_y:max_y+1, min_x:max_x+1] = subset_3d
@@ -201,19 +306,25 @@ def dilation_binary_img_on_sub(input, margin, kernal_size, is_round=True):
         if is_round:
             subset_2d = binary_dilation(subset_2d, disk(kernal_size))
         else:
-            subset_2d = binary_dilation(subset_2d, square(kernal_size))
+            subset_2d = binary_dilation(subset_2d, square_fp(kernal_size))
         input[min_y:max_y+1, min_x:max_x+1] = subset_2d
     
     return input
 
 def erosion_binary_img_on_sub(input, kernal_size = 1, footprint='ball'):
-    
+    """Binary erosion on the bounding box of the foreground.
+
+    kernal_size is a radius for 'ball'/'disk' and 'cube'/'square' alike: with the
+    default kernal_size=1, one call erodes by one voxel, using a 3x3x3 cross
+    ('ball', 6-neighbourhood) or a full 3x3x3 cube ('cube', 26-neighbourhood).
+    The other footprints ('ball_XY', 'X', ...) are fixed one-voxel footprints.
+    """
     if footprint == 'ball' or footprint == 'cube':
         assert type(kernal_size) is int
     
     is_3d = (input.ndim == 3)
     if is_3d:
-        if len(np.argwhere(input == True)) == 0:
+        if not _foreground(input).any():
             return input
         else:
             subset_3d , max_min_ids= get_sub_binary_image_by_pos(input, margin = 1)
@@ -222,7 +333,7 @@ def erosion_binary_img_on_sub(input, kernal_size = 1, footprint='ball'):
             if footprint == 'ball':
                 subset_3d = binary_erosion(subset_3d, ball(kernal_size))
             elif footprint == 'cube':
-                subset_3d = binary_erosion(subset_3d, cube(kernal_size))
+                subset_3d = binary_erosion(subset_3d, cube_fp(kernal_size))
             elif footprint =='ball_XY':
                 subset_3d = binary_erosion(subset_3d, ball_fp_XY)
             elif footprint =='ball_XZ':
@@ -257,7 +368,7 @@ def erosion_binary_img_on_sub(input, kernal_size = 1, footprint='ball'):
         if footprint == 'disk' or footprint == 'ball':
             subset_2d = binary_erosion(subset_2d, disk(kernal_size))
         elif footprint == 'square' or footprint == 'cube':
-            subset_2d = binary_erosion(subset_2d, square(kernal_size))
+            subset_2d = binary_erosion(subset_2d, square_fp(kernal_size))
         elif footprint =='X':
             subset_2d = binary_erosion(subset_2d, fp_X_2d)
         elif footprint =='Y':
@@ -270,12 +381,13 @@ def erosion_binary_img_on_sub(input, kernal_size = 1, footprint='ball'):
 
 
 def closing_binary_img_on_sub(input, margin, kernal_size, is_round=True):
+    """Binary closing on the bounding box; kernal_size is a radius (see cube_fp)."""
     if margin <=kernal_size:
         margin = kernal_size + 1
         
     is_3d = (input.ndim == 3)
     if is_3d:
-        if len(np.argwhere(input == True)) == 0:
+        if not _foreground(input).any():
             return input
         else:
         
@@ -285,7 +397,7 @@ def closing_binary_img_on_sub(input, margin, kernal_size, is_round=True):
             if is_round:
                 subset_3d = binary_closing(subset_3d, ball(kernal_size))
             else:
-                subset_3d = binary_closing(subset_3d, cube(kernal_size))
+                subset_3d = binary_closing(subset_3d, cube_fp(kernal_size))
 
             # subset_3d = binary_closing(subset_3d, cube(kernal_size))
             input[min_z:max_z+1, min_y:max_y+1, min_x:max_x+1] = subset_3d
@@ -295,7 +407,7 @@ def closing_binary_img_on_sub(input, margin, kernal_size, is_round=True):
         if is_round:
             subset_2d = binary_closing(subset_2d, disk(kernal_size))
         else:
-            subset_2d = binary_closing(subset_2d, square(kernal_size))
+            subset_2d = binary_closing(subset_2d, square_fp(kernal_size))
         input[min_y:max_y+1, min_x:max_x+1] = subset_2d
     
     return input
@@ -308,7 +420,7 @@ def closing_binary_img_on_sub_one_step_iter(input, iterations, footprint='ball')
         kernal_size=1
         is_round = True
     elif footprint =='cube':
-        kernal_size=3
+        kernal_size=1          # radius 1 -> 3x3x3 cube (was edge 3 before the radius convention)
         is_round = False
 
     if is_3d:
@@ -399,6 +511,35 @@ def keep_ccomps(input, top_n=None , threshold=0):
     return output
 
 
+_CHUNK = 1 << 22    # voxels per chunk in _bincount / _apply_lut (bounds their intp temporaries)
+
+
+def _bincount(labels, length):
+    """np.bincount(labels.ravel(), minlength=length) in chunks, without a full-size intp copy.
+
+    labels: non-negative integers below `length`, of a dtype that casts safely to intp.
+    """
+    flat = labels.reshape(-1)
+    step = max(_CHUNK, 4 * length)
+    counts = np.zeros(length, np.intp)
+    for s in range(0, flat.size, step):
+        counts += np.bincount(flat[s:s + step], minlength=length)
+    return counts
+
+
+def _apply_lut(lut, labels, out=None):
+    """lut[labels] in chunks (fancy indexing copies all of `labels` to intp first).
+
+    out: a C-contiguous array of labels' shape and lut's dtype; may be `labels` itself.
+    """
+    if out is None:
+        out = np.empty(labels.shape, lut.dtype)
+    src, dst = labels.reshape(-1), out.reshape(-1)
+    for s in range(0, src.size, _CHUNK):
+        dst[s:s + _CHUNK] = lut[src[s:s + _CHUNK]]
+    return out
+
+
 def get_ccomps_with_size_order(volume, segments=None, min_vol = None):
     """Get the largest ccomp
 
@@ -409,13 +550,13 @@ def get_ccomps_with_size_order(volume, segments=None, min_vol = None):
     Returns:
         _type_: _description_
     """
-    labeled_image = measure.label(volume, background=0, 
-                                  return_num=False)
-    component_sizes = np.bincount(labeled_image.ravel())[1:] 
-    
-    
-    
-    component_labels = np.unique(labeled_image)[1:]
+    labeled_image, n_labels = measure.label(volume, background=0,
+                                  return_num=True)
+    component_sizes = _bincount(labeled_image, n_labels + 1)[1:]
+
+
+    # measure.label numbers the components 1..n_labels, so no np.unique is needed
+    component_labels = np.arange(1, n_labels + 1)
     if min_vol is not None:
         valid_components = component_sizes >= min_vol
         component_labels = component_labels[valid_components]
@@ -428,11 +569,12 @@ def get_ccomps_with_size_order(volume, segments=None, min_vol = None):
         segments = len(component_sizes_sorted)
     # props = measure.regionprops(label_image)
     largest_labels = component_labels[np.argsort(component_sizes)[::-1][:segments]]
-    
-    output = np.zeros_like(labeled_image)
-    for label_id, label in enumerate(largest_labels):
-        output[labeled_image == label] = label_id+1
-    
+
+    # Relabel in place with one lookup table (was one full scan per component)
+    lut = np.zeros(n_labels + 1, labeled_image.dtype)
+    lut[largest_labels] = np.arange(1, len(largest_labels) + 1)
+    output = _apply_lut(lut, labeled_image, out=labeled_image)
+
     return output, component_sizes_sorted[:segments]
 
 
@@ -732,10 +874,14 @@ def find_seed_by_ero_custom(volume_array, threshold , segments, ero_iter,
                     footprints = None,
                     upper_threshold = None,
                     boundary = None ,
-                    is_return_seeds = False):
+                    is_return_seeds = False,
+                    cancel = None,
+                    step = None):
+    """cancel: threading.Event (or None), checked before every erosion step; raises Cancelled.
+    step: callable(text) called after every seed written (one progress step), or None."""
      # Capture the start time
     start_time = datetime.now()
-    
+
     seeds_dict = {}
     
     # Thresholding 
@@ -762,11 +908,12 @@ def find_seed_by_ero_custom(volume_array, threshold , segments, ero_iter,
     
 
     for i_iter in range(0,ero_iter+1):
-        
+        check_cancel(cancel)
         if i_iter!=0:
-            volume_label = erosion_binary_img_on_sub(volume_label, 
+            volume_label = erosion_binary_img_on_sub(volume_label,
                                                                    footprint = footprints[i_iter-1])
-                                                                #    footprint='ball_YZ')      
+                                                                #    footprint='ball_YZ')
+            check_cancel(cancel)
 
         # Connected components
         seed, ccomp_sizes = get_ccomps_with_size_order(volume_label,segments)
@@ -776,11 +923,13 @@ def find_seed_by_ero_custom(volume_array, threshold , segments, ero_iter,
         seed_file = os.path.join(output_dir, 
                     seed_name)
 
-        tifffile.imwrite(seed_file, seed.astype('uint16'),
+        # at least uint16 as before; wider only if there are more than 65535 seeds
+        tifffile.imwrite(seed_file, cast_labels(seed, np.uint16),
                          compression ='zlib')
         
         if is_return_seeds:
-            seeds_dict[os.path.basename(output_dir) + "_" +seed_name] = seed
+            # the same dtype as the file (at least uint16), not measure.label's int32
+            seeds_dict[os.path.basename(output_dir) + "_" +seed_name] = cast_labels(seed, np.uint16)
         
         args_dict = {
             # "start_time": start_time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -794,7 +943,9 @@ def find_seed_by_ero_custom(volume_array, threshold , segments, ero_iter,
         }
         
         log_dict["seeds"].append(args_dict)
-        
+        if step is not None:
+            step(f"threshold {threshold}: erosion {i_iter}/{ero_iter}")
+
         # log_dict[f"ero_iter{i_iter}"]=args_dict
         # .append(args_dict)
     
@@ -885,12 +1036,24 @@ def reorder_segmentation(segmentation, min_size=None, sort_ids=True, top_n=None)
             - reordered_segmentation (np.ndarray): Array with reordered class labels.
             - class_mapping (dict): Mapping from old to new class labels.
     """
-    # Find unique classes excluding background
-    unique_classes = np.unique(segmentation)
-    unique_classes = unique_classes[unique_classes != 0]
-    
-    # Calculate the size of each segment
-    sizes = {cls: np.sum(segmentation == cls) for cls in unique_classes}
+    # Non-negative integer ids up to 2**24: sizes from one bincount, relabelled with a
+    # lookup table (the loop below scans the whole array twice per class).
+    max_id = None
+    if segmentation.dtype.kind in 'iu' and np.can_cast(segmentation.dtype, np.intp) and segmentation.size:
+        max_id = int(segmentation.max())
+        if max_id >= 2 ** 24 or (segmentation.dtype.kind == 'i' and int(segmentation.min()) < 0):
+            max_id = None
+    if max_id is not None:
+        counts = _bincount(segmentation, max_id + 1)
+        unique_classes = np.flatnonzero(counts[1:]) + 1
+        sizes = dict(zip(unique_classes.astype(segmentation.dtype), counts[unique_classes]))
+    else:
+        # Find unique classes excluding background
+        unique_classes = np.unique(segmentation)
+        unique_classes = unique_classes[unique_classes != 0]
+
+        # Calculate the size of each segment
+        sizes = {cls: np.sum(segmentation == cls) for cls in unique_classes}
 
     # Print the size of each class
     # print("Original Class Sizes:")
@@ -915,9 +1078,18 @@ def reorder_segmentation(segmentation, min_size=None, sort_ids=True, top_n=None)
         class_mapping = {old: old for old in sorted_classes}
 
     # Create a new segmentation array with reordered class labels
-    reordered_segmentation = np.zeros_like(segmentation)
-    for old, new in class_mapping.items():
-        reordered_segmentation[segmentation == old] = new
+    if max_id is not None and not sort_ids and min_size is None and top_n is None:
+        # every class keeps its id
+        reordered_segmentation = segmentation.copy()
+    elif max_id is not None:
+        lut = np.zeros(max_id + 1, segmentation.dtype)
+        if class_mapping:
+            lut[np.fromiter(class_mapping.keys(), np.intp)] = np.fromiter(class_mapping.values(), np.int64)
+        reordered_segmentation = _apply_lut(lut, segmentation)
+    else:
+        reordered_segmentation = np.zeros_like(segmentation)
+        for old, new in class_mapping.items():
+            reordered_segmentation[segmentation == old] = new
 
     # Print the mapping and reordered sizes
     # print("\nReordered Class Mapping and Sizes:")
@@ -1087,6 +1259,35 @@ def check_files(file_list):
 
 # # Save the 4D array as a TIFF file
 # tifffile.imwrite('data/bones_suture/output_test_colour.tif', array_4d)
+
+
+_LABEL_DTYPES = (np.uint8, np.uint16, np.uint32, np.uint64)
+
+
+def label_dtype(max_id, min_dtype=np.uint8):
+    """Smallest unsigned dtype, not smaller than `min_dtype`, that holds label ids up to `max_id`.
+
+    Choose by the largest id, not by the number of labels: ids {7, 300} are only two
+    labels but 300 does not fit in uint8 (it would wrap to 44 and merge with label 44).
+    """
+    min_size = np.dtype(min_dtype).itemsize
+    for dt in _LABEL_DTYPES:
+        if np.dtype(dt).itemsize >= min_size and int(max_id) <= np.iinfo(dt).max:
+            return np.dtype(dt)
+    raise ValueError(f"label id {max_id} does not fit in any unsigned integer type")
+
+
+def cast_labels(labels, min_dtype=np.uint8, copy=True):
+    """Cast a label image to label_dtype(labels.max(), min_dtype) without losing any id."""
+    max_id = int(labels.max()) if labels.size else 0
+    return labels.astype(label_dtype(max_id, min_dtype), copy=copy)
+
+
+def ensure_label_capacity(labels, max_id):
+    """Return `labels`, promoted to a wider dtype only if `max_id` would not fit."""
+    if int(max_id) <= np.iinfo(labels.dtype).max:
+        return labels
+    return labels.astype(label_dtype(max_id, labels.dtype))
 
 
 def convert_seg_to_8bit(seg):

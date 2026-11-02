@@ -1,10 +1,10 @@
 import sys
+import weakref
 import numpy as np
 from skimage.measure import label as cc_label
 from qtpy.QtWidgets import (QTabWidget, QWidget, QVBoxLayout, QComboBox, QPushButton, QLabel,
                             QHBoxLayout, QCheckBox, QMessageBox,QSpinBox, QGroupBox,
                             QFormLayout, QScrollArea , QSizePolicy)
-from copy import deepcopy
 from napari.layers import Labels
 from napari.utils.notifications import show_info, show_error
 from qtpy.QtWidgets import QFrame
@@ -12,6 +12,7 @@ from qtpy.QtWidgets import QFrame
 import numpy as np
 from skimage.morphology import remove_small_holes
 from skimage.morphology import erosion, dilation, opening, closing, disk, ball
+from scipy import ndimage as ndi
 
 from pathlib import Path
 sprout_path = Path(__file__).parent.parent.parent.parent
@@ -19,6 +20,14 @@ if str(sprout_path) not in sys.path:
     sys.path.insert(0, str(sprout_path))
 
 from sprout_core.sprout_core import get_sub_binary_image_by_pos
+
+from ..utils.status import LAYER_HEADER, NO_LAYER, StatusLine, style
+from ..utils.layer_lock import lock_layers, lock_note, unlock_layers
+
+# One style for every run button, the same as the main panel's run buttons. Only the enabled
+# state is coloured, so a disabled run button keeps napari's disabled look.
+RUN_STYLE = "QPushButton { font-weight: bold; } QPushButton:enabled { background-color: #45a049; }"
+NO_TARGET = "—"   # shown by a Target Region box until a region ID is entered
 
 def sort_labels_by_size(label_img, ignore_label=0):
     # Single pass over the array with bincount instead of one full scan per label.
@@ -43,12 +52,84 @@ def sort_labels_by_size(label_img, ignore_label=0):
 
     return new_img, remap
 
+
+def label_boxes(label_img):
+    """(label, bounding box) of every non-zero label, in ascending label order (as np.unique).
+
+    One ndi.find_objects pass instead of one full-image scan per label. find_objects skips
+    negative values and makes one entry per ID up to the maximum, so negative or very large IDs
+    are first mapped to compact ones (np.unique, still one pass).
+    """
+    if label_img.size == 0:
+        return []
+    lo, hi = int(label_img.min()), int(label_img.max())
+    if lo >= 0 and hi <= 2 ** 24:
+        boxes = ndi.find_objects(label_img)
+        return [(label_img.dtype.type(i + 1), box) for i, box in enumerate(boxes) if box is not None]
+    values, inverse = np.unique(label_img, return_inverse=True)
+    boxes = ndi.find_objects(inverse.reshape(label_img.shape) + 1)
+    return [(v, box) for v, box in zip(values, boxes) if v != 0]
+
+
+def grow_box(box, margin, shape):
+    """The box widened by `margin` on every side, clipped at the image border."""
+    return tuple(slice(max(b.start - margin, 0), min(b.stop + margin, n)) for b, n in zip(box, shape))
+
+
+def outside_pieces(box, shape):
+    """Sizes of the connected pieces of the image outside `box` (face connectivity)."""
+    n = int(np.prod(shape))
+    sides = [(i, lo, hi) for i, (b, size) in enumerate(zip(box, shape))
+             for lo, hi in ((0, b.start), (b.stop, size)) if hi > lo]
+    if len({i for i, _, _ in sides}) >= 2:      # slabs on two axes meet: one piece around the box
+        return [n - int(np.prod([b.stop - b.start for b in box]))]
+    # on one axis only, the box spans the image along the others: a slab on each side
+    return [(hi - lo) * n // shape[i] for i, lo, hi in sides]
+
+
+def fill_holes_in_box(label_img, result, lbl, box, area_threshold):
+    """remove_small_holes for one label, computed in its box plus 1 voxel; writes into result.
+
+    Identical to remove_small_holes on the whole image. The label lies inside its box, so the
+    image outside the box is background and each piece of it lies in one component. A background
+    component of the crop that does not reach the 1-voxel ring around the box is a whole component
+    of the image (same size, same decision). One that reaches the ring holds a whole outside piece
+    in the image; if every piece is larger than the threshold, none of these is filled, so fills
+    the crop made there are dropped. Otherwise (a small pocket between the label and the image
+    border) the whole image is used, as before.
+    """
+    crop = grow_box(box, 1, label_img.shape)
+    mask = label_img[crop] == lbl
+    new = remove_small_holes(mask, area_threshold=area_threshold) & ~mask
+    ring = new.copy()
+    ring[tuple(slice(b.start - c.start, b.stop - c.start) for b, c in zip(box, crop))] = False
+    if ring.any():
+        if min(outside_pieces(box, label_img.shape)) > area_threshold:
+            parts, _ = ndi.label(new)            # the filled components (face connectivity)
+            new &= ~np.isin(parts, np.unique(parts[ring]))
+        else:
+            crop = tuple(slice(0, n) for n in label_img.shape)
+            mask = label_img == lbl
+            new = remove_small_holes(mask, area_threshold=area_threshold) & ~mask
+    result[crop][new] = lbl
+
+
+def has_region(data, target):
+    """True if `target` occurs in data. A slab-by-slab scan that stops at the first hit:
+    no np.unique (a full sort) and no full-size temporary on the UI thread."""
+    if data.ndim == 0 or data.shape[0] == 0:
+        return False
+    step = max(1, (1 << 22) // max(1, data[0].size))
+    return any(np.any(data[i:i + step] == target) for i in range(0, data.shape[0], step))
+
 class QtLabelSelector(QWidget):
     def __init__(self, viewer):
         super().__init__()
         self.viewer = viewer
         self.selected_labels = set()
         self.original_data_backup = None
+        self._backup_layer = None   # weakref to the layer original_data_backup belongs to
+        self._busy = 0              # background operations running
         self.last_bound_layer = None
 
         
@@ -56,24 +137,21 @@ class QtLabelSelector(QWidget):
         layout = QVBoxLayout(content_widget)
         
         # Label layer selection
-        self.layer_label = QLabel("Active Label Layer: (none)")
-        self.layer_label.setStyleSheet("""
-            QLabel {
-                font-weight: bold;
-                color: white;
-                background-color: #007ACC;  
-                padding: 4px;
-                border-radius: 4px;
-            }
-        """)
-        self.layer_label.setToolTip("Displays the name of the currently active Labels layer in Napari.")
+        self.layer_label = QLabel(NO_LAYER)
+        self.layer_label.setStyleSheet(LAYER_HEADER)
+        self.layer_label.setWordWrap(True)
+        self.layer_label.setToolTip("The Labels layer the operations below work on: the active layer in napari.")
         layout.addWidget(self.layer_label)
-        
+
         # Undo button
         undo_btn = QPushButton("Undo")
+        undo_btn.setToolTip("Undo the last operation, on the layer it changed (one step).")
         undo_btn.clicked.connect(self.undo_last_operation)
+        self.undo_btn = undo_btn   # disabled while an operation runs (it would replace the layer's data)
         layout.addWidget(undo_btn)
-        
+        self.status = StatusLine(hide_empty=True)
+        layout.addWidget(self.status)
+
         # Duplicate option
         # self.duplicate_combo = QComboBox()
         # self.duplicate_combo.addItems(["No", "Yes"])
@@ -111,13 +189,18 @@ class QtLabelSelector(QWidget):
 
 
         label_select_group = QGroupBox("Region Selection")
-        label_select_group.setToolTip("Select regions by clicking on the image. Use the buttons below to process selected regions.")
+        label_select_group.setToolTip("Select regions with Ctrl+click in the viewer, then keep or remove them.")
         label_select_layout = QFormLayout()
+
+        select_hint = QLabel("Ctrl+click a region in the viewer to select it; Ctrl+click it again to deselect.")
+        select_hint.setWordWrap(True)
+        select_hint.setStyleSheet(style("info"))
+        label_select_layout.addRow(select_hint)
 
         # Region display
         self.label_display = QLabel("Selected regions: []")
-        self.label_display.setToolTip("Displays regions you have selected by clicking on the image.")
-        # layout.addWidget(self.label_display)
+        self.label_display.setToolTip("The regions selected with Ctrl+click in the viewer.")
+# layout.addWidget(self.label_display)
         label_select_layout.addRow(self.label_display)
         
         # Clear button
@@ -139,7 +222,7 @@ class QtLabelSelector(QWidget):
         # Run button
         run_btn = QPushButton("Run processing")
         run_btn.setToolTip("Run the main region selection processing according to the chosen mode and options.")
-        run_btn.setStyleSheet("""QPushButton { font-weight: bold; background-color: #45a049;}""")
+        run_btn.setStyleSheet(RUN_STYLE)
         run_btn.clicked.connect(self.process_selected_operation)
         # layout.addWidget(run_btn)
         label_select_layout.addRow(run_btn)
@@ -176,7 +259,7 @@ class QtLabelSelector(QWidget):
         # layout.addWidget(self.dst_spin)
 
         set_class_btn = QPushButton("Replace")
-        set_class_btn.setStyleSheet("""QPushButton { font-weight: bold; background-color: #45a049;}""")
+        set_class_btn.setStyleSheet(RUN_STYLE)
         set_class_btn.setToolTip("Replace all voxels of the source region with the target region.")
         set_class_btn.clicked.connect(self.set_class_operation)
         # layout.addWidget(set_class_btn)
@@ -204,7 +287,7 @@ class QtLabelSelector(QWidget):
         label_merge_layout.addRow(self.merge_offset_checkbox)
 
         merge_btn = QPushButton("Run Merge")
-        merge_btn.setStyleSheet("QPushButton { font-weight: bold; background-color: #45a049; }")
+        merge_btn.setStyleSheet(RUN_STYLE)
         merge_btn.setToolTip("Merge the source layer into the active label layer.")
         merge_btn.clicked.connect(self.merge_labels_operation)
         label_merge_layout.addRow(merge_btn)
@@ -227,10 +310,7 @@ class QtLabelSelector(QWidget):
         self.split_all_checkbox.setToolTip("If checked, split all regions > 0 instead of only the target region.")
         label_split_layout.addRow(self.split_all_checkbox)
 
-        self.split_class_spin = QSpinBox()
-        self.split_class_spin.setMinimum(0)
-        self.split_class_spin.setMaximum(10000)
-        self.split_class_spin.setToolTip("Enter the region ID to split into components.")
+        self.split_class_spin = self._target_spin(10000, "The region ID to split into components.")
         # Grey out the single-region target while "split all" is active.
         self.split_all_checkbox.toggled.connect(self.split_class_spin.setDisabled)
 
@@ -252,7 +332,7 @@ class QtLabelSelector(QWidget):
         label_split_layout.addRow(QLabel("Keep Top-N Components (0 = all):"), self.top_n_spin)
 
         split_btn = QPushButton("Run Split Region")
-        split_btn.setStyleSheet("""QPushButton { font-weight: bold; background-color: #45a049;}""")
+        split_btn.setStyleSheet(RUN_STYLE)
         split_btn.setToolTip("Split selected region into connected components.")
         split_btn.clicked.connect(self.split_class_operation)
         label_split_layout.addRow(split_btn)
@@ -273,7 +353,8 @@ class QtLabelSelector(QWidget):
         keep_layout.addRow(QLabel("Top-N Regions:"), self.keep_label_topn_spin)
 
         keep_label_btn = QPushButton("Run Keep Top-N Regions")
-        keep_label_btn.setStyleSheet("QPushButton { font-weight: bold; background-color: #3c8dbc; }")
+        keep_label_btn.setToolTip("Keep the N largest regions; all others become background (0).")
+        keep_label_btn.setStyleSheet(RUN_STYLE)
         keep_label_btn.clicked.connect(self.run_keep_top_n_labels)
         keep_layout.addRow(keep_label_btn)
 
@@ -292,10 +373,7 @@ class QtLabelSelector(QWidget):
         self.filter_all_checkbox.setToolTip("If checked, filter all regions > 0 instead of a single target region.")
         filter_layout.addRow(self.filter_all_checkbox)
 
-        self.filter_target_label_spin = QSpinBox()
-        self.filter_target_label_spin.setMinimum(0)
-        self.filter_target_label_spin.setMaximum(10_000)
-        self.filter_target_label_spin.setToolTip("The region to filter. 0 is usually the background.")
+        self.filter_target_label_spin = self._target_spin(10_000, "The region to filter.")
         self.filter_all_checkbox.toggled.connect(self.filter_target_label_spin.setDisabled)
         filter_layout.addRow(QLabel("Target Region:"), self.filter_target_label_spin)
 
@@ -314,7 +392,8 @@ class QtLabelSelector(QWidget):
         filter_layout.addRow(QLabel("Keep Top-N:"), self.filter_top_n_spin)
 
         filter_btn = QPushButton("Run Filtering")
-        filter_btn.setStyleSheet("QPushButton { font-weight: bold; background-color: #d97d00; }")
+        filter_btn.setToolTip("Remove small components / keep the largest components of the target region(s).")
+        filter_btn.setStyleSheet(RUN_STYLE)
         filter_btn.clicked.connect(self.run_filtering_operation)
         filter_layout.addRow(filter_btn)
 
@@ -333,10 +412,7 @@ class QtLabelSelector(QWidget):
         self.fill_all_checkbox.setToolTip("If checked, fill holes in all regions > 0 instead of a single target region.")
         fill_layout.addRow(self.fill_all_checkbox)
 
-        self.fill_target_spin = QSpinBox()
-        self.fill_target_spin.setMinimum(0)
-        self.fill_target_spin.setMaximum(10_000)
-        self.fill_target_spin.setToolTip("The region to process. 0 is usually the background.")
+        self.fill_target_spin = self._target_spin(10_000, "The region to process.")
         self.fill_all_checkbox.toggled.connect(self.fill_target_spin.setDisabled)
         fill_layout.addRow(QLabel("Target Region:"), self.fill_target_spin)
 
@@ -353,7 +429,8 @@ class QtLabelSelector(QWidget):
         fill_layout.addRow(self.fill_in_2d_checkbox)
 
         fill_btn = QPushButton("Run Fill Holes")
-        fill_btn.setStyleSheet("QPushButton { font-weight: bold; background-color: #0066aa; }")
+        fill_btn.setToolTip("Fill holes up to the area threshold inside the target region(s).")
+        fill_btn.setStyleSheet(RUN_STYLE)
         fill_btn.clicked.connect(self.run_fill_holes_operation)
         fill_layout.addRow(fill_btn)
 
@@ -373,10 +450,7 @@ class QtLabelSelector(QWidget):
         self.morph_all_checkbox.setToolTip("If checked, apply the operation to all regions > 0 instead of a single target region.")
         morph_layout.addRow(self.morph_all_checkbox)
 
-        self.morph_target_spin = QSpinBox()
-        self.morph_target_spin.setMinimum(0)
-        self.morph_target_spin.setMaximum(10_000)
-        self.morph_target_spin.setToolTip("The region to process. 0 is usually the background.")
+        self.morph_target_spin = self._target_spin(10_000, "The region to process.")
         self.morph_all_checkbox.toggled.connect(self.morph_target_spin.setDisabled)
         morph_layout.addRow(QLabel("Target Region:"), self.morph_target_spin)
 
@@ -393,7 +467,8 @@ class QtLabelSelector(QWidget):
         morph_layout.addRow(QLabel("Kernel Radius:"), self.morph_kernel_spin)
 
         morph_btn = QPushButton("Run Morphology")
-        morph_btn.setStyleSheet("QPushButton { font-weight: bold; background-color: #8844aa; }")
+        morph_btn.setToolTip("Apply the operation to the target region(s).")
+        morph_btn.setStyleSheet(RUN_STYLE)
         morph_btn.clicked.connect(self.run_morphology_operation)
         morph_layout.addRow(morph_btn)
 
@@ -422,8 +497,20 @@ class QtLabelSelector(QWidget):
         self.all_edit_buttons = [
             fill_btn, morph_btn, split_btn, filter_btn,
             keep_label_btn, run_btn, set_class_btn,
-            merge_btn  
+            merge_btn
         ]
+
+        # A run button whose Target Region box is still empty is disabled ("all" ticked: enabled).
+        self._target_buttons = [
+            (split_btn, self.split_all_checkbox, self.split_class_spin),
+            (filter_btn, self.filter_all_checkbox, self.filter_target_label_spin),
+            (fill_btn, self.fill_all_checkbox, self.fill_target_spin),
+            (morph_btn, self.morph_all_checkbox, self.morph_target_spin),
+        ]
+        for _, all_box, spin in self._target_buttons:
+            all_box.toggled.connect(self._sync_target_buttons)
+            spin.valueChanged.connect(self._sync_target_buttons)
+        self._sync_target_buttons()
 
 
         tab_widget = QTabWidget()
@@ -451,6 +538,38 @@ class QtLabelSelector(QWidget):
         tab_widget.addTab(tab_refine, "Cleanup && Refine")
 
         layout.addWidget(tab_widget)
+
+        # Bind the layer that is already active (no re-selection needed).
+        self._bind_layer(self.viewer.layers.selection.active)
+
+    def _target_spin(self, maximum, tip):
+        """A Target Region box: empty (NO_TARGET) until a region ID is entered."""
+        spin = QSpinBox()
+        spin.setMinimum(-1)
+        spin.setMaximum(maximum)
+        spin.setSpecialValueText(NO_TARGET)
+        spin.setValue(-1)
+        spin.setToolTip(tip + " Empty until you enter a region ID; 0 is the background.")
+        return spin
+
+    def _sync_target_buttons(self, *args):
+        """Enable each run button that has a target (a region ID entered, or "all" ticked)."""
+        if self._busy:
+            return
+        for btn, all_box, spin in self._target_buttons:
+            btn.setEnabled(all_box.isChecked() or spin.value() >= 0)
+
+    def _no_target(self, target):
+        """True (and a red line) if no Target Region was entered."""
+        if target is not None and target < 0:
+            self.status.set("Enter a target region first.", "error")
+            return True
+        return False
+
+    def _set_backup(self, layer, data):
+        """Remember `data` as the state Undo restores, for `layer` only."""
+        self.original_data_backup = data
+        self._backup_layer = weakref.ref(layer)
 
     def update_layer_list(self, *args):
         # deprecated method
@@ -541,13 +660,12 @@ class QtLabelSelector(QWidget):
             duplicated_data = label_layer.data.copy()
             new_name = f"{label_layer.name}_set"
             target_layer = self.viewer.add_labels(duplicated_data, name=new_name)
-            print(f"Operating on duplicated layer: {new_name}")
             if self.on_click not in target_layer.mouse_drag_callbacks:
                 target_layer.mouse_drag_callbacks.append(self.on_click)
             self.last_bound_layer = target_layer
-        print(f"Running set_class on layer: {target_layer.name}")
+        # The edit goes into a new array, so the old one is the Undo state as it is (no copy).
         data = target_layer.data.copy()
-        self.original_data_backup = target_layer.data.copy()
+        self._set_backup(target_layer, target_layer.data)
         data[data == src] = dst
         target_layer.data = data
         # QMessageBox.information(self, "Success", f"Class {src} changed to {dst}.")
@@ -629,6 +747,8 @@ class QtLabelSelector(QWidget):
         target_class = self.split_class_spin.value()
         keep_top_n = self.top_n_spin.value()
         sort_by_size = self.sort_checkbox.isChecked()
+        if not self.split_all_checkbox.isChecked() and self._no_target(target_class):
+            return
 
         # Warn when splitting region 0 in single-region mode: 0 is usually the
         # background, so splitting it tends to be slow and produce odd results.
@@ -636,38 +756,40 @@ class QtLabelSelector(QWidget):
             if not self._confirm_region_zero("Splitting"):
                 return
 
-        data = label_layer.data.copy()
-
-        # check if target label exists before doing calculations
-        if not self.check_target_label(target_class, data):
+        # check if target label exists before doing calculations (not for "split all": the
+        # greyed-out Target Region may be empty or stale)
+        split_all = self.split_all_checkbox.isChecked()
+        if not self.check_target_label(None if split_all else target_class, label_layer.data):
             return
 
-        # Duplicate if needed
-        target_layer = label_layer
-        if self.duplicate_checkbox.isChecked():
-            new_name = f"{label_layer.name}_split"
-            target_layer = self.viewer.add_labels(data.copy(), name=new_name)
-            print(f"Operating on duplicated layer: {new_name}")
-            if self.on_click not in target_layer.mouse_drag_callbacks:
-                target_layer.mouse_drag_callbacks.append(self.on_click)
-            self.last_bound_layer = target_layer
-            data = target_layer.data.copy()
-        print(f"Running split_class on layer: {target_layer.name}")
-        
-        self.original_data_backup = data.copy()
-        ##
-        
+        # With "Duplicate layer" the "_split" copy is made only once the worker found
+        # something to split (no leftover copy for "No split needed").
+        # The worker builds a new array, so the layer's own array is the Undo state as it is;
+        # with "Duplicate layer" it stays in the source layer, so the duplicate's Undo state is a copy.
+        duplicate = self.duplicate_checkbox.isChecked()
+        data = label_layer.data.copy() if duplicate else label_layer.data
+        if not duplicate:
+            self._set_backup(label_layer, data)
+
         def on_done(result):
             new_data, did_split = result
-            if target_layer not in self.viewer.layers:
-                print("Layer was removed before update.")
+            if label_layer not in self.viewer.layers:
+                self.status.set("The layer was removed before the operation finished.", "warn")
                 return
             # The "no split needed" check now happens inside the worker, so the
             # connected-component labeling runs only once (off the UI thread).
             if not did_split:
                 QMessageBox.information(self, "Info", "No split needed.")
                 return
-            target_layer.data = new_data
+            target_layer = label_layer
+            if duplicate:
+                target_layer = self.viewer.add_labels(new_data, name=f"{label_layer.name}_split")
+                if self.on_click not in target_layer.mouse_drag_callbacks:
+                    target_layer.mouse_drag_callbacks.append(self.on_click)
+                self.last_bound_layer = target_layer
+                self._set_backup(target_layer, data)
+            else:
+                target_layer.data = new_data
             if self.split_all_checkbox.isChecked():
                 msg = f"Split all non-background regions completed in layer {target_layer.name}."
             else:
@@ -678,11 +800,9 @@ class QtLabelSelector(QWidget):
         if self.split_all_checkbox.isChecked():
             worker_func = self._do_split_all_classes
             worker_args = [data, keep_top_n, sort_by_size]
-            print("Split mode: all non-background labels")
         else:
             worker_func = self._do_split_class
             worker_args = [data, target_class, keep_top_n, sort_by_size]
-            print(f"Split mode: single class {target_class}")
 
         self.run_in_background(
             worker_func,
@@ -776,32 +896,59 @@ class QtLabelSelector(QWidget):
         return result, did_split
 
     def _do_split_all_classes(self, data: np.ndarray, keep_top_n: int, sort_by_size: bool):
-        result = data.copy()
-        labels = np.unique(result)
-        labels = labels[labels != 0]
+        """Split every label of `data` into its connected components.
 
-        if labels.size == 0:
+        Labels are taken in ascending order; the components of a split label get new IDs above
+        the current maximum (as for a single region), each label is labelled inside its own
+        bounding box. "Sort by size" renumbers all regions once at the end (it used to renumber
+        the map after every split, so later labels of the original list hit other regions).
+        """
+        result = data.copy()
+        boxes = label_boxes(data)
+
+        if not boxes:
             return result, False
 
         # Starting base: current max label
         label_base = result.max()
         any_split = False
 
-        for lbl in labels:
-            result, label_base, did_split = self._split_single_class(
-                data=result,
-                target_class=lbl,
-                keep_top_n=keep_top_n,
-                sort_by_size=sort_by_size,
-                start_label_base=label_base
-            )
-            any_split = any_split or did_split
+        for lbl, box in boxes:
+            # IDs written so far are 0 or above the original maximum, so `data` still tells
+            # which voxels are lbl.
+            mask = data[box] == lbl
+            cc = self._label_connected_components(mask)
+            num_components = cc.max()
+            if num_components <= 1:
+                continue
+
+            if keep_top_n > 0:
+                sizes = np.bincount(cc.ravel(), minlength=num_components + 1)[1:]
+                sorted_indices = np.argsort(sizes)[::-1]
+                keep_ids = set(sorted_indices[:keep_top_n] + 1)
+                cc = np.where(np.isin(cc, list(keep_ids)), cc, 0)
+                num_components = cc.max()
+
+            if sort_by_size and label_base + num_components > np.iinfo(result.dtype).max:
+                # Temporary IDs beyond the dtype: keep them exact until the final renumbering.
+                result = result.astype(np.int64)
+            view = result[box]
+            view[mask] = 0
+            nonzero = cc > 0
+            view[nonzero] = cc[nonzero] + label_base
+            label_base = label_base + num_components
+            any_split = True
+
+        if sort_by_size and any_split:
+            result, _ = sort_labels_by_size(result)
+            result = result.astype(data.dtype, copy=False)
 
         return result, any_split
 
     def update_active_label_layer_binding(self, event):
-        layer = event.value
+        self._bind_layer(event.value)
 
+    def _bind_layer(self, layer):
         # unbind from the last layer if it exists
         if self.last_bound_layer and self.on_click in self.last_bound_layer.mouse_drag_callbacks:
             self.last_bound_layer.mouse_drag_callbacks.remove(self.on_click)
@@ -813,9 +960,8 @@ class QtLabelSelector(QWidget):
             
             
             self.layer_label.setText(f"Active Label Layer: {layer.name}")
-            print(f"Bound to active label layer: {layer.name}")
         else:
-            self.layer_label.setText("Active Label Layer: (none)")
+            self.layer_label.setText(NO_LAYER)
             
         self._refresh_merge_source_combo()
 
@@ -841,19 +987,29 @@ class QtLabelSelector(QWidget):
     def clear_selection(self):
         self.selected_labels.clear()
         self.update_display_label()
-        print("Selection cleared.")
 
     def undo_last_operation(self):
-        if self.original_data_backup is not None and self.last_bound_layer is not None:
-            self.last_bound_layer.data = deepcopy(self.original_data_backup)
+        layer = self._backup_layer() if self._backup_layer is not None else None
+        if self.original_data_backup is None or self._backup_layer is None:
+            self.status.set("Nothing to undo.", "info")
+            return
+        if layer is None or layer not in self.viewer.layers:
+            # never write the backup into another layer
             self.original_data_backup = None
-            print("Undo completed.")
-        else:
-            print("Nothing to undo.")
+            self._backup_layer = None
+            self.status.set("Nothing undone: the layer of the last operation was removed.", "warn")
+            return
+        # The backup is no longer used anywhere else (no operation writes into it): hand it back.
+        layer.data = self.original_data_backup
+        self.original_data_backup = None
+        self._backup_layer = None
+        other = layer is not self.viewer.layers.selection.active
+        self.status.set(f"Undo: layer {layer.name} restored"
+                        + (" (the layer of the last operation, not the selected one)." if other else "."), "ok")
 
     def process_selected_operation(self):
         if not self.selected_labels:
-            print("No labels selected.")
+            self.status.set("No regions selected: Ctrl+click regions in the viewer first.", "warn")
             return
 
         label_layer = self.last_bound_layer
@@ -863,9 +1019,6 @@ class QtLabelSelector(QWidget):
             QMessageBox.warning(self, "Error", "No valid label layer selected.")
             return
 
-        if label_layer is None:
-            print("No label layer bound.")
-            return
 
         target_layer = label_layer
         # if self.duplicate_combo.currentText() == "Yes":
@@ -873,15 +1026,13 @@ class QtLabelSelector(QWidget):
             duplicated_data = label_layer.data.copy()
             new_name = f"{label_layer.name}_filtered"
             target_layer = self.viewer.add_labels(duplicated_data, name=new_name)
-            print(f"Operating on duplicated layer: {new_name}")
             if self.on_click not in target_layer.mouse_drag_callbacks:
                 target_layer.mouse_drag_callbacks.append(self.on_click)
             self.last_bound_layer = target_layer
-        print(f"Running label selection on layer: {target_layer.name}")
 
-        self.original_data_backup = deepcopy(target_layer.data)
-
-        data = target_layer.data.copy()
+        # data * mask below is a new array: the old one is the Undo state as it is.
+        data = target_layer.data
+        self._set_backup(target_layer, data)
         mask = np.isin(data, list(self.selected_labels))
 
         if self.mode_combo.currentText() == "Keep selected regions":
@@ -920,10 +1071,12 @@ class QtLabelSelector(QWidget):
             target_label = None  # process all regions > 0
         else:
             target_label = self.fill_target_spin.value()
+            if self._no_target(target_label):
+                return
             if target_label == 0 and not self._confirm_region_zero("Filling holes in"):
                 return
 
-        data = label_layer.data.copy()
+        data = label_layer.data
 
         ## Check if target label exists before doing calculations
         if not self.check_target_label(target_label, data):
@@ -934,18 +1087,17 @@ class QtLabelSelector(QWidget):
         if self.duplicate_checkbox.isChecked():
             new_name = f"{label_layer.name}_fill"
             target_layer = self.viewer.add_labels(data.copy(), name=new_name)
-            print(f"Operating on duplicated layer: {new_name}")
             if self.on_click not in target_layer.mouse_drag_callbacks:
                 target_layer.mouse_drag_callbacks.append(self.on_click)
             self.last_bound_layer = target_layer
-            data = target_layer.data.copy()
-        print(f"Running fill_holes on layer: {target_layer.name}")
-        self.original_data_backup = data.copy()  # for undo
+            data = target_layer.data
+        # The worker builds a new array: the current one is the Undo state as it is.
+        self._set_backup(target_layer, data)  # for undo
 
         # Define a callback to run the long task in background
         def on_done(result):
             if target_layer not in self.viewer.layers:
-                print("Layer was removed before completion.")
+                self.status.set("The layer was removed before the operation finished.", "warn")
                 return
             target_layer.data = result
             # QMessageBox.information(self, "Done", "Hole filling completed.")
@@ -1000,23 +1152,23 @@ class QtLabelSelector(QWidget):
                 new_layer.mouse_drag_callbacks.append(self.on_click)
             self.last_bound_layer = new_layer
             label_layer = new_layer
-            print(f"Operating on duplicated layer: {new_name}")
 
-        data = label_layer.data.copy()
-        self.original_data_backup = data.copy()
+        # The worker builds a new array: the current one is the Undo state as it is.
+        data = label_layer.data
+        self._set_backup(label_layer, data)
 
         use_offset = self.merge_offset_checkbox.isChecked()
 
         def on_done(result):
             if label_layer not in self.viewer.layers:
-                print("Layer was removed before update.")
+                self.status.set("The layer was removed before the operation finished.", "warn")
                 return
             label_layer.data = result
             show_info(f"Merged '{source_name}' into '{label_layer.name}'.")
 
         self.run_in_background(
             self._do_merge_labels,
-            [data, source_data.copy(), use_offset],
+            [data, source_data, use_offset],
             on_done,
             buttons_to_disable=self.all_edit_buttons
         )
@@ -1060,21 +1212,25 @@ class QtLabelSelector(QWidget):
                 filled = remove_small_holes(mask, area_threshold=current_area_threshold)
                 result[filled & (~mask)] = target_label
         else:
-            unique_labels = np.unique(label_img)
-            for lbl in unique_labels:
-                if lbl == 0:
-                    continue
-                mask = (label_img == lbl)
-                max_area = np.prod(mask.shape) * 0.25
-                current_area_threshold = min(area_threshold, max_area)
-
-                if apply_in_2d and ndim == 3:
-                    for z in range(mask.shape[0]):
-                        filled = remove_small_holes(mask[z], area_threshold=current_area_threshold)
-                        result[z][filled & (~mask[z])] = lbl
+            # Each label inside its bounding box (fill_holes_in_box), in ascending order as before.
+            max_area = np.prod(label_img.shape) * 0.25
+            current_area_threshold = min(area_threshold, max_area)
+            per_slice = apply_in_2d and ndim == 3
+            if per_slice:
+                # A slice without the label is one background component: filled whole when it
+                # is smaller than the threshold (as remove_small_holes does on such a slice).
+                fill_empty = remove_small_holes(np.zeros(label_img.shape[1:], bool),
+                                                area_threshold=current_area_threshold).any()
+            for lbl, box in label_boxes(label_img):
+                if per_slice:
+                    if fill_empty:
+                        for z in range(label_img.shape[0]):
+                            if not box[0].start <= z < box[0].stop:
+                                result[z] = lbl
+                    for z in range(box[0].start, box[0].stop):
+                        fill_holes_in_box(label_img[z], result[z], lbl, box[1:], current_area_threshold)
                 else:
-                    filled = remove_small_holes(mask, area_threshold=current_area_threshold)
-                    result[filled & (~mask)] = lbl
+                    fill_holes_in_box(label_img, result, lbl, box, current_area_threshold)
         return result
 
     ###commented out code for morphology operation, use the one below instead
@@ -1167,12 +1323,15 @@ class QtLabelSelector(QWidget):
 
     def check_target_label(self,target_label, data):
         # if target label is None, it means process all labels > 0, so no need to check existence
-        if target_label is not None and target_label not in np.unique(data):
+        # A scan that stops at the first hit (np.unique sorted the whole image on the UI thread);
+        # the list of existing regions is computed only for the warning.
+        if target_label is not None and not has_region(data, target_label):
+            existing = np.unique(data)
             QMessageBox.warning(
                 self,
                 "Region Not Found",
                 f"Region {target_label} does not exist in the current layer.\n"
-                f"Existing regions: {sorted(np.unique(data)[np.unique(data) != 0].tolist())}"
+                f"Existing regions: {sorted(existing[existing != 0].tolist())}"
             )
             return False
         return True
@@ -1189,10 +1348,12 @@ class QtLabelSelector(QWidget):
             target_label = None
         else:
             target_label = self.morph_target_spin.value()
+            if self._no_target(target_label):
+                return
             if target_label == 0 and not self._confirm_region_zero(f"Applying {op_name} to"):
                 return
 
-        data = label_layer.data.copy()
+        data = label_layer.data
         ndim = data.ndim
 
         ## Check if target label exists before doing calculations
@@ -1208,21 +1369,23 @@ class QtLabelSelector(QWidget):
             QMessageBox.warning(self, "Error", "Only 2D or 3D data is supported.")
             return
 
-        print(f"Running {op_name} on layer: {label_layer.name}")
-        self.original_data_backup = data.copy()
+        # The worker builds a new array: the current one is the Undo state as it is.
+        self._set_backup(label_layer, data)
 
         # callback to run the long task in background
         def on_done(result):
             if self.duplicate_checkbox.isChecked():
                 new_name = f"{label_layer.name}_morph"
                 new_layer = self.viewer.add_labels(result, name=new_name)
-                print(f"Created new layer: {new_name}")
                 if self.on_click not in new_layer.mouse_drag_callbacks:
                     new_layer.mouse_drag_callbacks.append(self.on_click)
                 self.last_bound_layer = new_layer
+                # Undo of a duplicated result works on the new layer (a copy: the
+                # source array stays in use by the source layer)
+                self._set_backup(new_layer, data.copy())
             else:
                 if label_layer not in self.viewer.layers:
-                    print("Original layer was removed before update.")
+                    self.status.set("The layer was removed before the operation finished.", "warn")
                     return
                 label_layer.data = result
                 self.last_bound_layer = label_layer
@@ -1264,13 +1427,15 @@ class QtLabelSelector(QWidget):
             result[preserve_mask] = data[preserve_mask]
 
         else:
-            unique_labels = np.unique(data)
-            for lbl in unique_labels:
-                if lbl == 0:
-                    continue
-                mask = (data == lbl)
-                transformed = morph_func(mask, selem)
-                result[transformed] = lbl
+            # Each label inside its bounding box plus a margin: the result of a label lies within
+            # r of it, and the crop edge (padded by reflection like the image border) only
+            # reaches r further in, through background (2r for two-step Open / Close).
+            r = max(selem.shape) // 2
+            margin = (2 * r if op_name in ("Open", "Close") else r) + 1
+            for lbl, box in label_boxes(data):
+                crop = grow_box(box, margin, data.shape)
+                transformed = morph_func(data[crop] == lbl, selem)
+                result[crop][transformed] = lbl
 
         return result
 
@@ -1333,6 +1498,8 @@ class QtLabelSelector(QWidget):
             target_label = None
         else:
             target_label = self.filter_target_label_spin.value()
+            if self._no_target(target_label):
+                return
             if target_label == 0 and not self._confirm_region_zero("Filtering"):
                 return
 
@@ -1340,7 +1507,7 @@ class QtLabelSelector(QWidget):
             QMessageBox.information(self, "Info", "No filtering performed (min size and top-N both zero).")
             return
 
-        data = label_layer.data.copy()
+        data = label_layer.data
         ndim = data.ndim
 
         # check if target label exists before doing calculations
@@ -1352,18 +1519,17 @@ class QtLabelSelector(QWidget):
         if self.duplicate_checkbox.isChecked():
             new_name = f"{label_layer.name}_filtered"
             target_layer = self.viewer.add_labels(data.copy(), name=new_name)
-            print(f"Operating on duplicated layer: {new_name}")
             if self.on_click not in target_layer.mouse_drag_callbacks:
                 target_layer.mouse_drag_callbacks.append(self.on_click)
             self.last_bound_layer = target_layer
-            data = target_layer.data.copy()
-        print(f"Running filtering on layer: {target_layer.name}")
-        self.original_data_backup = data.copy()
+            data = target_layer.data
+        # The worker builds a new array: the current one is the Undo state as it is.
+        self._set_backup(target_layer, data)
 
         # callback to run the long task in background
         def on_done(result):
             if target_layer not in self.viewer.layers:
-                print("Layer removed before update.")
+                self.status.set("The layer was removed before the operation finished.", "warn")
                 return
             target_layer.data = result
             # QMessageBox.information(self, "Done", "Filtering completed.")
@@ -1385,12 +1551,10 @@ class QtLabelSelector(QWidget):
             mask = (data == target_label)
             result = self._filter_single_label(mask, result, target_label, min_size, top_n, ndim)
         else:
-            unique_labels = np.unique(data)
-            for lbl in unique_labels:
-                if lbl == 0:
-                    continue
-                mask = (data == lbl)
-                result = self._filter_single_label(mask, result, lbl, min_size, top_n, ndim)
+            # Each label inside its bounding box: its components and writes all lie there.
+            for lbl, box in label_boxes(data):
+                mask = (data[box] == lbl)
+                self._filter_single_label(mask, result[box], lbl, min_size, top_n, ndim)
 
         return result
 
@@ -1424,31 +1588,28 @@ class QtLabelSelector(QWidget):
             return
 
         top_n = self.keep_label_topn_spin.value()
-        data = label_layer.data.copy()
+        data = label_layer.data
 
         target_layer = label_layer
         if self.duplicate_checkbox.isChecked():
             new_name = f"{label_layer.name}_keeplabels"
             target_layer = self.viewer.add_labels(data.copy(), name=new_name)
-            print(f"Operating on duplicated layer: {new_name}")
             if self.on_click not in target_layer.mouse_drag_callbacks:
                 target_layer.mouse_drag_callbacks.append(self.on_click)
             self.last_bound_layer = target_layer
-            data = target_layer.data.copy()
-        print(f"Running keep top-N labels on layer: {target_layer.name}")
+            data = target_layer.data
         
-        self.original_data_backup = data.copy()
+        # The worker builds a new array: the current one is the Undo state as it is.
+        self._set_backup(target_layer, data)
 
-
-        unique_labels = np.unique(data)
-        unique_labels = unique_labels[unique_labels != 0]
-        if top_n >= len(unique_labels):
-            QMessageBox.information(self, "Info", f"Only {len(unique_labels)} regions found. No filtering needed.")
-            return
-
-        def on_done(result):
+        def on_done(done):
+            # The regions are counted in the worker (np.unique sorted the whole image on the UI thread).
+            result, n_regions = done
+            if top_n >= n_regions:
+                QMessageBox.information(self, "Info", f"Only {n_regions} regions found. No filtering needed.")
+                return
             if target_layer not in self.viewer.layers:
-                print("Layer was removed before update.")
+                self.status.set("The layer was removed before the operation finished.", "warn")
                 return
             target_layer.data = result
             # QMessageBox.information(self, "Done", f"Kept top {top_n} labels.")
@@ -1461,12 +1622,13 @@ class QtLabelSelector(QWidget):
             buttons_to_disable=[self.keep_label_btn] if hasattr(self, "keep_label_btn") else []
         )
 
-    def _do_keep_top_n_labels(self, data: np.ndarray, top_n: int) -> np.ndarray:
+    def _do_keep_top_n_labels(self, data: np.ndarray, top_n: int):
+        """(result, number of regions); the result is `data` itself when nothing is removed."""
         labels = np.unique(data)
         labels = labels[labels != 0]
 
         if top_n >= len(labels):
-            return data  # 不需要处理
+            return data, len(labels)  # 不需要处理
 
         # Single pass over the array instead of one full scan per label.
         counts = np.bincount(data.ravel())
@@ -1476,7 +1638,7 @@ class QtLabelSelector(QWidget):
         keep_labels = [lbl for lbl, _ in sorted_labels[:top_n]]
 
         result = np.where(np.isin(data, keep_labels), data, 0)
-        return result
+        return result, len(labels)
 
 
 
@@ -1493,19 +1655,40 @@ class QtLabelSelector(QWidget):
             buttons_to_disable = []
 
         # set buttons to disabled state during the background task
+        self._busy += 1
+        self.status.clear()
         for btn in buttons_to_disable:
             btn.setEnabled(False)
+        self.undo_btn.setEnabled(False)
+        # the layers whose own array the worker reads: no brush strokes into it meanwhile
+        locked = lock_layers(self.viewer, [a for a in args if isinstance(a, np.ndarray)])
+        note = lock_note(locked)
+        if note:
+            self.status.set(note, "info")
+
+        def finish():
+            self._busy -= 1
+            for btn in buttons_to_disable:
+                btn.setEnabled(True)
+            self.undo_btn.setEnabled(not self._busy)
+            self._sync_target_buttons()
+
+        def release():
+            unlock_layers(locked)   # after the result is written (setting data resets editable)
+            if note and self.status.text() == note:
+                self.status.clear()
 
         def on_done(result):
             # when the background task is done, re-enable buttons
-            for btn in buttons_to_disable:
-                btn.setEnabled(True)
-            done_callback(result)
+            finish()
+            try:
+                done_callback(result)
+            finally:
+                release()
 
         def on_error(e):
-            print(f"Background task failed: {e}")
-            for btn in buttons_to_disable:
-                btn.setEnabled(True)
+            finish()
+            release()
             QMessageBox.warning(self, "Error", f"Operation failed:\n{e}")
 
         worker.returned.connect(on_done)

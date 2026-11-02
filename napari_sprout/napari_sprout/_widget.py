@@ -11,13 +11,15 @@ import numpy as np
 
 from .widgets.seed_widget import SeedGenerationWidget
 from .widgets.grow_widget import SeedGrowthWidget
+from .widgets.boundary_widget import BoundaryWidget
+from .widgets.prompt_tab import PromptTab
 from .utils.sprout_bridge import SPROUTBridge
+from .utils.roi_widget import RoiTools
 
 from .widgets.info_widget import LayerInfoWidget
 from .widgets.edit_widget import QtLabelSelector
 from .widgets.map_widget import LabelMapperWidget
 from .widgets.tools_widget import SPROUTToolWidget
-from .widgets.prompt_widget import SproutPromptWidget
 
 class SPROUTWidget(QWidget):
     """Main SPROUT widget containing all workflow steps."""
@@ -65,19 +67,23 @@ class SPROUTWidget(QWidget):
         # Create widgets for each step
         self.seed_widget = SeedGenerationWidget(self.viewer)
         self.grow_widget = SeedGrowthWidget(self.viewer)
-        
+        self.prompt_tab = PromptTab(self.viewer)
+        self.boundary_widget = BoundaryWidget(self.viewer)
+
+        # ROI tools and the Boundary tab share the last tab (two sub-tabs)
+        self.roi_tools = RoiTools(self.viewer)
+        self.roi_boundary_tabs = QTabWidget()
+        self.roi_boundary_tabs.addTab(self.roi_tools, "ROI")
+        self.roi_boundary_tabs.addTab(self.boundary_widget, "Boundary")
+
         # Add tabs
-        self.tabs.addTab(self.seed_widget, "1. Generate Seeds")
-        self.tabs.addTab(self.grow_widget, "2. Grow Seeds")
+        self.tabs.addTab(self.seed_widget, "1. Seeds")
+        self.tabs.addTab(self.grow_widget, "2. Grow")
+        self.tabs.addTab(self.prompt_tab, "3. Prompt (AI)")
+        self.tabs.addTab(self.roi_boundary_tabs, "ROI && Boundary")   # "&&": a single "&" is a Qt mnemonic
         
         layout.addWidget(self.tabs)
         
-        # Help text
-        help_text = QLabel(
-            "<b>Workflow:</b> 1) Generate seeds → 2) Review/edit seeds → 3) Grow regions"
-        )
-        help_text.setWordWrap(True)
-        layout.addWidget(help_text)
         
         self.setLayout(layout)
     
@@ -86,7 +92,13 @@ class SPROUTWidget(QWidget):
         # self.load_btn.clicked.connect(self.load_image)
         self.seed_widget.seeds_generated.connect(self._on_seeds_generated)
         self.grow_widget.growth_completed.connect(self._on_growth_completed)
-    
+        self.boundary_widget.boundary_created.connect(self._on_boundary_created)
+
+    def _on_boundary_created(self, name):
+        """Select a newly created boundary layer in the Seeds and Grow tabs."""
+        for w in (self.seed_widget, self.grow_widget):
+            w.boundary_combo.setCurrentText(name)
+
     def load_image(self):
         """Load an image file."""
         filename, _ = QFileDialog.getOpenFileName(
@@ -257,80 +269,3 @@ def make_sprout_widget_tools(viewer: "napari.viewer.Viewer" = None):
     # Ensure widget is visible
     widget.show()
     return widget
-
-def make_sprout_widget_prompt(viewer: "napari.viewer.Viewer" = None):
-    """Create the SPROUT PROMPT extraction widget.
-
-    Parameters
-    ----------
-    viewer : napari.viewer.Viewer, optional
-        The napari viewer instance. If not provided, will get current viewer.
-    Returns
-    -------
-    widget : SproutPromptWidget
-        The SPROUT PROMPT extraction widget instance.
-    """
-    if viewer is None:
-        # Get the current viewer from napari
-        import napari
-        viewer = napari.current_viewer()
-        if viewer is None:
-            raise RuntimeError("No napari viewer found")
-
-    widget = SproutPromptWidget(viewer)
-    # Ensure widget is visible
-    widget.show()
-    return widget
-
-## Codes for load widget
-import os
-from skimage.io import imread
-from magicgui import magic_factory
-
-@magic_factory(
-    load_mode={
-        "choices": ["multiple_files", "folder"],
-        "label": "Load mode"
-    },
-    convert_to_labels={"widget_type": "CheckBox", "label": "Convert to Labels"},
-    call_button="Load"
-)
-def load_images_widget(viewer: "napari.viewer.Viewer",
-                       load_mode: str, convert_to_labels: bool  = True):
-    file_paths = []
-
-    if load_mode == "multiple_files":
-        file_paths, _ = QFileDialog.getOpenFileNames(
-            caption="Select image files",
-            filter="Images (*.png *.jpg *.tif *.tiff *.bmp *.npy)"
-        )
-    elif load_mode == "folder":
-        folder = QFileDialog.getExistingDirectory(caption="Select folder")
-        if folder:
-            image_exts = (".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".npy")
-            file_paths = [
-                os.path.join(folder, f)
-                for f in sorted(os.listdir(folder))
-                if f.lower().endswith(image_exts)
-            ]
-
-    if not file_paths:
-        print("[INFO] No files selected or folder empty.")
-        return
-
-    for path in file_paths:
-        name = os.path.basename(path)
-
-        if path.endswith(".npy"):
-            img = np.load(path)
-        else:
-            img = imread(path)
-
-        if convert_to_labels:
-            if not np.issubdtype(img.dtype, np.integer):
-                img = (img > 0).astype(np.uint8)
-            viewer.add_labels(img, name=f"{name}_label")
-        else:
-            viewer.add_image(img, name=name)
-
-    print(f"[✅] Loaded {len(file_paths)} images (convert_to_labels={convert_to_labels})")

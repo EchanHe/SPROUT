@@ -61,7 +61,8 @@ def run_batch_nninteractive(file_path):
                 point_config=point_config,
                 scribble_config=scribble_config,
                 output_folder=per_file_output_folder,
-                return_per_class_masks=optional_params['return_per_class_masks']
+                return_per_class_masks=optional_params['return_per_class_masks'],
+                seed=optional_params['seed']
             )
             if len(nn_output) == 3:
                 total_mask, _, log_dict = nn_output

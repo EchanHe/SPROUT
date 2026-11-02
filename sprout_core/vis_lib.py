@@ -1,13 +1,24 @@
 
-import matplotlib.pyplot as plt
-
-from matplotlib.colors import Normalize
-import matplotlib.cm as cm
-
 import json
 import numpy as np
 from PIL import Image
 from operator import itemgetter
+
+
+def _figure(**kwargs):
+    """A matplotlib Figure that renders with Agg, without pyplot.
+
+    matplotlib is imported here, not with the module: importing make_seeds / make_grow
+    (and the napari panel) does not load it, and the plots, which run in worker threads,
+    never touch pyplot's GUI backend.
+    """
+    from matplotlib.figure import Figure
+    from matplotlib.backends.backend_agg import FigureCanvasAgg
+    fig = Figure(**kwargs)
+    FigureCanvasAgg(fig)
+    return fig
+
+
 #### Plotting
 def seeds_json_to_plot_ready(json_path):
     
@@ -39,9 +50,8 @@ def plot_seeds_log(plot_data, fig_path):
     # Create subplots (one for each cate1)
 
     fig_width = 6
-    fig, axes = plt.subplots(1, len(plot_data), 
-                            figsize=(fig_width*len(plot_data), fig_width), 
-                            sharey=True)
+    fig = _figure(figsize=(fig_width*len(plot_data), fig_width))
+    axes = fig.subplots(1, len(plot_data), sharey=True)
     # Plot each group
     for idx_thre, (thre, ero_data) in enumerate(sorted(plot_data.items())):
         ax = axes[idx_thre]  # Select the subplot
@@ -69,11 +79,8 @@ def plot_seeds_log(plot_data, fig_path):
 
     axes[0].set_ylabel('Volume')
 
-    # Save the plot to a file
-    plt.savefig(fig_path)
-
-    # Close the plot to free memory and avoid displaying it
-    plt.close()
+    # Save the plot to a file (the figure is not registered with pyplot: nothing to close)
+    fig.savefig(fig_path)
 
 def plot_seeds_log_json(data, fig_path):
     # Define a list of 5 colors
@@ -99,9 +106,8 @@ def plot_seeds_log_json(data, fig_path):
     n_thres = len(data)
 
     fig_width = 6
-    fig, axes = plt.subplots(1, n_thres, 
-                            figsize=(fig_width*n_thres, fig_width), 
-                            sharey=True)
+    fig = _figure(figsize=(fig_width*n_thres, fig_width))
+    axes = fig.subplots(1, n_thres, sharey=True)
 
 
     for idx_thre, data_entry in enumerate(data):
@@ -135,11 +141,8 @@ def plot_seeds_log_json(data, fig_path):
 
     axes[0].set_ylabel('Volume')
     
-    # Save the plot to a file
-    plt.savefig(fig_path)
-
-    # Close the plot to free memory and avoid displaying it
-    plt.close()
+    # Save the plot to a file (the figure is not registered with pyplot: nothing to close)
+    fig.savefig(fig_path)
 
 
 def merge_plots(plot_list, file_path):
@@ -156,6 +159,8 @@ def merge_plots(plot_list, file_path):
     
     
 def plot_grow(df, fig_path):
+    from matplotlib.colors import Normalize
+    import matplotlib.cm as cm
 
     thresholds = df['cur_threshold'].unique()
     norm = Normalize(0, len(thresholds))
@@ -164,34 +169,32 @@ def plot_grow(df, fig_path):
     
     colors =cmap(norm(list(range(len(thresholds)))))
     # Create a line plot with id as x, value as y, and threshold as color
-    plt.figure(figsize=(20, 10))
+    fig = _figure(figsize=(20, 10))
+    ax = fig.add_subplot()
 
 
     # Plot the line with different colors based on the threshold
     for i, threshold in enumerate(df['cur_threshold'].unique()):
         subset = df[df['cur_threshold'] == threshold]
-        plt.plot(subset['id'], subset['grow_size'], color = colors[i], label=f'Threshold {threshold}')
+        ax.plot(subset['id'], subset['grow_size'], color = colors[i], label=f'Threshold {threshold}')
         
-        plt.scatter(subset['id'], subset['grow_size'], color = colors[i])
+        ax.scatter(subset['id'], subset['grow_size'], color = colors[i])
         
-        plt.axhline(y=subset['full_size'].unique(),
+        ax.axhline(y=subset['full_size'].unique(),
                     linestyle='--', 
                     color = colors[i])
 
     # Customize x-ticks to include both id and name
     xticks_labels = [f'{id_}: dilate:{dilate_step_}. threshold: {threshold_}' for id_, dilate_step_,threshold_ 
                     in zip(df['id'], df['cur_dilate_step'], df['cur_threshold'])]
-    plt.xticks(df['id'], xticks_labels)
+    ax.set_xticks(df['id'], xticks_labels)
 
 
     # Add labels and legend
-    plt.xlabel('ID and Filename')
-    plt.ylabel('Value')
-    plt.title('Grow size vs threhold and dilation')
-    plt.legend(title='Threshold')
+    ax.set_xlabel('ID and Filename')
+    ax.set_ylabel('Value')
+    ax.set_title('Grow size vs threhold and dilation')
+    ax.legend(title='Threshold')
 
-    # Save the plot to a file
-    plt.savefig(fig_path)
-
-    # Close the plot to free memory and avoid displaying it
-    plt.close()
+    # Save the plot to a file (the figure is not registered with pyplot: nothing to close)
+    fig.savefig(fig_path)

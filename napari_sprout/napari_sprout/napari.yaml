@@ -6,14 +6,6 @@ contributions:
       python_name: napari_sprout._widget:make_sprout_widget
       title: SPROUT Main Widget                  
     
-    - id: napari-sprout.prompt_widget
-      python_name: napari_sprout._widget:make_sprout_widget_prompt
-      title: SPROUT Prompts (SAM/nninteractive)                 
-    
-    - id: napari-sprout.load_widget
-      python_name: napari_sprout._widget:load_images_widget
-      title: SPROUT Load Images                   
-    
     - id: napari-sprout.edit_widget
       python_name: napari_sprout._widget:make_sprout_widget_edit
       title: SPROUT Edit Labels                   
@@ -31,10 +23,6 @@ contributions:
   widgets:
     - command: napari-sprout.make_widget
       display_name: SPROUT
-    - command: napari-sprout.prompt_widget
-      display_name: Prompts
-    - command: napari-sprout.load_widget
-      display_name: Load
     - command: napari-sprout.edit_widget
       display_name: Edit
     - command: napari-sprout.map_sprout

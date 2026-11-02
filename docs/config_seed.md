@@ -28,7 +28,7 @@ This configuration file defines the arguments used for seed generation in SPROUT
 | `boundary_path`     | ❌        | `str`              | Optional path to a binary boundary image. Used create extra backgrounds in binary to explicitly create separations |
 | `workspace`         | ❌        | `str`              | Root directory. If set, all relative paths will be joined with it. Default is empty string `""`. |
 | `base_name`                | ❌        | `str`           | Prefix name for sub-output folder. Defaults to base name of `img_path`.                                 |
-| `footprints`        | ❌        | `str` or `list`    | Shape of structuring element for erosion. Can be `"ball"`, `"cube"`, `"X"`, `"Y"`, `"Z"`, or plane-specific versions like `"ball_XY"`. |
+| `footprints`        | ❌        | `str` or `list`    | Shape of structuring element for erosion. Can be `"ball"`, `"cube"`, `"X"`, `"Y"`, `"Z"`, or plane-specific versions like `"ball_XY"`. Each erosion step removes one voxel layer: `"ball"` uses a 3×3×3 cross (6-neighbourhood), `"cube"` a full 3×3×3 cube (26-neighbourhood). SPROUT sizes are radii (size 1 = 3×3×3), unlike skimage's `cube(n)`, which takes the edge length. Note: before Oct 2026, `"cube"` did not erode at all (a bug). |
 
 
 
