@@ -20,7 +20,7 @@ import numpy as np
 from napari.layers import Image, Labels
 from napari.qt.threading import thread_worker
 from napari.utils.notifications import show_error, show_info, show_warning
-from qtpy.QtCore import QObject, QTimer, Signal
+from qtpy.QtCore import QTimer, Signal
 from qtpy.QtWidgets import (
     QButtonGroup, QCheckBox, QComboBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout,
     QLabel, QLineEdit, QProgressBar, QPushButton, QRadioButton, QScrollArea, QSpinBox,
@@ -29,6 +29,7 @@ from qtpy.QtWidgets import (
 
 from sprout_core import boundary as B
 
+from ..utils import jobs
 from ..utils.histogram_widget import HistogramRangeWidget
 from ..utils.roi_layers import get_roi_hub
 from ..utils.status import RUN_BUTTON, StatusLine, style, tab_hidden
@@ -49,11 +50,6 @@ def gpu_status():
         if _GPU_STATUS is None:
             _GPU_STATUS = B.gpu_status()
         return _GPU_STATUS
-
-
-class _Progress(QObject):
-    """Created on the UI thread; emitting from a worker thread is queued to the UI."""
-    changed = Signal(int, int)
 
 
 # --------------------------------------------------------------------------
@@ -153,7 +149,6 @@ class BoundaryWidget(QWidget):
         self._resp_desc = ""
         self._job = {"hist": 0, "compute": 0, "resp_hist": 0, "create": 0}
         self._computing = False
-        self._cancel = None
         self._workers = set()
         self._slice_preview = SlicePreview(napari_viewer, PREVIEW_NAME,
                                            color=(1, 0.15, 0.15, 1), opacity=0.7)
@@ -249,9 +244,12 @@ class BoundaryWidget(QWidget):
         row.addWidget(self.progress, 1)
         row.addWidget(self.stop_btn)
         l2.addLayout(row)
-        self.compute_status = StatusLine(hide_empty=True)   # info / warn ("click Compute") / error
+        self.compute_status = StatusLine(hide_empty=True)   # running / ✓ done / Stopped / failed / "click Compute"
         l2.addWidget(self.compute_status)
         layout.addWidget(g2)
+        # start / Stop / progress / end messages of Compute (utils/jobs.py)
+        self.run_control = jobs.RunControl(self, self.compute_status, [self.compute_btn], self.stop_btn,
+                                           self.progress, hide_bar=False, notify=self._notify)
 
         # 3. Threshold
         g3 = QGroupBox("3. Threshold")
@@ -346,7 +344,7 @@ class BoundaryWidget(QWidget):
         if _GPU_STATUS is not None:
             self._on_gpu_status(_GPU_STATUS)
         else:
-            self.device_label.setText("checking for a GPU...")
+            self.device_label.setText("checking for a GPU…")
             self._run(gpu_status, self._on_gpu_status)
 
     def _on_gpu_status(self, res):
@@ -382,6 +380,11 @@ class BoundaryWidget(QWidget):
         import traceback
         traceback.print_exception(type(e), e, e.__traceback__)   # full detail in the console
         show_error(f"Boundary: {type(e).__name__}: {e}")
+
+    @staticmethod
+    def _notify(level, text):
+        """The one napari notification of a Compute run (finished / failed)."""
+        (show_error if level == "error" else show_info)(text)
 
     def _intensity_range(self):
         """(lower, upper) on the ORIGINAL image, or (None, None) if unrestricted."""
@@ -441,7 +444,7 @@ class BoundaryWidget(QWidget):
         self._img_layer = layer
         self._img = np.asarray(layer.data)
         self.name_edit.setText(f"{name}_boundary")
-        self.input_hist.show_message("Computing...")
+        self.input_hist.show_message("Computing…")
         self._hist_pending = True
         if not tab_hidden(self):          # a hidden tab computes it when shown (showEvent)
             self._start_input_histogram()
@@ -495,31 +498,24 @@ class BoundaryWidget(QWidget):
         if self._img is None:
             self.compute_status.set("Select an image first", "error")
             return
-        self._stop()
+        if self.run_control.running:     # stopping: Compute is enabled again once it has stopped
+            self._stop()
+            return
         self._job["compute"] += 1
         job, img, key = self._job["compute"], self._img, self._current_key()
         params, device, panel = self.panel.params(), self.device_combo.currentData(), self.panel
         ilo, ihi = self._intensity_range()
-        cancel = self._cancel = threading.Event()
+        desc = panel.describe(params)
 
-        # One progress object per job, kept alive by the worker closure below, and
-        # ignored once a newer job has started.
-        prog = _Progress()
-        prog.changed.connect(lambda d, t: job == self._job["compute"] and self._on_progress(d, t))
         self._computing = True
-        self._reset_response("Computing...")
-        self.progress.setRange(0, 0)  # busy until the first chunk reports
-        self.compute_status.set("")
+        self._reset_response("Computing…")
         self.output_status.clear()
-        self._update_buttons()
-        def emit(done_, total):
-            prog.changed.emit(done_, total)
 
-        def work():
+        def work(cancel, progress):
             if device != "cpu":
                 gpu_status()                 # probed once, shown next to Device
             t0 = time.perf_counter()
-            resp, info = panel.compute(img, params, device, emit, cancel)
+            resp, info = panel.compute(img, params, device, lambda d, t: progress(d, t, ""), cancel)
             info["seconds"] = time.perf_counter() - t0
             if cancel.is_set():
                 raise B.Cancelled()
@@ -527,64 +523,62 @@ class BoundaryWidget(QWidget):
             suggest = B.suggest_threshold(resp, img, ilo, ihi)
             return resp, info, counts, edges, suggest
 
-        def done(res):
+        def done(res, secs):
             if job != self._job["compute"]:
-                return
-            if cancel.is_set():  # Stop pressed: never show a result the user cancelled
-                failed(B.Cancelled())
-                return
+                return None
             if key != self._current_key():
                 self._reset_response("Parameters changed during computing: click Compute")
                 self.compute_status.set("Parameters changed during computing: click Compute", "warn")
-                return
+                return None
             resp, info, counts, edges, suggest = res
             self._resp, self._resp_key = resp, key
-            self._resp_desc = panel.describe(params)
+            self._resp_desc = desc
             self._resp_info = info
             dev = "GPU" if info["device"] == "cuda" else "CPU"
             note = "" if dev == "GPU" or device == "cpu" else f" ({info['device_reason']})"
-            self.compute_status.set(f"{self._resp_desc}: {info['seconds']:.1f} s on {dev}{note}", "info")
             lo, hi = self._pending_threshold or (suggest, None)   # None -> axis end = no limit
             self._pending_threshold = None
             self.resp_hist.set_data(counts, edges, integer=resp.dtype.kind in "ui", lower=lo, upper=hi)
             if self.response_layer_cb.isChecked():
                 self._show_response_layer()
             self._update_preview()
+            return f"Boundary response: {desc} on {dev}", note
+
+        def stopped(e, done_, total):
+            self.resp_hist.show_message("Stopped: click Compute")
+            if total and done_ >= total:            # the chunks run in parallel: all were done
+                return f"Stopped after all {total} chunks (before the histogram); nothing kept"
+            return jobs.stopped_text(done_, total, "chunks") + "; nothing kept"
 
         def failed(e):
-            if isinstance(e, B.Cancelled):
-                self.resp_hist.show_message("Stopped: click Compute")
-                self.compute_status.set("Stopped", "info")
-            else:
-                self.resp_hist.show_message("Failed: see notification")
-                self.compute_status.set(f"Failed: {type(e).__name__}: {e}", "error")
-                self._report_error(e)
+            self.resp_hist.show_message("Failed: see the line under Compute")
+            return jobs.reason(e)
 
-        def finished():
+        def finished(kind):
             if job == self._job["compute"]:
                 self._computing = False
                 self.progress.setRange(0, 1)
                 self.progress.setValue(1 if self._resp is not None else 0)
+                self.progress.setFormat("%p%")       # idle: 100% (a response) or 0%
                 self._update_buttons()
                 if device != "cpu" and _GPU_STATUS is not None:
                     self._on_gpu_status(_GPU_STATUS)
 
-        self._run(work, done, failed, finished)
-
-    def _on_progress(self, done, total):
-        self.progress.setRange(0, total)
-        self.progress.setValue(done)
+        w = self.run_control.start(work, "Boundary compute", f"Computing the {desc}…",
+                                   done=done, stopped=stopped, failed=failed, after=finished)
+        self._workers.add(w)                     # the checks wait for _workers to drain
+        w.finished.connect(lambda: self._workers.discard(w))
+        self._update_buttons()
 
     def _stop(self):
-        if self._cancel is not None:
-            self._cancel.set()
+        self.run_control.stop()
 
     def _compute_response_histogram(self, keep_range):
         self._job["resp_hist"] += 1
         job, resp, img = self._job["resp_hist"], self._resp, self._img
         ilo, ihi = self._intensity_range()
         old = self.resp_hist.get_bounds()   # keep "no limit" as no limit
-        self.resp_hist.show_message("Computing...")
+        self.resp_hist.show_message("Computing…")
 
         def work():
             return B.histogram(resp, img=img, lower=ilo, upper=ihi)
@@ -661,7 +655,7 @@ class BoundaryWidget(QWidget):
         lo, hi = rec["threshold_lower"], rec["threshold_upper"]
         ilo, ihi = rec["intensity_lower"], rec["intensity_upper"]
         self.create_btn.setEnabled(False)
-        self.create_btn.setText("Creating...")
+        self.create_btn.setText("Creating…")
 
         def work():
             mask = B.threshold_mask(resp, lo, hi, img, ilo, ihi)
@@ -680,7 +674,7 @@ class BoundaryWidget(QWidget):
             self._name_note = ""
             name = self._add_or_update_output(mask, rec)
             self._slice_preview.remove()
-            show_info(f"Created '{name}': {n:,} voxels ({n / mask.size:.2%})")
+            # the line under the button only (no notification: it would repeat it)
             if self._name_note:     # created under another name: say so (orange)
                 self.output_status.set(f"Created '{name}': {n:,} voxels ({n / mask.size:.2%})\n"
                                        f"{self._name_note}", "warn")

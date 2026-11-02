@@ -4,9 +4,9 @@ from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QSpinBox, QDoubleSpinBox, QComboBox, QGroupBox, QCheckBox,
     QSlider, QFormLayout, QMessageBox, QLineEdit, QFileDialog,
-    QScrollArea, QSizePolicy
+    QScrollArea, QSizePolicy, QProgressBar
 )
-from qtpy.QtCore import Qt, Signal, QThread
+from qtpy.QtCore import Qt, Signal
 import numpy as np
 from typing import Optional
 from napari.layers import Image, Labels
@@ -18,6 +18,7 @@ from ..utils.histogram_threshold_widget import HistogramThresholdWidget, append_
 from ..utils.boundary_check import boundary_ok
 from ..utils.roi_widget import RoiSelect
 from ..utils.status import RUN_BUTTON, STOP_BUTTON, StatusLine
+from ..utils import jobs
 
 import yaml
 import sys
@@ -34,12 +35,9 @@ from make_adaptive_seed import make_adaptive_seed_thre, make_adaptive_seed_ero
 from sprout_core import roi as R
 from sprout_core.roi import RoiError
 
-class SeedWorker(QThread):
-  
-    progress = Signal(int)
-    finished = Signal(dict) 
-    error = Signal(str)
-    
+class SeedWorker:
+    """The parameters of one Seeds run; run(cancel, progress) is the job (utils/jobs.py)."""
+
     def __init__(self, seed_mode, img, boundary, thresholds, upper_thresholds,
                  erosion_steps, segments, output_folder, num_threads,
                     footprints=None, base_name="seeds",
@@ -49,7 +47,6 @@ class SeedWorker(QThread):
                     split_size_limit=(None, None), split_convex_hull_limit=(None, None),
                     roi=None
                     ):
-        super().__init__()
         self.roi = roi   # sprout_core.roi.Roi or None (whole image)
         ## Parameters for both original and adaptive seed making
         self.seed_mode = seed_mode  # "Original", "Adaptive (Erosion)", "Adaptive (Thresholds)"
@@ -78,7 +75,15 @@ class SeedWorker(QThread):
         self.split_convex_hull_limit = split_convex_hull_limit
         
         
-    def run(self):
+    @property
+    def folder(self):
+        """Where the run writes its files."""
+        return os.path.join(self.output_folder, self.base_name)
+
+    def run(self, cancel, progress):
+        """Runs on the job's worker thread; returns seeds_dict. On Stop, Cancelled carries
+        the number of files written (files_written)."""
+        watch = jobs.FolderWatch(self.folder)
         try:
             if self.seed_mode not in ["Original", "Adaptive (Erosion)", "Adaptive (Thresholds)"]:
                 raise ValueError("Invalid seed mode selected.")
@@ -98,8 +103,9 @@ class SeedWorker(QThread):
                     num_threads=self.num_threads,
                     footprints=self.footprints,
                     base_name=self.base_name,
-                    
-                    return_for_napari=True
+
+                    return_for_napari=True,
+                    cancel=cancel, progress=progress
                 )
             elif self.seed_mode == "Adaptive (Erosion)":
 
@@ -126,9 +132,10 @@ class SeedWorker(QThread):
                     last_segments=self.last_segments,
                     split_size_limit=self.split_size_limit,
                     split_convex_hull_limit=self.split_convex_hull_limit,
-                    
-                    
-                    return_for_napari=True
+
+
+                    return_for_napari=True,
+                    cancel=cancel, progress=progress
                 )
             elif self.seed_mode == "Adaptive (Thresholds)":
                 seeds_dict, _, _ = make_adaptive_seed_thre(
@@ -154,17 +161,23 @@ class SeedWorker(QThread):
                     last_segments=self.last_segments,
                     split_size_limit=self.split_size_limit,
                     split_convex_hull_limit=self.split_convex_hull_limit,
-                    
-                    return_for_napari=True
+
+                    return_for_napari=True,
+                    cancel=cancel, progress=progress
                 )
+            jobs.check_cancel(cancel)         # Stop after the last step: no layers either
             if self.roi is not None:
                 seeds_dict = R.paste_seeds(self.roi, seeds_dict)
                 R.write_sidecar(self.roi, os.path.join(self.output_folder, self.base_name))
-            # Emit finished signal with results
-            self.finished.emit(seeds_dict)
+            return seeds_dict
+        except jobs.Cancelled as e:
+            e.files_written = watch.written()
+            raise
 
-        except Exception as e:
-            self.error.emit(("ROI: " if self.roi is not None else "") + str(e))
+    def stopped(self, e, done, total):
+        """The orange line after Stop."""
+        unit = {"Original": "seeds", "Adaptive (Erosion)": "steps"}.get(self.seed_mode, "thresholds")
+        return jobs.stopped_text(done, total, unit, getattr(e, "files_written", None))
 
 
 def input_combo():
@@ -348,6 +361,9 @@ class SeedGenerationWidget(QWidget):
         output_group.setLayout(output_layout)
         layout.addWidget(output_group)
 
+        # Progress bar (shown while running)
+        self.progress_bar = QProgressBar()
+        layout.addWidget(self.progress_bar)
 
         # Execute buttons        # Execute buttons
         btn_layout = QHBoxLayout()
@@ -373,6 +389,9 @@ class SeedGenerationWidget(QWidget):
         self.status_label = self.results_label          # same name as in the Grow tab
         layout.addWidget(self.results_label)
         layout.addStretch()
+        # start / Stop / progress / end messages of a run (utils/jobs.py)
+        self.run_control = jobs.RunControl(self, self.results_label, [self.generate_btn], self.stop_btn,
+                                           self.progress_bar, notify=self._notify)
         
         
         main_scroll_container = QWidget()
@@ -510,7 +529,7 @@ class SeedGenerationWidget(QWidget):
     
     def preview_threshold(self, lower=None, upper=None):
         if self.current_image is None:
-            show_error("Please select an image first")
+            show_error("Select an image first")
             return
 
         try:
@@ -574,7 +593,9 @@ class SeedGenerationWidget(QWidget):
     def generate_seeds(self):
         """Generate seeds with current parameters."""
         if self.current_image is None:
-            self.results_label.set("Please select an image first", "error")
+            self.results_label.set("Select an image first", "error")
+            return
+        if self.run_control.running:
             return
         current_name = self.image_combo.currentText()
         
@@ -603,7 +624,7 @@ class SeedGenerationWidget(QWidget):
             output_folder = self.output_folder_line.text()
             folder_note = ""
             if not output_folder:
-                folder_note = "Please specify an output folder. Default is 'napari_temp'"
+                folder_note = "no output folder given, writing to 'napari_temp'"
                 output_folder = 'napari_temp'
             
             # TODO: @ioannouE
@@ -617,8 +638,6 @@ class SeedGenerationWidget(QWidget):
             # NOTE: maybe add UI for selecting the output folder
             # NOTE: need to add list of thresholds for adaptive seed making
             
-            self._set_ui_for_generation()
-            
             main_params = self.main_param_widget.get_params()
             selected_method = main_params['seed_method']
             print(f"Generating seeds with method: {selected_method}")
@@ -627,7 +646,7 @@ class SeedGenerationWidget(QWidget):
             advance_params  = self.advanced_params_box.get_params()
             
             
-            self.worker = SeedWorker(
+            worker = SeedWorker(
                 seed_mode=selected_method,
                 img=self.current_image,
                 boundary=boundary,
@@ -655,15 +674,12 @@ class SeedGenerationWidget(QWidget):
                 split_convex_hull_limit = advance_params['split_convex_hull_limit'],
                 roi=roi
             )
-            self.worker.finished.connect(self._on_seed_finished)
-            self.worker.error.connect(self._on_seed_error)
-
-            self._t0 = time.perf_counter()
-            if folder_note:
-                self.results_label.set(folder_note, "warn")
-            else:
-                self.results_label.set("Generating seeds…", "info")
-            self.worker.start()
+            self.worker = self.run_control.start(
+                worker.run, "Seed generation",
+                f"Generating seeds… ({folder_note})" if folder_note else "Generating seeds…",
+                done=self._on_seed_finished, stopped=worker.stopped,
+                failed=lambda e: ("ROI: " if roi is not None else "") + jobs.reason(e),
+                level="warn" if folder_note else "info")
             # self.viewer.window.statusBar().showMessage(
             #     f"Generating seeds using {selected_method} method...")
             
@@ -748,12 +764,16 @@ class SeedGenerationWidget(QWidget):
             #     show_info(f"Successfully generated {len(sizes)} seeds using {selected_method}")
 
         except Exception as e:
-            show_error(f"Error generating seeds: {str(e)}")
-            self.results_label.set(f"Error generating seeds: {str(e)}", "error")
-            self._reset_ui_after_generation()
+            show_error(f"Seed generation failed: {jobs.reason(e)}")
+            self.results_label.set(f"Seed generation failed: {jobs.reason(e)}", "error")
 
-    def _on_seed_finished(self, seeds_dict):
-        """Handle seed generation completion."""
+    @staticmethod
+    def _notify(level, text):
+        """The one napari notification of a run (finished / failed)."""
+        (show_error if level == "error" else show_info)(text)
+
+    def _on_seed_finished(self, seeds_dict, secs):
+        """Handle seed generation completion (UI thread): add the layers, return the summary."""
         # Remove any existing preview layer
         # if self.preview_layer is not None:
         #     self.viewer.layers.remove(self.preview_layer)
@@ -762,47 +782,13 @@ class SeedGenerationWidget(QWidget):
         # Add the generated seeds to the viewer
         self.add_labels_layer(seeds_dict, roi=self._run_roi, layer_kwargs=self._run_layer_kwargs)
         
-        # Update results label
+        # Summary for the status line and the notification ("✓ ... (2.5 s)")
         n = len(seeds_dict)
-        secs = time.perf_counter() - getattr(self, "_t0", time.perf_counter())
-        self.results_label.set(f"Seeds generated: {n} layer{'' if n == 1 else 's'} ({secs:.1f} s)", "ok")
-        
-        show_info("Seeds generated successfully!")
+        return f"Seeds generated: {n} layer{'' if n == 1 else 's'}"
 
-        
-        self._reset_ui_after_generation()
-    
-    def _on_seed_error(self, error_message):
-        """Handle errors during seed generation."""
-        show_error(f"Error generating seeds: {error_message}")
-        self.results_label.set(f"Error generating seeds: {error_message}", "error")
-
-        # Reset UI state
-        self._reset_ui_after_generation()
-        
-    def _reset_ui_after_generation(self):
-        """Reset UI after growth."""
-        self.generate_btn.setEnabled(True)
-        self.stop_btn.setEnabled(False)
-        # self.progress_bar.setVisible(False)
-    
-    def _set_ui_for_generation(self):
-        """Set UI state for ongoing seed generation."""
-        self.generate_btn.setEnabled(False)
-        self.stop_btn.setEnabled(True)
-        # self.progress_bar.setVisible(True)
-        # self.progress_bar.setValue(0)  # Reset progress bar
-        # self.results_label.setText("Generating seeds...")  # Update status message
-    
     def stop_generation(self):
-        """Stop the current seed generation process."""
-        if self.worker and self.worker.isRunning():
-            self.worker.terminate()
-            self.worker.wait()
-            self._reset_ui_after_generation()
-            self.results_label.set("Seed generation stopped by user", "info")
-            # show_info("Seed generation stopped.")
-            # self.viewer.window.statusBar().showMessage("Seed generation stopped.", 1000)
+        """Stop the current seed generation at its next step (cooperative; no partial layers)."""
+        self.run_control.stop()
             
 
     # TODO to implement import/export yaml for seed parameters

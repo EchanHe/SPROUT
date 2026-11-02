@@ -2,7 +2,7 @@
 
 Drop-in replacement for util_widget.ThresholdWidget (same public methods), with:
 
-* a histogram of the image (computed in the background, "Computing..." meanwhile)
+* a histogram of the image (computed in the background, "Computing…" meanwhile)
   and a draggable [lower, upper] range; the axis follows the data, not the dtype
 * "Live preview on current slice" (checkbox): while dragging, the displayed slice
   shows the threshold instantly (threshold only: erosion and connected components
@@ -275,7 +275,7 @@ class HistogramThresholdWidget(QGroupBox):
         if layer is None:
             self.hist.show_message("Select an image")
             return
-        self.hist.show_message("Computing...")
+        self.hist.show_message("Computing…")
         self._hist_timer.start(0)
 
     def _start_histogram(self):
@@ -446,7 +446,7 @@ class HistogramThresholdWidget(QGroupBox):
     # ---- whole-volume result as a new layer
     def _create_preview_layer(self):
         if self._img is None:
-            self.error_line.set("Please select an image first", "error")
+            self.error_line.set("Select an image first", "error")
             return
         try:
             roi = None if self._roi_use is None else self._roi_use.roi_for_run(self._img.shape)
@@ -462,7 +462,7 @@ class HistogramThresholdWidget(QGroupBox):
                 else None)
         layer, img, job = self._layer, self._img, self._job
         self.create_btn.setEnabled(False)
-        self.create_btn.setText("Creating...")
+        self.create_btn.setText("Creating…")
 
         def work():
             if roi is not None:
@@ -488,8 +488,7 @@ class HistogramThresholdWidget(QGroupBox):
                                    metadata={"sprout_threshold_preview": meta})
             n = int(np.count_nonzero(result))
             extra = f", {int(result.max())} components" if cc_n else ""
-            msg = f"Created '{name}': {n:,} voxels ({n / result.size:.2%}){extra}"
-            show_info(msg)
+            # the status line only (no notification: it would repeat it)
             self._created_line = f"Created: {name}\n{n:,} voxels ({n / result.size:.2%}){extra}"
             self._show_status()
 

@@ -5,7 +5,13 @@ Four levels, one colour each (readable on napari's dark and light themes):
     info   grey    in progress or neutral       "Generating seeds…"
     ok     green   done, with a short summary    "✓ Seeds generated: 3 layers (2.5 s)"
     warn   orange  needs attention, can run      "z: all — set the z range …"
-    error  red     cannot run, and why           "The boundary mask 'x' cannot be used: …"
+                   or stopped by the user        "Stopped after 3 of 8 seeds; 3 files …"
+    error  red     cannot run / failed, and why  "The boundary mask 'x' cannot be used: …"
+                                                 "Growth failed: not enough memory …"
+
+Texts: one ellipsis character "…", "Select …" (not "Please select"), failures as
+"<What> failed: <reason>". Long runs (Seeds, Grow, Boundary Compute) go through
+utils/jobs.RunControl, which writes these lines for them.
 
 Dialogs are only for decisions (file pickers, overwrite / lose-data confirmations); napari
 notifications only for "run finished" and "run failed", so they are seen from another tab.

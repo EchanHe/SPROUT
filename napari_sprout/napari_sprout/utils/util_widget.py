@@ -511,7 +511,7 @@ class MainSeedParamWidget(_ParamGroup):
             footprints = footprints * self.erosion_spin.value()
         elif len(footprints) != self.erosion_spin.value():
             raise ValueError(
-                f"Please add {self.erosion_spin.value()} footprints, got {len(footprints)}"
+                f"Add {self.erosion_spin.value()} footprints (one per erosion step), got {len(footprints)}"
             )
 
         return {
@@ -571,7 +571,7 @@ class MainSeedParamWidget(_ParamGroup):
 
         
         if self.image_combo is None or not self.image_combo.currentText():
-            self.status_line.set("Please select an image layer first", "error")
+            self.status_line.set("Select an image layer first", "error")
             return
 
         row = self.footprint_table.rowCount()
@@ -612,7 +612,7 @@ class MainSeedParamWidget(_ParamGroup):
 
         # not image
         if self.image_combo is None or not self.image_combo.currentText():
-            self.status_line.set("Please select an image layer first", "error")
+            self.status_line.set("Select an image layer first", "error")
             return
 
         row = self.threshold_table.rowCount()
@@ -826,7 +826,7 @@ class MainGrowParamWidget(_ParamGroup):
 
         # not image
         if self.image_combo is None or not self.image_combo.currentText():
-            self.status_line.set("Please select an image layer first", "error")
+            self.status_line.set("Select an image layer first", "error")
             return
         row = self.threshold_table.rowCount()
         self.threshold_table.insertRow(row)

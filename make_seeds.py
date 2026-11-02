@@ -44,10 +44,12 @@ pre_set_sub_folders_2d = [footprint[0] for footprint in pre_set_footprint_list_2
 
 
 def gen_seed_mp(volume, thre_fp_pairs, ero_iter , segments , 
-                        boundary = None ,result_dict = None, return_for_napari = False):
-    
+                        boundary = None ,result_dict = None, return_for_napari = False,
+                        cancel = None, step = None):
+    """cancel / step: see sprout_core.find_seed_by_ero_custom."""
     
     for threshold_ero_iter_pair in thre_fp_pairs:
+        sprout_core.check_cancel(cancel)
         if isinstance(threshold_ero_iter_pair[0],  tuple):
             threshold = threshold_ero_iter_pair[0][0]
             upper_threshold = threshold_ero_iter_pair[0][1]
@@ -73,7 +75,8 @@ def gen_seed_mp(volume, thre_fp_pairs, ero_iter , segments ,
                                           footprints = footprints,
                                           upper_threshold = upper_threshold,
                                           boundary = boundary,
-                                          is_return_seeds = return_for_napari)
+                                          is_return_seeds = return_for_napari,
+                                          cancel = cancel, step = step)
         
 
         # log_dict['input_file'] = file_path
@@ -196,6 +199,11 @@ def make_seeds(**kwargs):
         Step size for mesh generation. Defaults to 1.
     return_for_napari : bool, optional
         If True, return seed masks in a dictionary for napari. Defaults to False.
+    cancel : threading.Event, optional
+        Checked before every erosion step; when set, sprout_core.Cancelled is raised
+        (seeds already written stay in the folder). Not saved in the config.
+    progress : callable(done, total, text), optional
+        Called (from the worker threads) after every seed written. Not saved in the config.
 
     Returns
     -------
@@ -216,6 +224,10 @@ def make_seeds(**kwargs):
     
     
     
+    # Stop / progress hooks (napari); popped so that the saved config stays as it was
+    cancel = kwargs.pop('cancel', None)
+    progress = kwargs.pop('progress', None)
+
     # Input and Output
     img = kwargs.get('img', None) 
     workspace = kwargs.get('workspace', None)
@@ -331,10 +343,12 @@ def make_seeds(**kwargs):
             """)      
 
     seeds_dict = {}
+    steps = sprout_core.StepProgress(progress, len(thre_fp_pairs) * (erosion_steps + 1))
     # Start a new thread for each sublist and wait for all of them;
     # an exception in a thread is re-raised here (not only printed)
     sprout_core.run_threads(gen_seed_mp, [(img,sublist, erosion_steps, segments,
-                                           boundary, seeds_dict, return_for_napari)
+                                           boundary, seeds_dict, return_for_napari,
+                                           cancel, steps.step)
                                           for sublist in sublists])
 
     # print(f"All threads have completed. Log is saved at {output_json_path},seeds are saved at {output_seed_folder}")
@@ -362,6 +376,7 @@ def make_seeds(**kwargs):
             tif_files = glob.glob(os.path.join(output_seed_sub_folder, '*.tif'))
 
             for tif_file in tif_files:
+                sprout_core.check_cancel(cancel)
                 make_mesh_for_tiff(tif_file,output_seed_sub_folder,
                                     num_threads=num_threads,no_zero = True,
                                     colormap = "color10",

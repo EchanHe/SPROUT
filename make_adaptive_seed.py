@@ -145,7 +145,9 @@ def make_adaptive_seed_ero(
                         split_size_limit = (None,None),
                         split_convex_hull_limit = (None, None),
                         return_for_napari = False,
-                        save_final_for_batch = False           
+                        save_final_for_batch = False,
+                        cancel = None,
+                        progress = None
                       ):
     """
     Erosion-based merged seed generation with multi-threading.
@@ -177,6 +179,10 @@ def make_adaptive_seed_ero(
         footprints (str, optional): Footprints shape for erosion. Defaults to None.
         split_size_limit (optional): create a split if the region size (np.sum(mask)) is within the limit
         split_convex_hull_limit: create a split if the the convex hull's area/volume is within the limit
+        cancel (threading.Event, optional): checked before every erosion step and between regions;
+            when set, sprout_core.Cancelled is raised (files already written stay).
+        progress (callable(done, total, text), optional): called after the initial seed and
+            after every erosion step.
 
     Returns:
         tuple: Merged seeds, original combine ID map, and output dictionary.
@@ -269,8 +275,10 @@ def make_adaptive_seed_ero(
         img[boundary] = False
 
 
-
+    steps = sprout_core.StepProgress(progress, erosion_steps + 1)
+    sprout_core.check_cancel(cancel)
     init_seed, _ = sprout_core.get_ccomps_with_size_order(img,segments_list[0])
+    steps.step("initial seed")
     
     seeds_dict = {}
     
@@ -312,6 +320,7 @@ def make_adaptive_seed_ero(
         
         
         print(f"working on erosion {ero_iter}")
+        sprout_core.check_cancel(cancel)
         
         output_dict["split_id"][ero_iter] = {}
         output_dict["split_ori_id"][ero_iter] = {}
@@ -319,6 +328,7 @@ def make_adaptive_seed_ero(
         output_dict["split_prop"][ero_iter] = {}
         
         img = sprout_core.erosion_binary_img_on_sub(img, kernal_size = 1,footprint=footprint_list[ero_iter-1])
+        sprout_core.check_cancel(cancel)
         seed, _ = sprout_core.get_ccomps_with_size_order(img, segments_list[ero_iter])
         seed = sprout_core.cast_labels(seed, np.uint16)
         
@@ -345,6 +355,7 @@ def make_adaptive_seed_ero(
         }
         
         for combine_id in combine_ids:
+            sprout_core.check_cancel(cancel)
             ccomp_combine_seed = combine_seed == combine_id
             
             inter_log["inter_count"] = 0
@@ -418,6 +429,7 @@ def make_adaptive_seed_ero(
             no_consec_split_count=0
         else:
             no_consec_split_count+=1
+        steps.step(f"erosion {ero_iter}/{erosion_steps}")
             
         
         # Intermediate iterations only (the last one is finalised after the loop).
@@ -441,6 +453,8 @@ def make_adaptive_seed_ero(
 
 
     
+    sprout_core.check_cancel(cancel)
+    steps.jump(steps.total, "saving")    # an early stop counts as done
     combine_seed,_ = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort,
                                           top_n=segments_list[-1])
     # if sort:
@@ -508,7 +522,9 @@ def make_adaptive_seed_thre(
                         split_convex_hull_limit = (None, None),
         
                         return_for_napari = False,
-                        save_final_for_batch = False
+                        save_final_for_batch = False,
+                        cancel = None,
+                        progress = None
                     ):
     
     """Perform adaptive seed generation and iterative splitting for image segmentation using thresholding and morphological erosion.
@@ -571,6 +587,11 @@ def make_adaptive_seed_thre(
         Minimum and maximum convex hull size limits for split segments.
     sub_folder : str, optional
         Subfolder name within `output_folder` for saving results.
+    cancel : threading.Event, optional
+        Checked before every erosion / threshold step and between regions; when set,
+        sprout_core.Cancelled is raised (files already written stay).
+    progress : callable(done, total, text), optional
+        Called after the initial seed and after every further threshold.
         
     Returns
     -------
@@ -674,10 +695,14 @@ def make_adaptive_seed_thre(
     if boundary is not None:
         mask[boundary] = False
 
+    steps = sprout_core.StepProgress(progress, len(thresholds))
     for ero_iter in range(1, erosion_steps+1):
+        sprout_core.check_cancel(cancel)
         mask = sprout_core.erosion_binary_img_on_sub(mask, kernal_size = 1,
                                                      footprint=footprint_list[ero_iter-1])
+    sprout_core.check_cancel(cancel)
     init_seed, _ = sprout_core.get_ccomps_with_size_order(mask,segments_list[0])
+    steps.step(f"threshold {thresholds[0]}")
     
     seeds_dict = {}
     
@@ -715,6 +740,7 @@ def make_adaptive_seed_thre(
 
     for idx_threshold, (threshold, upper_threshold) in enumerate(zip(thresholds[1:], upper_thresholds[1:])):
         print(f"working on thre ({threshold}, {upper_threshold})")
+        sprout_core.check_cancel(cancel)
         
         output_dict["split_id"][threshold] = {}
         output_dict["split_ori_id"][threshold] = {}
@@ -730,8 +756,10 @@ def make_adaptive_seed_thre(
             mask[boundary] = False
 
         for ero_iter in range(1, erosion_steps+1):
+            sprout_core.check_cancel(cancel)
             mask = sprout_core.erosion_binary_img_on_sub(mask, kernal_size = 1,
                                                          footprint=footprint_list[ero_iter-1])
+        sprout_core.check_cancel(cancel)
         seed, _ = sprout_core.get_ccomps_with_size_order(mask,segments_list[idx_threshold+1])
         seed = sprout_core.cast_labels(seed, np.uint16)
         
@@ -759,6 +787,7 @@ def make_adaptive_seed_thre(
         }
         
         for combine_id in combine_ids:
+            sprout_core.check_cancel(cancel)
             ccomp_combine_seed = combine_seed == combine_id
             
             inter_log["inter_count"] = 0
@@ -862,6 +891,7 @@ def make_adaptive_seed_thre(
             no_consec_split_count=0
         else:
             no_consec_split_count+=1
+        steps.step(f"threshold {threshold}")
             
         if no_consec_split_count>=no_split_max_iter:
                 print(f"detect non split for {no_consec_split_count}rounds")
@@ -880,6 +910,8 @@ def make_adaptive_seed_thre(
                 output_img_name = f'INTER_adaptive_thre_{threshold}_{upper_threshold}_ero_{erosion_steps}.tif'
                 save_seed(pruned_seed, output_folder, output_img_name, return_for_napari=return_for_napari, seeds_dict=seeds_dict)
          
+    sprout_core.check_cancel(cancel)
+    steps.jump(steps.total, "saving")    # an early stop counts as done
     combine_seed,_ = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort,
                                           top_n=segments_list[-1])
     # if sort:

@@ -6,7 +6,7 @@ from qtpy.QtWidgets import (
     QTableWidget, QTableWidgetItem, QFormLayout, QProgressBar,
     QHeaderView, QFileDialog, QMessageBox,QScrollArea
 )
-from qtpy.QtCore import Qt, Signal, QThread
+from qtpy.QtCore import Qt, Signal
 import numpy as np
 from typing import Optional, List
 from napari.layers import Image, Labels
@@ -20,6 +20,7 @@ from ..utils.boundary_check import boundary_ok
 from ..utils.roi_layers import is_roi_layer
 from ..utils.roi_widget import RoiSelect, range_text
 from ..utils.status import RUN_BUTTON, STOP_BUTTON, StatusLine, style
+from ..utils import jobs
 from .seed_widget import combo_items, input_combo, put_in_tab_order, rename_in_combos
 
 import yaml
@@ -37,12 +38,9 @@ from sprout_core import roi as R
 from sprout_core.roi import RoiError
 
 
-class GrowthWorker(QThread):
-    """Worker thread for seed growth."""
-    progress = Signal(int)
-    finished = Signal(dict, dict)  # emits grows_dict and log_dict
-    error = Signal(str)
-    
+class GrowthWorker:
+    """The parameters of one Grow run; run(cancel, progress) is the job (utils/jobs.py)."""
+
     def __init__(self, image, seeds, thresholds, dilate_iters,
                  n_threads=4,   
                  output_folder=None,
@@ -56,7 +54,6 @@ class GrowthWorker(QThread):
                  no_growth_max_iter=3,
                  roi=None
                  ):
-        super().__init__()
         self.roi = roi   # sprout_core.roi.Roi or None (whole image)
         self.image = image
         self.seeds = seeds
@@ -80,7 +77,15 @@ class GrowthWorker(QThread):
         self.min_growth_size = min_growth_size
         self.no_growth_max_iter = no_growth_max_iter
     
-    def run(self):
+    @property
+    def folder(self):
+        """Where the run writes its files."""
+        return os.path.join(self.output_folder, self.base_name)
+
+    def run(self, cancel, progress):
+        """Runs on the job's worker thread; returns (grows_dict, log_dict). On Stop, Cancelled
+        carries the number of files written (files_written)."""
+        watch = jobs.FolderWatch(self.folder)
         try:
             print(f"Starting growth with {self.n_threads} threads")
             if self.roi is not None:
@@ -119,15 +124,22 @@ class GrowthWorker(QThread):
 
                     
                 # Fixed para
-                return_for_napari = True
-                                   
-                )      
+                return_for_napari = True,
+                cancel = cancel, progress = progress
+
+                )
+            jobs.check_cancel(cancel)         # Stop after the last step: no layers either
             if self.roi is not None:   # image-sized; outside the ROI = the input seeds
                 grows_dict = R.paste_grow(self.roi, grows_dict, full_seeds)
                 R.write_sidecar(self.roi, os.path.join(self.output_folder, self.base_name))
-            self.finished.emit(grows_dict, log_dict)
-        except Exception as e:
-            self.error.emit(("ROI: " if self.roi is not None else "") + str(e))
+            return grows_dict, log_dict
+        except jobs.Cancelled as e:
+            e.files_written = watch.written()
+            raise
+
+    def stopped(self, e, done, total):
+        """The orange line after Stop."""
+        return jobs.stopped_text(done, total, "iterations", getattr(e, "files_written", None))
 
 
 
@@ -261,6 +273,9 @@ class SeedGrowthWidget(QWidget):
         self.results_label = self.status_label          # same name as in the Seeds tab
         layout.addWidget(self.status_label)
         layout.addStretch()
+        # start / Stop / progress / end messages of a run (utils/jobs.py)
+        self.run_control = jobs.RunControl(self, self.status_label, [self.grow_btn], self.stop_btn,
+                                           self.progress_bar, notify=self._notify)
 
         main_scroll_container = QWidget()
         main_scroll_container.setLayout(layout)
@@ -429,7 +444,9 @@ class SeedGrowthWidget(QWidget):
         """Start the growth process."""
         # Get inputs
         if not self.image_combo.currentText() or not self.seeds_combo.currentText():
-            self.status_label.set("Please select both an image and seeds layer", "error")
+            self.status_label.set("Select an image and a seeds layer first", "error")
+            return
+        if self.run_control.running:
             return
         try:
             self.advanced_params_box.to_grow_ids()      # a typo: red line in the advanced box, no run
@@ -473,21 +490,12 @@ class SeedGrowthWidget(QWidget):
             # upper_thresholds = [int(upper_thresholds[i]) if upper_thresholds[i] is not None else None for i in sorted_indices]
             # dilate_iters = [dilate_iters[i] for i in sorted_indices]
             
-            # Update UI
-            self.grow_btn.setEnabled(False)
-            self.stop_btn.setEnabled(True)
-            self.progress_bar.setVisible(True)
-            self.progress_bar.setValue(0)
-            self.status_label.set("Growing seeds...", "info")
-            self._t0 = time.perf_counter()
-
-
             advance_params = self.advanced_params_box.get_params()
             self._run_note = (" (Sort IDs is ignored with an ROI)"
                               if roi is not None and advance_params['is_sort'] else "")
 
-            # Create and start worker
-            self.worker = GrowthWorker(
+            # Create and start the job
+            worker = GrowthWorker(
                 image= self.current_image,
                 seeds= self.current_seeds,
                 thresholds=  main_params['thresholds'],
@@ -509,28 +517,27 @@ class SeedGrowthWidget(QWidget):
                 roi=roi
             )
             
-            self.worker.progress.connect(self.progress_bar.setValue)
-            self.worker.finished.connect(self._on_growth_finished)
-            self.worker.error.connect(self._on_growth_error)
-            
-            self.worker.start()
-            # 
-            
+            self.worker = self.run_control.start(
+                worker.run, "Growth", "Growing seeds…",
+                done=self._on_growth_finished, stopped=worker.stopped,
+                failed=lambda e: ("ROI: " if roi is not None else "") + jobs.reason(e))
+
         except Exception as e:
-            show_error(f"Error starting growth: {str(e)}")
-            self.status_label.set(f"Error starting growth: {str(e)}", "error")
-            self._reset_ui()
-    
+            show_error(f"Growth failed: {jobs.reason(e)}")
+            self.status_label.set(f"Growth failed: {jobs.reason(e)}", "error")
+
     def stop_growth(self):
-        """Stop the growth process."""
-        if self.worker and self.worker.isRunning():
-            self.worker.terminate()
-            self.worker.wait()
-            self._reset_ui()
-            self.status_label.set("Growth stopped by user", "info")
-    
-    def _on_growth_finished(self, grows_dict, log_dict):
-        """Handle growth completion."""
+        """Stop growing at the next iteration (cooperative; no partial layers)."""
+        self.run_control.stop()
+
+    @staticmethod
+    def _notify(level, text):
+        """The one napari notification of a run (finished / failed)."""
+        (show_error if level == "error" else show_info)(text)
+
+    def _on_growth_finished(self, result, secs):
+        """Handle growth completion (UI thread): add the layers, return the summary."""
+        grows_dict, log_dict = result
         # self.growth_result = result
         
         # Add result to viewer
@@ -546,35 +553,18 @@ class SeedGrowthWidget(QWidget):
                 **kwargs
             )
         
-        # Update UI
-        self._reset_ui()
+        # Summary for the status line and the notification ("✓ ... (2.5 s)<note>")
         n = len(grows_dict)
-        secs = time.perf_counter() - getattr(self, "_t0", time.perf_counter())
-        self.status_label.set(f"Growth completed: {n} layer{'' if n == 1 else 's'} ({secs:.1f} s)"
-                              + self._run_note, "ok")
         # import psutil, os
         # print("MEM (MB):", psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024)
         # Emit signal
         # self.growth_completed.emit(result)
-        
-        show_info("Growth completed successfully!")
-    
-    def _on_growth_error(self, error_msg):
-        """Handle growth error."""
-        show_error(f"Napari Growth Error: {error_msg}")
-        self._reset_ui()
-        self.status_label.set(f"Growth failed: {error_msg}", "error")
-    
-    def _reset_ui(self):
-        """Reset UI after growth."""
-        self.grow_btn.setEnabled(True)
-        self.stop_btn.setEnabled(False)
-        self.progress_bar.setVisible(False)
-    
+        return f"Growth completed: {n} layer{'' if n == 1 else 's'}", self._run_note
+
 
     def preview_threshold(self, lower=None, upper=None):
         if self.current_image is None:
-            show_error("Please select an image first")
+            show_error("Select an image first")
             return
 
         try:

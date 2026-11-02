@@ -27,7 +27,7 @@ lock = threading.Lock()
 # Function to recursively create global variables from the config dictionary
             
 
-def grow_function(result, threshold_binary, label_id_list,touch_rule,non_bg_mask, allowed=None):
+def grow_function(result, threshold_binary, label_id_list,touch_rule,non_bg_mask, allowed=None, cancel=None):
     """
     Perform the growth operation for each label ID in the label ID list.
 
@@ -36,8 +36,10 @@ def grow_function(result, threshold_binary, label_id_list,touch_rule,non_bg_mask
         threshold_binary (np.ndarray): Binary mask threshold for the guide.
         label_id_list (list): List of label IDs to grow.
         touch_rule (str): Rule for handling overlaps (e.g., 'stop').
+        cancel (threading.Event, optional): checked before every label; raises Cancelled.
     """
     for label_id in label_id_list:
+        sprout_core.check_cancel(cancel)
         dilated_binary_label_id = (result ==label_id)
         if allowed is not None:
             # only label voxels inside the allowed region (threshold, not boundary) grow
@@ -92,7 +94,7 @@ def _write_mask_stop(input_mask, label_id, bb, footprint, allowed=None):
     return dilated & ~taken_by_others
 
 
-def _compute_parallel_write_in_order(task, label_ids, num_threads, result):
+def _compute_parallel_write_in_order(task, label_ids, num_threads, result, cancel=None):
     """Run task(label_id) -> (label_id, bb, write_mask) on a thread pool, but apply the
     writes to `result` strictly in the order of `label_ids`.
 
@@ -100,12 +102,18 @@ def _compute_parallel_write_in_order(task, label_ids, num_threads, result):
     number of threads: two labels competing for the same new voxel -> the one written
     later (higher id) keeps it, as in the sequential loop. A small window of pending
     tasks bounds the memory held by finished-but-not-yet-written masks.
+    cancel (threading.Event, optional) is checked before every write: Cancelled is raised
+    and the tasks not started yet are dropped.
     """
     workers = max(1, int(num_threads or 1))
     ids = iter(list(label_ids))
     with ThreadPoolExecutor(max_workers=workers) as pool:
         pending = deque(pool.submit(task, lid) for lid in itertools.islice(ids, 2 * workers))
         while pending:
+            if sprout_core._is_cancelled(cancel):
+                for f in pending:
+                    f.cancel()
+                raise sprout_core.Cancelled()
             label_id, bb, write = pending.popleft().result()
             result[bb][write] = label_id
             nxt = next(ids, None)
@@ -117,7 +125,8 @@ def dilation_one_iter_mp(input_mask, threshold_binary,
                             num_threads,
                              touch_rule = 'stop',
                              to_grow_ids = None,
-                             boundary = None):
+                             boundary = None,
+                             cancel = None):
     """
     Perform one iteration of dilation by using grow_function(...) in multi-threading.
 
@@ -128,6 +137,7 @@ def dilation_one_iter_mp(input_mask, threshold_binary,
         touch_rule (str): Rule for handling overlaps.
         to_grow_ids (list, optional): Specific IDs to grow. Defaults to None.
         boundary (np.ndarray, optional): Boundary mask to constrain growth. Defaults to None.
+        cancel (threading.Event, optional): checked between labels; raises Cancelled.
 
     Returns:
         np.ndarray: The updated mask after one dilation iteration.
@@ -165,14 +175,14 @@ def dilation_one_iter_mp(input_mask, threshold_binary,
                 allowed = allowed & np.logical_not(boundary[bb])
             return label_id, bb, _write_mask_stop(input_mask, label_id, bb, footprint, allowed)
 
-        _compute_parallel_write_in_order(task, label_id_list, num_threads, result)
+        _compute_parallel_write_in_order(task, label_id_list, num_threads, result, cancel)
     else:
         # 'overwrite': a label may overwrite another label's original voxels, so each label
         # depends on the ones processed before it. Keep the sequential algorithm.
         allowed = np.asarray(threshold_binary, bool)
         if boundary is not None:
             allowed = allowed & np.logical_not(boundary)
-        grow_function(result, threshold_binary, label_id_list, touch_rule, non_bg_mask, allowed)
+        grow_function(result, threshold_binary, label_id_list, touch_rule, non_bg_mask, allowed, cancel)
 
     
     if boundary is not None:
@@ -246,6 +256,12 @@ def grow_mp(**kwargs):
         Scale factor to downsample image before mesh generation.
     step_size : int, default=1
         Step size for marching cubes algorithm in mesh generation.
+    cancel : threading.Event, optional
+        Checked before every growth iteration and between labels; when set,
+        sprout_core.Cancelled is raised (files already written stay). Not saved in the config.
+    progress : callable(done, total, text), optional
+        Called after every growth iteration (total = all iterations of all thresholds;
+        a threshold that stops early counts as done). Not saved in the config.
 
     Returns
     -------
@@ -266,6 +282,10 @@ def grow_mp(**kwargs):
     - If `is_make_meshes` is True, mesh (.ply) files will be generated using marching cubes.
     - The function logs and saves all configurations used for reproducibility.
     """
+    # Stop / progress hooks (napari); popped so that the saved config stays as it was
+    cancel = kwargs.pop('cancel', None)
+    progress = kwargs.pop('progress', None)
+
     # Extract configuration values from kwargs
     dilation_steps = kwargs.get('dilation_steps', None)
     thresholds = kwargs.get('thresholds', None)  
@@ -411,12 +431,14 @@ def grow_mp(**kwargs):
     result = sprout_core.cast_labels(seg, np.uint8)
     # Non-zero voxels of `result`, kept up to date: each iteration counts only its output
     result_size = np.count_nonzero(result)
-        
+    steps = sprout_core.StepProgress(progress, sum(dilation_steps))
+
     # Iterate through and make growth results
     for i, (threshold ,upper_threshold,dilate_iter) in enumerate(zip(thresholds , upper_thresholds,dilation_steps)):
         # Set the count for check diff for each growing threshold
         count_below_threshold = 0
-        
+        stage_end = sum(dilation_steps[:i+1])
+
         
         threshold_name = "_".join(str(s) for s in thresholds[:i+1])
         dilate_name = "_".join(str(s) for s in dilation_steps[:i+1])
@@ -430,16 +452,18 @@ def grow_mp(**kwargs):
         full_size = np.sum(threshold_binary)
         print(f"Size of the threshold {threshold} to {upper_threshold} mask: {full_size}")
         for i_dilate in range(1, dilate_iter+1):
+            sprout_core.check_cancel(cancel)
 
-            
             # Get the input size for the log (the previous iteration's output size)
             input_size = result_size
             result = dilation_one_iter_mp(result, threshold_binary ,
                                           num_threads=num_threads,
                                             touch_rule = touch_rule,
                                             to_grow_ids=to_grow_ids,
-                                            boundary=boundary)
-            
+                                            boundary=boundary,
+                                            cancel=cancel)
+            steps.step(f"threshold {threshold}: iteration {i_dilate}/{dilate_iter}")
+
             ## Check if output size and input 's diff is bigger than min_growth_size
 
             # Get the output size for the log
@@ -506,9 +530,11 @@ def grow_mp(**kwargs):
                     break
             
         print(f"\tFinish growing. Last Input size = {input_size} and Output_size = {output_size}\n")
+        steps.jump(stage_end, f"threshold {threshold}: done")    # an early stop counts as done
     
     ## Save the final grow output as the final_<img_name>
     # only sort it in the end
+    sprout_core.check_cancel(cancel)
     result,_ = sprout_core.reorder_segmentation(result, sort_ids=is_sort)
     final_grow_name = f"FINAL_GROW_{base_name}"
     if final_grow_output_folder is not None:
@@ -543,6 +569,7 @@ def grow_mp(**kwargs):
         tif_files = glob.glob(os.path.join(output_folder, '*.tif'))
 
         for tif_file in tif_files:
+            sprout_core.check_cancel(cancel)
             make_mesh_for_tiff(tif_file,output_folder,
                                 num_threads=num_threads,no_zero = True,
                                 colormap = "color10",

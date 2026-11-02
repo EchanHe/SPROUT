@@ -53,6 +53,7 @@ from sprout_core.nni_engine import NniEngine, nninteractive_status
 from sprout_core.prompt_engine import is_oom
 from sprout_core.roi import RoiError, parse_ids  # noqa: F401  (parse_ids: also importable from here)
 
+from ..utils import jobs
 from ..utils.fit_table import FitTable
 from ..utils.status import StatusLine, style, tab_hidden
 from ..utils.roi_layers import get_roi_hub
@@ -874,7 +875,7 @@ class PromptTab(QWidget):
             self._stats = stats
             self._rebuild_table()
 
-        self.classes_label.setText("counting seed voxels...")
+        self.classes_label.setText("counting seed voxels…")
         self._run_bg(work, done)
 
     def class_ids(self):
@@ -1101,7 +1102,7 @@ class PromptTab(QWidget):
         logs = []
         self._busy["gen"] = True
         self._update_buttons()
-        self.prompt_status.set(f"Sampling points for {len(classes)} classes...", "info")
+        self.prompt_status.set(f"Sampling points for {len(classes)} classes…", "info")
         t0 = time.perf_counter()
 
         def work():
@@ -1123,7 +1124,7 @@ class PromptTab(QWidget):
             missing = sorted(set(classes) - set(gen.class_id.tolist())) if len(gen) else classes
             msg = f"{len(gen)} points for {len(classes) - len(missing)} classes in {time.perf_counter() - t0:.1f} s"
             if missing:
-                msg += f"; no points for {', '.join(map(str, missing[:20]))}" + (" ..." if len(missing) > 20 else "")
+                msg += f"; no points for {', '.join(map(str, missing[:20]))}" + (" …" if len(missing) > 20 else "")
                 msg += " (no seed voxel" + (" inside the ROI)" if roi is not None else ")")
             self.prompt_status.set(msg, "info")
 
@@ -1131,9 +1132,9 @@ class PromptTab(QWidget):
             if job != self._job["gen"]:
                 return
             if isinstance(e, Cancelled):
-                self.prompt_status.set("Sampling stopped", "info")
+                self.prompt_status.set("Stopped: no points sampled", "warn")
                 return
-            self.prompt_status.set(f"Sampling failed: {e}", "error")
+            self.prompt_status.set(f"Sampling failed: {jobs.reason(e)}", "error")
             self._report_error(e)
 
         def finished():
@@ -1332,7 +1333,7 @@ class PromptTab(QWidget):
         self._job["load"] += 1
         job = self._job["load"]
         self._busy["load"] = True
-        self.model_status.set("loading...", "info")
+        self.model_status.set("loading…", "info")
         self._update_buttons()
 
         def done(info):
@@ -1350,7 +1351,7 @@ class PromptTab(QWidget):
         def failed(e):
             if job != self._job["load"]:
                 return
-            self.model_status.set(f"loading failed: {type(e).__name__}: {e}", "error")
+            self.model_status.set(f"Loading failed: {jobs.reason(e)}", "error")
             self._report_error(e)
 
         def finished():
@@ -1493,7 +1494,7 @@ class PromptTab(QWidget):
         self.progress.setRange(0, len(classes))
         self.progress.setValue(0)
         self.progress.setFormat("%v / %m classes")
-        self._set_run_status(f"Running {len(classes)} classes...")
+        self._set_run_status(f"Running {len(classes)} classes…")
         self._rebuild_table()
         neg = self.neg_scribble_cb.isChecked() if src == "seed" else False
 
@@ -1552,12 +1553,12 @@ class PromptTab(QWidget):
             self._class_status[c] = "stopped" if isinstance(e, Cancelled) else "failed"
         if isinstance(e, Cancelled):
             self._set_run_status(f"Stopped after {ctx['done']} of {len(ctx['classes'])} classes"
-                                 + ("; nothing saved" if ctx["save_dir"] else ""))
+                                 + ("; nothing saved" if ctx["save_dir"] else ""), "warn")
         elif is_oom(e):
             self._set_run_status(str(e), "error")
             show_error(f"Prompt (AI): {e}")
         else:
-            self._set_run_status(f"Failed: {type(e).__name__}: {e}", "error")
+            self._set_run_status(f"Run failed: {jobs.reason(e)}", "error")
             self._report_error(e)
         ctx["error"] = e
 

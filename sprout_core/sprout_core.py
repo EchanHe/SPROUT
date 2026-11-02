@@ -9,11 +9,42 @@ import tifffile
 from scipy.ndimage import binary_fill_holes
 
 from sprout_core import config_core
+# One Stop exception for all of SPROUT (also raised by boundary, prompt_points, prompt_seg)
+from sprout_core.boundary import Cancelled, _is_cancelled
 
 
+def check_cancel(cancel):
+    """Raise Cancelled if `cancel` (a threading.Event, a callable returning bool, or None) is set."""
+    if _is_cancelled(cancel):
+        raise Cancelled()
 
 
+class StepProgress:
+    """Counts done steps for progress(done, total, text); step() may be called from any thread.
 
+    progress=None: step() does nothing (CLI / scripts / YAML runs).
+    """
+
+    def __init__(self, progress, total):
+        self.progress = progress
+        self.total = max(int(total), 1)
+        self.done = 0
+        self._lock = threading.Lock()
+
+    def step(self, text="", n=1):
+        if self.progress is None:
+            return
+        with self._lock:                 # reported in order (progress should be quick)
+            self.done = min(self.done + n, self.total)
+            self.progress(self.done, self.total, text)
+
+    def jump(self, done, text=""):
+        """Set the done count (e.g. a stage that stopped early counts as done)."""
+        if self.progress is None:
+            return
+        with self._lock:
+            self.done = min(max(int(done), self.done), self.total)
+            self.progress(self.done, self.total, text)
 
 
 def assign_optional_params(config, keys_with_defaults):
@@ -843,10 +874,14 @@ def find_seed_by_ero_custom(volume_array, threshold , segments, ero_iter,
                     footprints = None,
                     upper_threshold = None,
                     boundary = None ,
-                    is_return_seeds = False):
+                    is_return_seeds = False,
+                    cancel = None,
+                    step = None):
+    """cancel: threading.Event (or None), checked before every erosion step; raises Cancelled.
+    step: callable(text) called after every seed written (one progress step), or None."""
      # Capture the start time
     start_time = datetime.now()
-    
+
     seeds_dict = {}
     
     # Thresholding 
@@ -873,11 +908,12 @@ def find_seed_by_ero_custom(volume_array, threshold , segments, ero_iter,
     
 
     for i_iter in range(0,ero_iter+1):
-        
+        check_cancel(cancel)
         if i_iter!=0:
-            volume_label = erosion_binary_img_on_sub(volume_label, 
+            volume_label = erosion_binary_img_on_sub(volume_label,
                                                                    footprint = footprints[i_iter-1])
-                                                                #    footprint='ball_YZ')      
+                                                                #    footprint='ball_YZ')
+            check_cancel(cancel)
 
         # Connected components
         seed, ccomp_sizes = get_ccomps_with_size_order(volume_label,segments)
@@ -907,7 +943,9 @@ def find_seed_by_ero_custom(volume_array, threshold , segments, ero_iter,
         }
         
         log_dict["seeds"].append(args_dict)
-        
+        if step is not None:
+            step(f"threshold {threshold}: erosion {i_iter}/{ero_iter}")
+
         # log_dict[f"ero_iter{i_iter}"]=args_dict
         # .append(args_dict)
     
