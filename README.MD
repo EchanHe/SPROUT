@@ -17,6 +17,7 @@ Click [here](https://www.youtube.com/watch?v=4DHI1gs1lzc&list=PL8tsvVKJ9n6FjYYpl
 - [Introduction](#introduction)
 - [Prerequisites](#prerequisites)
 - [Usage](#️-usage)
+   - [Terms](#terms)
    - [Input Data Format](#input-data-format)
    - [Quickstart with Demo Data](#quickstart-with-demo-data)
    - [Seed Generation](#-run-seed-generation)
@@ -173,6 +174,18 @@ In practice, both seed and grow results often require **visualisation, quality c
 
 To support this, SPROUT is fully integrated into the **Napari** ecosystem as a plugin, please see [napari-sprout](#view--edit-napari). 
 
+### Terms
+
+The same words are used in the code, the YAML configs, the napari plugin and the paper.
+
+| Term | Meaning |
+|---|---|
+| **segmentation** | A label map: each voxel holds an integer id, 0 is background. In napari it is a *Labels layer*. Seeds and the results of growth and of interactive models are all segmentations. |
+| **seed** / **seeds** | A segmentation made by seed generation, where structures are shrunk apart by thresholds and erosion. Seeds are the input of growth. |
+| **region** | The voxels that share one id. A region has an id but no meaning yet: the id is just a number, and regions can be split, merged or removed. |
+| **class** | A semantic category, e.g. *head* or *femur*. Class mapping assigns regions to classes; the id of a class is its *class id*. Interactive models (nnInteractive) segment one class at a time, so map the seeds to classes first. |
+| **segments** | The parameter "keep the N largest regions" (`segments`; adaptive seed also has `init_segments` and `last_segments` for its first and last step). It never means a region itself. |
+| **grown segmentation** | The result of growth ("Grow result" in napari); likewise the *nnInteractive segmentation* ("Prompt result"). |
 
 
 ### **Input Data Format**
