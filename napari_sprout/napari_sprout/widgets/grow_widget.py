@@ -15,13 +15,13 @@ from napari.utils.notifications import show_info, show_error
 
 from ..utils.util_widget import (create_output_folder_row, GrowOptionalParamGroupBox,
                                  MainGrowParamWidget,apply_threshold_preview,ThresholdWidget)
-from ..utils.histogram_threshold_widget import HistogramThresholdWidget, append_threshold_row
+from ..utils.histogram_threshold_widget import PREVIEW_NAME, HistogramThresholdWidget, append_threshold_row
 from ..utils.boundary_check import boundary_ok
 from ..utils.roi_layers import is_roi_layer
 from ..utils.roi_widget import RoiSelect, range_text
-from ..utils.status import RUN_BUTTON, STOP_BUTTON, StatusLine, style
+from ..utils.status import RUN_BUTTON, STOP_BUTTON, StatusLine, follow_theme, style
 from ..utils import jobs
-from .seed_widget import combo_items, input_combo, put_in_tab_order, rename_in_combos
+from .seed_widget import combo_items, input_combo, put_in_tab_order, rename_in_combos, seed_runs
 
 import yaml
 import sys
@@ -153,6 +153,7 @@ class SeedGrowthWidget(QWidget):
     def __init__(self, napari_viewer):
         super().__init__()
         self.viewer = napari_viewer
+        follow_theme(napari_viewer, self)       # the info grey of napari's theme
         
         self.preview_layer = None
         
@@ -213,7 +214,8 @@ class SeedGrowthWidget(QWidget):
         layout.addWidget(input_group)
 
 
-        self.threshold_widget = HistogramThresholdWidget(self.viewer, roi_use=self.roi_select)
+        self.threshold_widget = HistogramThresholdWidget(self.viewer, roi_use=self.roi_select,
+                                                         preview_name=PREVIEW_NAME + " (Grow)")
         self.threshold_widget.preview_requested.connect(self.preview_threshold)
         layout.addWidget(self.threshold_widget)
 
@@ -297,6 +299,10 @@ class SeedGrowthWidget(QWidget):
         hub.layer_inserted.connect(self._on_layers_changed)
         hub.layer_removed.connect(self._on_layers_changed)
         hub.layer_renamed.connect(self._on_layer_renamed)
+        # a finished Seeds run: its last seeds layer is picked (the user can pick another)
+        seed_runs(self.viewer).finished.connect(self._on_seeds_run)
+        self.seeds_combo.activated.connect(self._on_seeds_picked)
+        self._seeds_note = None
         # Tab reaches Import / Export YAML where they are shown: before the parameters
         put_in_tab_order(self.main_param_widget.thread_spin, self.import_btn, self.export_btn)
         
@@ -339,6 +345,25 @@ class SeedGrowthWidget(QWidget):
         if text != getattr(self, "_bad_boundary", None):    # another mask: its red line goes
             self.boundary_error.clear()
 
+    def _on_seeds_run(self, name):
+        """A Seeds run finished: pick the last seeds layer it added."""
+        if self.seeds_combo.findText(name) < 0:
+            self._on_layers_changed()          # its layer event not seen yet
+        if self.seeds_combo.findText(name) < 0:
+            return
+        self.seeds_combo.setCurrentText(name)
+        if not self.run_control.running:       # a Grow run keeps its own line
+            self._seeds_note = (name, f"Seeds: {name} (last Seeds run)")
+            self.status_label.set(self._seeds_note[1], "info")
+
+    def _on_seeds_picked(self, *_):
+        """The user picked other seeds: the 'last Seeds run' line no longer applies."""
+        note = self._seeds_note
+        if note is not None and self.seeds_combo.currentText() != note[0]:
+            self._seeds_note = None
+            if self.status_label.text() == note[1]:
+                self.status_label.clear()
+
     def _on_layer_renamed(self, layer, old):
         """Rename in place: the selections (and the threshold table) stay as they are."""
         rename_in_combos(layer, old, (self.image_combo, self.seeds_combo, self.boundary_combo))
@@ -351,9 +376,12 @@ class SeedGrowthWidget(QWidget):
         """Handle image selection change."""
         text = self.image_combo.currentText()
         if text and text != self.previous_image_name:
+            had_image = self.previous_image_name is not None
             self.previous_image_name = text
             
-            self.main_param_widget.clean_table()
+            self.main_param_widget.clean_table()      # thresholds depend on the image's values
+            if had_image:
+                self.params_status.set("Thresholds reset for the new image", "info")
 
 
             layer = self.viewer.layers[self.image_combo.currentText()]
@@ -583,7 +611,7 @@ class SeedGrowthWidget(QWidget):
         # delete existing seeds layer if it exists
         self.preview_layer = self.viewer.add_labels(
             binary.astype(np.uint8),
-            name="Threshold Preview",
+            name=PREVIEW_NAME + " (Grow)",
             opacity=0.5,
         )
         show_info(f"Preview updated: {np.sum(binary)} pixels selected")

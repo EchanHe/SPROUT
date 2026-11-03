@@ -6,7 +6,7 @@ from qtpy.QtWidgets import (
     QSlider, QFormLayout, QMessageBox, QLineEdit, QFileDialog,
     QScrollArea, QSizePolicy, QProgressBar
 )
-from qtpy.QtCore import Qt, Signal
+from qtpy.QtCore import QObject, Qt, Signal
 import numpy as np
 from typing import Optional
 from napari.layers import Image, Labels
@@ -14,16 +14,17 @@ from napari.utils.notifications import show_info, show_error
 
 from ..utils.util_widget import (create_output_folder_row, SeedOptionalParamGroupBox,
                                  MainSeedParamWidget, ThresholdWidget,apply_threshold_preview)
-from ..utils.histogram_threshold_widget import HistogramThresholdWidget, append_threshold_row
+from ..utils.histogram_threshold_widget import PREVIEW_NAME, HistogramThresholdWidget, append_threshold_row
 from ..utils.boundary_check import boundary_ok
 from ..utils.roi_widget import RoiSelect
-from ..utils.status import RUN_BUTTON, STOP_BUTTON, StatusLine
+from ..utils.status import RUN_BUTTON, STOP_BUTTON, StatusLine, follow_theme
 from ..utils import jobs
 
 import yaml
 import sys
 import os
 import time
+import weakref
 # get the current file's absolute path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 root_dir = os.path.abspath(os.path.join(current_dir, "../../"))
@@ -180,6 +181,21 @@ class SeedWorker:
         return jobs.stopped_text(done, total, unit, getattr(e, "files_written", None))
 
 
+class SeedRuns(QObject):
+    """Per viewer: a finished Seeds run tells the Grow tab the last seeds layer it added."""
+    finished = Signal(str)
+
+
+_SEED_RUNS = weakref.WeakKeyDictionary()     # viewer -> SeedRuns
+
+
+def seed_runs(viewer):
+    runs = _SEED_RUNS.get(viewer)
+    if runs is None:
+        runs = _SEED_RUNS[viewer] = SeedRuns()
+    return runs
+
+
 def input_combo():
     """A layer combo for the Input group: long layer names never widen the panel."""
     c = QComboBox()
@@ -235,6 +251,7 @@ class SeedGenerationWidget(QWidget):
     def __init__(self, napari_viewer):
         super().__init__()
         self.viewer = napari_viewer
+        follow_theme(napari_viewer, self)       # the info grey of napari's theme
 
         
         self.worker = None
@@ -318,7 +335,8 @@ class SeedGenerationWidget(QWidget):
         
         
         self.threshold_widget = HistogramThresholdWidget(self.viewer, add_connected_components=True,
-                                                         roi_use=self.roi_select)
+                                                         roi_use=self.roi_select,
+                                                         preview_name=PREVIEW_NAME + " (Seeds)")
         self.threshold_widget.preview_requested.connect(self.preview_threshold)
         layout.addWidget(self.threshold_widget)
 
@@ -516,9 +534,15 @@ class SeedGenerationWidget(QWidget):
         """Handle image selection change."""
         text = self.image_combo.currentText()
         if text and text != self.previous_image_name:
+            had_image = self.previous_image_name is not None
             self.previous_image_name = text 
-            self.main_param_widget.clean_table()
-            
+            changed = self.main_param_widget.new_image()     # thresholds reset, footprints kept
+            if had_image:
+                note = "Thresholds reset for the new image"
+                if changed:
+                    note += f"; {changed} footprint{'s' if changed > 1 else ''} changed to fit it"
+                self.params_status.set(note, "info")
+
             layer = self.viewer.layers[self.image_combo.currentText()]
             if isinstance(layer, Image):
                 self.current_image = layer.data
@@ -569,7 +593,7 @@ class SeedGenerationWidget(QWidget):
         # delete existing seeds layer if it exists
         self.preview_layer = self.viewer.add_labels(
             binary.astype(np.uint8),
-            name="Threshold Preview",
+            name=PREVIEW_NAME + " (Seeds)",
             opacity=0.5,
         )
         show_info(f"Preview updated: {np.sum(binary)} pixels selected")
@@ -781,6 +805,8 @@ class SeedGenerationWidget(QWidget):
         
         # Add the generated seeds to the viewer
         self.add_labels_layer(seeds_dict, roi=self._run_roi, layer_kwargs=self._run_layer_kwargs)
+        if seeds_dict:              # the Grow tab picks the last one
+            seed_runs(self.viewer).finished.emit(self.seeds_layer.name)
         
         # Summary for the status line and the notification ("✓ ... (2.5 s)")
         n = len(seeds_dict)

@@ -32,7 +32,7 @@ from sprout_core import boundary as B
 from ..utils import jobs
 from ..utils.histogram_widget import HistogramRangeWidget
 from ..utils.roi_layers import get_roi_hub
-from ..utils.status import RUN_BUTTON, StatusLine, style, tab_hidden
+from ..utils.status import RUN_BUTTON, STOP_BUTTON, StatusLine, follow_theme, style, tab_hidden
 from ..utils.slice_preview import SlicePreview
 
 PREVIEW_NAME = "Boundary preview"
@@ -142,6 +142,7 @@ class BoundaryWidget(QWidget):
     def __init__(self, napari_viewer):
         super().__init__()
         self.viewer = napari_viewer
+        follow_theme(napari_viewer, self)       # the info grey of napari's theme
         self._img_layer = None
         self._img = None
         self._resp = None            # cached response for the current image + params
@@ -238,6 +239,7 @@ class BoundaryWidget(QWidget):
         self.progress = QProgressBar()
         self.progress.setTextVisible(True)
         self.stop_btn = QPushButton("Stop")
+        self.stop_btn.setStyleSheet(STOP_BUTTON)
         self.stop_btn.setToolTip("Stop computing (nothing is kept)")
         self.stop_btn.setEnabled(False)
         row.addWidget(self.compute_btn)

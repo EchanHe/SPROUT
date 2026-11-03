@@ -455,14 +455,15 @@ class MainSeedParamWidget(_ParamGroup):
         self.segments_spin = _param_spin(1, 100000, 10)
         self.segments_spin.setToolTip("Number of largest connected components to keep in each seed")
         self.param_labels = [QLabel("Method"), QLabel("Threads"), QLabel("Erosion steps"), QLabel("Segments")]
+        # Method on its own row: next to Threads the panel needed a horizontal scrollbar at 500 px
         grid.addWidget(self.param_labels[0], 0, 0)
-        grid.addWidget(self.seed_method_combo, 0, 1)
-        grid.addWidget(self.param_labels[1], 0, 2)
-        grid.addWidget(self.thread_spin, 0, 3)
-        grid.addWidget(self.param_labels[2], 1, 0)
-        grid.addWidget(self.erosion_spin, 1, 1)
-        grid.addWidget(self.param_labels[3], 1, 2)
-        grid.addWidget(self.segments_spin, 1, 3)
+        grid.addWidget(self.seed_method_combo, 0, 1, 1, 3)
+        grid.addWidget(self.param_labels[1], 1, 0)
+        grid.addWidget(self.thread_spin, 1, 1)
+        grid.addWidget(self.param_labels[2], 1, 2)
+        grid.addWidget(self.erosion_spin, 1, 3)
+        grid.addWidget(self.param_labels[3], 2, 0)
+        grid.addWidget(self.segments_spin, 2, 1)
         grid.setColumnStretch(1, 1)
         grid.setColumnStretch(4, 1)
         layout.addLayout(grid)
@@ -587,10 +588,33 @@ class MainSeedParamWidget(_ParamGroup):
             footprint_combo.addItems(support_footprints)
         
         self.footprint_table.setCellWidget(row, 0, footprint_combo)
+        self._footprints_set = True
+
+    def _fit_footprints(self):
+        """Footprint rows offer the footprints of the image's ndim (2D / 3D); a footprint
+        the image cannot use becomes the first one. Returns how many were changed."""
+        if self.image_combo is None or not self.image_combo.currentText():
+            return 0
+        ndim = self.viewer.layers[self.image_combo.currentText()].data.ndim
+        names = support_footprints_2d if ndim == 2 else support_footprints
+        changed = 0
+        for row in range(self.footprint_table.rowCount()):
+            combo = self.footprint_table.cellWidget(row, 0)
+            current = combo.currentText()
+            if [combo.itemText(i) for i in range(combo.count())] == list(names):
+                continue
+            combo.clear()
+            combo.addItems(names)
+            if current in names:
+                combo.setCurrentText(current)
+            else:
+                changed += 1
+        return changed
     
     def set_footprints(self, footprints):
         """Footprint table rows from a list (YAML import); None or [] = no rows."""
         self.footprint_table.setRowCount(0)
+        self._footprints_set = True
         for fp in footprints or []:
             self._add_footprint_row()
             combo = self.footprint_table.cellWidget(self.footprint_table.rowCount() - 1, 0)
@@ -679,6 +703,17 @@ class MainSeedParamWidget(_ParamGroup):
         self._add_threshold_row_adaptive()
         self.footprint_table.setRowCount(0)
         self._add_footprint_row()
+
+    def new_image(self):
+        """Another image: the threshold table is reset (thresholds depend on its values),
+        the footprint table kept (its first image: one default row). Returns the number of
+        footprints changed to fit the image's ndim."""
+        self.threshold_table.setRowCount(0)
+        self._add_threshold_row_adaptive()
+        if not getattr(self, "_footprints_set", False):
+            self._add_footprint_row()
+            return 0
+        return self._fit_footprints()
 
     def populate_thresholds_from_list(self, thresholds_list, upper_thresholds_list=None):
         """Populate the thresholds table with a list of thresholds from YAML import.
@@ -990,6 +1025,8 @@ class SeedOptionalParamGroupBox(QGroupBox):
     def __init__(self, default_output=None):
         super().__init__("Advanced seed parameters")
         layout = QFormLayout()
+        # a row too wide for the panel puts its field under the label (no horizontal scrollbar)
+        layout.setRowWrapPolicy(QFormLayout.WrapLongRows)
 
         # sort (bool)
         self.sort_checkbox = QCheckBox("Enable sorting")
