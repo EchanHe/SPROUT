@@ -23,6 +23,7 @@ from sprout_core.sprout_core import get_sub_binary_image_by_pos
 
 from ..utils.status import LAYER_HEADER, NO_LAYER, StatusLine, style
 from ..utils.layer_lock import lock_layers, lock_note, unlock_layers
+from . import click_owner
 
 # One style for every run button, the same as the main panel's run buttons. Only the enabled
 # state is coloured, so a disabled run button keeps napari's disabled look.
@@ -192,7 +193,8 @@ class QtLabelSelector(QWidget):
         label_select_group.setToolTip("Select regions with Ctrl+click in the viewer, then keep or remove them.")
         label_select_layout = QFormLayout()
 
-        select_hint = QLabel("Ctrl+click a region in the viewer to select it; Ctrl+click it again to deselect.")
+        select_hint = QLabel("Ctrl+click a region in the viewer to select it; Ctrl+click it again to deselect. "
+                             "With Label Mapping open too, the dock used last takes the click.")
         select_hint.setWordWrap(True)
         select_hint.setStyleSheet(style("info"))
         label_select_layout.addRow(select_hint)
@@ -541,6 +543,7 @@ class QtLabelSelector(QWidget):
 
         # Bind the layer that is already active (no re-selection needed).
         self._bind_layer(self.viewer.layers.selection.active)
+        click_owner.register(self)   # with Label Mapping open too, the dock used last takes Ctrl+click
 
     def _target_spin(self, maximum, tip):
         """A Target Region box: empty (NO_TARGET) until a region ID is entered."""
@@ -620,6 +623,8 @@ class QtLabelSelector(QWidget):
         if not isinstance(layer, Labels):
             return
         if "Control" not in event.modifiers:
+            return
+        if not click_owner.handles_click(self):
             return
 
         label = layer.get_value(event.position,

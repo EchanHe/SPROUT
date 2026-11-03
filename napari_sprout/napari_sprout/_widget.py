@@ -164,8 +164,8 @@ def make_sprout_widget(viewer: "napari.viewer.Viewer" = None):
             raise RuntimeError("No napari viewer found")
     
     widget = SPROUTWidget(viewer)
-    # Ensure widget is visible
-    widget.show()
+    # no widget.show() in these factories: napari shows the widget when it docks it
+    # (a show() before that flashes it as a separate window)
     return widget
 
 def make_sprout_widget_edit(viewer: "napari.viewer.Viewer" = None):
@@ -189,8 +189,6 @@ def make_sprout_widget_edit(viewer: "napari.viewer.Viewer" = None):
             raise RuntimeError("No napari viewer found")
     
     widget = QtLabelSelector(viewer)
-    # Ensure widget is visible
-    widget.show()
     return widget
 
 def make_sprout_widget_info(viewer: "napari.viewer.Viewer" = None):
@@ -214,8 +212,6 @@ def make_sprout_widget_info(viewer: "napari.viewer.Viewer" = None):
             raise RuntimeError("No napari viewer found")
     
     widget = LayerInfoWidget(viewer)
-    # Ensure widget is visible
-    widget.show()
     return widget
 
 
@@ -240,8 +236,6 @@ def make_sprout_widget_map(viewer: "napari.viewer.Viewer" = None):
             raise RuntimeError("No napari viewer found")
 
     widget = LabelMapperWidget(viewer)
-    # Ensure widget is visible
-    widget.show()
     return widget
 
 
@@ -266,6 +260,4 @@ def make_sprout_widget_tools(viewer: "napari.viewer.Viewer" = None):
             raise RuntimeError("No napari viewer found")
 
     widget = SPROUTToolWidget(viewer)
-    # Ensure widget is visible
-    widget.show()
     return widget
