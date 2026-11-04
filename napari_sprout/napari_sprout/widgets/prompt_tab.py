@@ -56,7 +56,7 @@ from sprout_core.sprout_core import label_dtype
 
 from ..utils import jobs
 from ..utils.fit_table import FitTable
-from ..utils.status import StatusLine, style, tab_hidden
+from ..utils.status import RUN_BUTTON, STOP_BUTTON, StatusLine, follow_theme, style, tab_hidden
 from ..utils.roi_layers import get_roi_hub
 from ..utils.roi_widget import RoiSelect
 from ..utils.util_widget import create_output_folder_row
@@ -65,7 +65,6 @@ META_KEY = "sprout_prompt"
 SETTINGS = ("SPROUT", "napari-sprout")
 POS_COLOR, NEG_COLOR = "lime", "magenta"
 TOOLTIP_ROLE = 3            # Qt.ToolTipRole
-GREY = style("info")
 LOAD_FIRST = "Load the model first (3. Model)"
 
 # Promptable models offered in "3. Model": (label, engine class, availability check).
@@ -184,6 +183,7 @@ class PromptTab(QWidget):
     def __init__(self, napari_viewer, engine_factory=None, status_fn=None, models=None):
         super().__init__()
         self.viewer = napari_viewer
+        follow_theme(napari_viewer, self)       # the info grey of napari's theme
         if engine_factory is not None:
             cls = engine_factory if isinstance(engine_factory, type) else None
             name = cls.name if cls is not None else None
@@ -304,7 +304,7 @@ class PromptTab(QWidget):
         self.none_btn = QPushButton("None")
         self.none_btn.setToolTip("Untick every class")
         self.classes_label = QLabel("")
-        self.classes_label.setStyleSheet(GREY)
+        self.classes_label.setStyleSheet(style("info"))
         row.addWidget(self.all_btn)
         row.addWidget(self.none_btn)
         row.addWidget(self.classes_label, 1)
@@ -319,7 +319,7 @@ class PromptTab(QWidget):
             self.model_combo.addItem(label)
         f3.addRow("Model", self.model_combo)
         self.supports_label = QLabel("")
-        self.supports_label.setStyleSheet(GREY)
+        self.supports_label.setStyleSheet(style("info"))
         f3.addRow(self.supports_label)
         self.model_edit = QLineEdit(str(QSettings(*SETTINGS).value("prompt/model_dir", "") or ""))
         self.model_edit.setPlaceholderText("folder of the model weights")
@@ -398,7 +398,7 @@ class PromptTab(QWidget):
         ls.addWidget(self.neg_scribble_cb)
         self.scribble_hint = QLabel(SCRIBBLE_HINT)
         self.scribble_hint.setWordWrap(True)
-        self.scribble_hint.setStyleSheet(GREY)
+        self.scribble_hint.setStyleSheet(style("info"))
         ls.addWidget(self.scribble_hint)
         l4.addWidget(self.scribble_box)
 
@@ -424,7 +424,7 @@ class PromptTab(QWidget):
         self.nneg_spin.setValue(int(yaml_default("default_n_neg")))
         self.nneg_spin.setToolTip("default_n_neg: negative points per class (zero-intensity voxels excluded).")
         self.neg_slow_label = QLabel(NEG_SLOW)
-        self.neg_slow_label.setStyleSheet(GREY)
+        self.neg_slow_label.setStyleSheet(style("info"))
         self.neg_slow_label.setToolTip("Negatives are drawn from all background / other-class voxels: "
                                        "5-14 s on the 13 M-voxel dog demo.")
         row = QHBoxLayout()
@@ -494,7 +494,7 @@ class PromptTab(QWidget):
         lm.addLayout(row)
         self.manual_hint = QLabel(MANUAL_HINT)
         self.manual_hint.setWordWrap(True)
-        self.manual_hint.setStyleSheet(GREY)
+        self.manual_hint.setStyleSheet(style("info"))
         lm.addWidget(self.manual_hint)
         l4.addWidget(gm)
         self.prompt_status = StatusLine(hide_empty=True)
@@ -506,10 +506,12 @@ class PromptTab(QWidget):
         f5 = QFormLayout(g5)
         row = QHBoxLayout()
         self.run_btn = QPushButton("Run checked")
+        self.run_btn.setStyleSheet(RUN_BUTTON)
         self.run_btn.setToolTip("Runs the model class by class on the checked classes; each result is pasted "
                                 "into the output layer as soon as it is done.")
         self.roi_select.set_run_button(self.run_btn, "Run checked")
         self.stop_btn = QPushButton("Stop")
+        self.stop_btn.setStyleSheet(STOP_BUTTON)
         self.stop_btn.setToolTip("Stop the run (the classes already done are kept), or stop generating points")
         row.addWidget(self.run_btn, 1)
         row.addWidget(self.stop_btn)

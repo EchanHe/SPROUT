@@ -11,6 +11,7 @@ from napari.utils.notifications import show_info
 
 from ..utils.status import LAYER_HEADER, NO_LAYER, StatusLine, style
 from ..utils.layer_lock import lock_layers, lock_note, unlock_layers
+from . import click_owner
 
 # the run button style of the main panel (as in the Edit dock)
 RUN_STYLE = "QPushButton { font-weight: bold; } QPushButton:enabled { background-color: #45a049; }"
@@ -39,7 +40,8 @@ class LabelMapperWidget(QWidget):
         self.layout().addWidget(self.layer_label)
 
         hint = QLabel("Ctrl+click a region in the viewer to assign it to the current class "
-                      "(Auto: then the next class is selected).")
+                      "(Auto: then the next class is selected). "
+                      "With Edit open too, the dock used last takes the click.")
         hint.setWordWrap(True)
         hint.setStyleSheet(style("info"))
         self.layout().addWidget(hint)
@@ -167,6 +169,7 @@ class LabelMapperWidget(QWidget):
 
         # Bind the layer that is already active (no re-selection needed).
         self._bind_layer(self.viewer.layers.selection.active)
+        click_owner.register(self)   # with Edit open too, the dock used last takes Ctrl+click
 
     def sync_class_index(self, idx):
         self.current_class_index = idx
@@ -296,6 +299,8 @@ class LabelMapperWidget(QWidget):
         if not isinstance(layer, Labels):
             return
         if "Control" not in event.modifiers:
+            return
+        if not click_owner.handles_click(self):
             return
 
         label = layer.get_value(event.position,

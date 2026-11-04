@@ -39,7 +39,7 @@ from .roi_widget import RoiReminder
 from .slice_preview import SlicePreview
 from .status import StatusLine, tab_hidden
 
-PREVIEW_NAME = "Threshold Preview"
+PREVIEW_NAME = "Threshold Preview"     # + " (Seeds)" / " (Grow)": the live layer of each tab
 
 # Histogram + Otsu per image array (and per ROI, by value: Roi.key), shared by the Seeds
 # and Grow widgets: switching back to an image, or showing it in the other tab, costs
@@ -150,7 +150,8 @@ class HistogramThresholdWidget(QGroupBox):
     preview_requested = Signal(float, float)       # kept for compatibility; not emitted
     add_to_table_requested = Signal(float, float)
 
-    def __init__(self, viewer, title="Threshold Preview", add_connected_components=False, roi_use=None):
+    def __init__(self, viewer, title="Threshold Preview", add_connected_components=False, roi_use=None,
+                 preview_name=PREVIEW_NAME):
         super().__init__(title)
         self.viewer = viewer
         self.add_connected_components = add_connected_components
@@ -162,7 +163,7 @@ class HistogramThresholdWidget(QGroupBox):
         self._live_line = ""       # status lines: current slice / erosion-CC note / last created
         self._created_line = ""
         self._workers = set()
-        self._preview = SlicePreview(viewer, PREVIEW_NAME, opacity=0.5)
+        self._preview = SlicePreview(viewer, preview_name, opacity=0.5)
         # Histogram jobs start on the next event-loop turn: image switches that
         # happen while napari closes (layers removed one by one) start nothing,
         # because the timer dies with the widget.
@@ -190,7 +191,7 @@ class HistogramThresholdWidget(QGroupBox):
         self.live_cb = QCheckBox("Live preview on current slice (threshold only)")
         self.live_cb.setChecked(True)
         self.live_cb.setToolTip("While dragging, show the threshold on the displayed slice "
-                                f"(layer '{PREVIEW_NAME}'). Untick to remove it.")
+                                f"(layer '{preview_name}'). Untick to remove it.")
         lay.addWidget(self.live_cb)
         self.status = StatusLine(hide_empty=True)
         lay.addWidget(self.status)
