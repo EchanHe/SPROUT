@@ -12,7 +12,7 @@ from typing import Optional
 from napari.layers import Image, Labels
 from napari.utils.notifications import show_info, show_error
 
-from ..utils.util_widget import (create_output_folder_row, SeedOptionalParamGroupBox,
+from ..utils.util_widget import (as_list, create_output_folder_row, SeedOptionalParamGroupBox,
                                  MainSeedParamWidget, ThresholdWidget,apply_threshold_preview)
 from ..utils.histogram_threshold_widget import PREVIEW_NAME, HistogramThresholdWidget, append_threshold_row
 from ..utils.boundary_check import boundary_ok
@@ -890,8 +890,8 @@ class SeedGenerationWidget(QWidget):
                     self.save_every_iter_checkbox.setChecked(params["save_every_iter"])
 
                 # Populate the thresholds table with the list from YAML
-                thresholds_list = params.get('thresholds', None)
-                upper_thresholds_list = params.get('upper_thresholds', None)
+                thresholds_list = as_list(params.get('thresholds', None))
+                upper_thresholds_list = as_list(params.get('upper_thresholds', None))
                 self.main_param_widget.populate_thresholds_from_list(thresholds_list, upper_thresholds_list)
                 if 'footprints' in params:
                     self.main_param_widget.set_footprints(params['footprints'])

@@ -13,7 +13,7 @@ from napari.layers import Image, Labels
 from napari.utils.notifications import show_info, show_error
 
 
-from ..utils.util_widget import (create_output_folder_row, GrowOptionalParamGroupBox,
+from ..utils.util_widget import (as_list, create_output_folder_row, GrowOptionalParamGroupBox,
                                  MainGrowParamWidget,apply_threshold_preview,ThresholdWidget)
 from ..utils.histogram_threshold_widget import PREVIEW_NAME, HistogramThresholdWidget, append_threshold_row
 from ..utils.boundary_check import boundary_ok
@@ -690,9 +690,9 @@ class SeedGrowthWidget(QWidget):
                     self.output_folder_line.setText(params["output_folder"])
 
                 # Populate the thresholds table with the lists from YAML
-                thresholds_list = params.get('thresholds', None)
-                upper_thresholds_list = params.get('upper_thresholds', None)
-                dilation_steps_list = params.get('dilation_steps', None)
+                thresholds_list = as_list(params.get('thresholds', None))
+                upper_thresholds_list = as_list(params.get('upper_thresholds', None))
+                dilation_steps_list = as_list(params.get('dilation_steps', None))
                 
                 if thresholds_list:
                     self.main_param_widget.populate_thresholds_from_list(
