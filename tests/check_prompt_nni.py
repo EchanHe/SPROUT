@@ -391,7 +391,7 @@ if not args.core_only:
                                        init_seg_path=kw.get("init"), prompt_type=kw["prompt_type"],
                                        point_config=point_config, return_per_class_masks=True,
                                        scribble_config={"use_negative_scribble": kw.get("neg", False)}, seed=seed)
-        per = {c: tifffile.imread(outd / f"dog_img_class_{c}.tif") > 0 for c in CLASSES}
+        per = {c: tifffile.imread(outd / "segs" / f"dog_img_class_{c}.tif") > 0 for c in CLASSES}
         return total, per
 
     def run_tab(*, prompt_type, neg=False, init=False):

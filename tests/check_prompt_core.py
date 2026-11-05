@@ -160,9 +160,12 @@ else:
 # rest of sprout_prompt_core.py unchanged + re-export line
 new_src = (ROOT / "sprout_core" / "sprout_prompt_core.py").read_text(encoding="utf-8")
 new_tree = ast.parse(new_src)
-old_rest = [ast.dump(n) for n in old_tree.body if not (isinstance(n, ast.FunctionDef) and n.name in ("_grid_sampling", "sample_points_3d"))]
+EVOLVED = "seed_to_point_prompts_nninteractive"      # gained neg_regions since; section 3 compares it
+old_rest = [ast.dump(n) for n in old_tree.body
+            if not (isinstance(n, ast.FunctionDef) and n.name in ("_grid_sampling", "sample_points_3d", EVOLVED))]
 reexp = [n for n in new_tree.body if isinstance(n, ast.ImportFrom) and n.module == "sprout_core.prompt_points"]
-new_rest = [ast.dump(n) for n in new_tree.body if n not in reexp]
+new_rest = [ast.dump(n) for n in new_tree.body
+            if n not in reexp and not (isinstance(n, ast.FunctionDef) and n.name == EVOLVED)]
 ok(old_rest == new_rest and len(reexp) == 1 and sorted(a.name for a in reexp[0].names) == ["_grid_sampling", "sample_points_3d"],
    "sprout_prompt_core.py: only the two functions replaced by `from sprout_core.prompt_points import ...` (AST)")
 
