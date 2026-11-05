@@ -14,7 +14,7 @@ jobs:
         napari: ["0.6.1", "0.7.1"]
     env:
       PYTHONFAULTHANDLER: "1"
-      QT_QPA_PLATFORM: offscreen
+      QT_QPA_PLATFORM: cocoa
       CI: "1"
     steps:
       - uses: actions/checkout@v4
