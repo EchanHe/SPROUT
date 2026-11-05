@@ -1,0 +1,13 @@
+# What the CI tests run on: the versions from the README, without open3d (no Python 3.12 wheels,
+# only make_mesh needs it). The napari jobs add "napari[pyqt5]==<version>" to this list.
+numpy==1.26.4
+pandas==2.2.1
+scikit-image==0.22.0
+scipy==1.15.3
+tifffile==2024.2.12
+pyyaml==6.0.1
+trimesh==4.3.1
+matplotlib==3.8.3
+imagecodecs==2025.3.30
+psutil
+pytest
