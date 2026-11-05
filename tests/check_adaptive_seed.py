@@ -98,6 +98,7 @@ ok(len(names) == len(set(names)) and len(names) > 2,
 
 # 5. YAML config accepts the new key
 cfg = yaml.safe_load(open(ROOT / "template" / "make_adaptive_seed.yaml", encoding="utf-8"))
+cfg["num_threads"] = 1          # the template asks for 4, more than a small machine allows
 cfg["prune_every_iter"] = False
 try:
     opt = config_core.validate_input_yaml(cfg, config_core.input_val_make_adaptive_seed)

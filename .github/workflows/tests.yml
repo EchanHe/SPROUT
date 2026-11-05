@@ -22,7 +22,6 @@ jobs:
   core:
     name: core / ${{ matrix.os }} / Python ${{ matrix.python }}
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ matrix.os == 'macos-latest' }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
