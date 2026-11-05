@@ -1,0 +1,635 @@
+{
+ "boundary_preview": "c2313d2983efb197d1e31fa95ec5580d90a2fe38f6ea8a71cc86a25833acddd9",
+ "boundary_preview_label": "Current slice: 418 boundary voxels (2.13%)",
+ "disk": {
+  "grow/dog/FINAL_GROW_dog.tif": "39fa01a73cb1c05367163f021b04e35b5d53e95eb7bf3e83903aacf979450a30",
+  "grow/dog/INTER_dog_120_255_3.tif": "39fa01a73cb1c05367163f021b04e35b5d53e95eb7bf3e83903aacf979450a30",
+  "grow/dog/INTER_dog_150_255_3.tif": "0f35ec2326f8bab31aed502261656cfac93fc166572e1d535b367609ecddfed9",
+  "seeds/dog/FINAL_adaptive_seed.tif": "ba290edd2ea0c480570f7844e8f52ae48821a1c116f67e0b0882afe155a18351",
+  "seeds/dog/INTER_adaptive_thre_140_255_ero_1.tif": "42a120551d0f564c8eb6a85ed7a8324de743356b593ef0b4c6c72ab0ab5e163f",
+  "seeds/dog/INTER_adaptive_thre_140_255_ero_2.tif": "70e2b04c099036aad6c2ef9f401538a5cd948981ef7b282dbf9c123cd8d08c5e",
+  "seeds/dog/INTER_thre_140_255_ero_0.tif": "a59875b52f06f85070215ad08b613cedeaab05ee3096bf2d93eedb8db4b82287",
+  "seeds/dog/INTER_thre_140_255_ero_1.tif": "42a120551d0f564c8eb6a85ed7a8324de743356b593ef0b4c6c72ab0ab5e163f",
+  "seeds/dog/INTER_thre_140_255_ero_2.tif": "fd41ed78a8aacfd049b5ec96beed838e170bfdc00f212260965fd61dad53e185",
+  "seeds/dog/INTER_thre_140_255_ero_3.tif": "9dfa66c82c6ca7a06b85c1c162b1a8a6ca6c8f6ce607746d44d8a145e2af03af",
+  "seeds/dog/custom_footprints/seed_ero_0_thre140_255_segs_6.tif": "52da88eab2ff238053e548f6a61ba492d7e7de620b0ec2a89e619f6952553de4",
+  "seeds/dog/custom_footprints/seed_ero_0_thre160_255_segs_6.tif": "fef14047ade1e46ae93c660b1b405d750c54a37081f3c06dbd4237789c356725",
+  "seeds/dog/custom_footprints/seed_ero_1_thre140_255_segs_6.tif": "85c7317d9aa890347805c65ed1826cbd1c489b6bb1d8dc1d9ab4cc26492feb9c",
+  "seeds/dog/custom_footprints/seed_ero_1_thre160_255_segs_6.tif": "660d09ae23a486fcb6c8faae40850a68784c99b28015986c24fa3e54f580cde6",
+  "seeds/dog/custom_footprints/seed_ero_2_thre140_255_segs_6.tif": "73cae5df5888ceb8d7399a18f0be0bdb11625913aa1b6bae324e7760f345134b",
+  "seeds/dog/custom_footprints/seed_ero_2_thre160_255_segs_6.tif": "49f4048a53c59ac339af7c037c1173d4983f2f4c9c548c38ad64811ea4fce5d6"
+ },
+ "hist_initial": {
+  "boundary_input": {
+   "bounds": [
+    null,
+    null
+   ],
+   "counts": "86e2eee938ae134254bf1efc588046381681b8dd85196b3c6bafbcf55edc51c2",
+   "edges": "3750804ec67f619fe3e54f4a42a0c44dcfa31d224488a66746e4300152719a37",
+   "range": [
+    0.0,
+    255.0
+   ]
+  },
+  "grow": {
+   "bounds": [
+    54.0,
+    null
+   ],
+   "counts": "86e2eee938ae134254bf1efc588046381681b8dd85196b3c6bafbcf55edc51c2",
+   "edges": "3750804ec67f619fe3e54f4a42a0c44dcfa31d224488a66746e4300152719a37",
+   "range": [
+    54.0,
+    255.0
+   ]
+  },
+  "seeds": {
+   "bounds": [
+    54.0,
+    null
+   ],
+   "counts": "86e2eee938ae134254bf1efc588046381681b8dd85196b3c6bafbcf55edc51c2",
+   "edges": "3750804ec67f619fe3e54f4a42a0c44dcfa31d224488a66746e4300152719a37",
+   "range": [
+    54.0,
+    255.0
+   ]
+  }
+ },
+ "hist_response": {
+  "bounds": [
+   43.0,
+   null
+  ],
+  "counts": "4d3693505cd83439c7b6dc5c516e7329b112d2d93c4e68f9b6cfd4a60f8ecb61",
+  "edges": "862423083655320b520d48877cfde14d410f874502bc192401c0291897b1d771",
+  "range": [
+   43.0,
+   237.0
+  ]
+ },
+ "layer_names": [
+  "FINAL_GROW_dog",
+  "FINAL_adaptive_seed.tif",
+  "FINAL_adaptive_seed.tif [1]",
+  "INTER_adaptive_thre_140_255_ero_1.tif",
+  "INTER_adaptive_thre_140_255_ero_2.tif",
+  "INTER_dog_120_255_3",
+  "INTER_dog_150_255_3",
+  "INTER_thre_140_255_ero_0.tif",
+  "INTER_thre_140_255_ero_1.tif",
+  "INTER_thre_140_255_ero_2.tif",
+  "INTER_thre_140_255_ero_3.tif",
+  "Threshold Preview (Grow)",
+  "Threshold Preview (Seeds)",
+  "custom_footprints_seed_ero_0_thre140_255_segs_6.tif",
+  "custom_footprints_seed_ero_0_thre160_255_segs_6.tif",
+  "custom_footprints_seed_ero_1_thre140_255_segs_6.tif",
+  "custom_footprints_seed_ero_1_thre160_255_segs_6.tif",
+  "custom_footprints_seed_ero_2_thre140_255_segs_6.tif",
+  "custom_footprints_seed_ero_2_thre160_255_segs_6.tif",
+  "dog",
+  "dog_boundary",
+  "dog_preview_120-220",
+  "dog_preview_140-255_ero1_cc8",
+  "dog_seed"
+ ],
+ "layers": {
+  "FINAL_GROW_dog": {
+   "data": "72881813771c32967be65ea9b311dd475923899719a68bf598386dbce477458c",
+   "dtype": "uint16",
+   "metadata": {},
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "shape": [
+    220,
+    161,
+    122
+   ],
+   "translate": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "Labels"
+  },
+  "FINAL_adaptive_seed.tif": {
+   "data": "e54d726fe6ba2d486c5000277ec971c086de223996674776c0f1e05ba6abba72",
+   "dtype": "uint16",
+   "metadata": {},
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "shape": [
+    220,
+    161,
+    122
+   ],
+   "translate": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "Labels"
+  },
+  "FINAL_adaptive_seed.tif [1]": {
+   "data": "ba290edd2ea0c480570f7844e8f52ae48821a1c116f67e0b0882afe155a18351",
+   "dtype": "uint16",
+   "metadata": {},
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "shape": [
+    220,
+    161,
+    122
+   ],
+   "translate": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "Labels"
+  },
+  "INTER_adaptive_thre_140_255_ero_1.tif": {
+   "data": "39725a167e02a3deb58e3fe975d3add8ceff95aeb2715c8606d3735bcc5b3172",
+   "dtype": "uint16",
+   "metadata": {},
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "shape": [
+    220,
+    161,
+    122
+   ],
+   "translate": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "Labels"
+  },
+  "INTER_adaptive_thre_140_255_ero_2.tif": {
+   "data": "b164a2ed2967a781edb14b997dbde45fdd7e922b9cdf22f745c0c86404ae37b3",
+   "dtype": "uint16",
+   "metadata": {},
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "shape": [
+    220,
+    161,
+    122
+   ],
+   "translate": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "Labels"
+  },
+  "INTER_dog_120_255_3": {
+   "data": "72881813771c32967be65ea9b311dd475923899719a68bf598386dbce477458c",
+   "dtype": "uint16",
+   "metadata": {},
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "shape": [
+    220,
+    161,
+    122
+   ],
+   "translate": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "Labels"
+  },
+  "INTER_dog_150_255_3": {
+   "data": "5accf1ba41289ef40a9c64b50c1f339e3dcc5b6cf3b9b3e294b70d249a57270c",
+   "dtype": "uint16",
+   "metadata": {},
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "shape": [
+    220,
+    161,
+    122
+   ],
+   "translate": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "Labels"
+  },
+  "INTER_thre_140_255_ero_0.tif": {
+   "data": "a59875b52f06f85070215ad08b613cedeaab05ee3096bf2d93eedb8db4b82287",
+   "dtype": "int32",
+   "metadata": {},
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "shape": [
+    220,
+    161,
+    122
+   ],
+   "translate": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "Labels"
+  },
+  "INTER_thre_140_255_ero_1.tif": {
+   "data": "42a120551d0f564c8eb6a85ed7a8324de743356b593ef0b4c6c72ab0ab5e163f",
+   "dtype": "uint16",
+   "metadata": {},
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "shape": [
+    220,
+    161,
+    122
+   ],
+   "translate": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "Labels"
+  },
+  "INTER_thre_140_255_ero_2.tif": {
+   "data": "fd41ed78a8aacfd049b5ec96beed838e170bfdc00f212260965fd61dad53e185",
+   "dtype": "uint16",
+   "metadata": {},
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "shape": [
+    220,
+    161,
+    122
+   ],
+   "translate": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "Labels"
+  },
+  "INTER_thre_140_255_ero_3.tif": {
+   "data": "9dfa66c82c6ca7a06b85c1c162b1a8a6ca6c8f6ce607746d44d8a145e2af03af",
+   "dtype": "uint16",
+   "metadata": {},
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "shape": [
+    220,
+    161,
+    122
+   ],
+   "translate": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "Labels"
+  },
+  "Threshold Preview (Grow)": {
+   "data": "d9014ebb365538deec4516f7daa82022e60418ec5c2489075d9182de9abb195e",
+   "dtype": "uint8",
+   "metadata": {},
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "shape": [
+    220,
+    161,
+    122
+   ],
+   "translate": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "Labels"
+  },
+  "Threshold Preview (Seeds)": {
+   "data": "b2a825684dfb396fa434e2e901e9c24feb8237c62de792f6f2ed09439aa9a186",
+   "dtype": "uint8",
+   "metadata": {},
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "shape": [
+    220,
+    161,
+    122
+   ],
+   "translate": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "Labels"
+  },
+  "custom_footprints_seed_ero_0_thre140_255_segs_6.tif": {
+   "data": "52da88eab2ff238053e548f6a61ba492d7e7de620b0ec2a89e619f6952553de4",
+   "dtype": "uint16",
+   "metadata": {},
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "shape": [
+    220,
+    161,
+    122
+   ],
+   "translate": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "Labels"
+  },
+  "custom_footprints_seed_ero_0_thre160_255_segs_6.tif": {
+   "data": "fef14047ade1e46ae93c660b1b405d750c54a37081f3c06dbd4237789c356725",
+   "dtype": "uint16",
+   "metadata": {},
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "shape": [
+    220,
+    161,
+    122
+   ],
+   "translate": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "Labels"
+  },
+  "custom_footprints_seed_ero_1_thre140_255_segs_6.tif": {
+   "data": "85c7317d9aa890347805c65ed1826cbd1c489b6bb1d8dc1d9ab4cc26492feb9c",
+   "dtype": "uint16",
+   "metadata": {},
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "shape": [
+    220,
+    161,
+    122
+   ],
+   "translate": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "Labels"
+  },
+  "custom_footprints_seed_ero_1_thre160_255_segs_6.tif": {
+   "data": "660d09ae23a486fcb6c8faae40850a68784c99b28015986c24fa3e54f580cde6",
+   "dtype": "uint16",
+   "metadata": {},
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "shape": [
+    220,
+    161,
+    122
+   ],
+   "translate": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "Labels"
+  },
+  "custom_footprints_seed_ero_2_thre140_255_segs_6.tif": {
+   "data": "73cae5df5888ceb8d7399a18f0be0bdb11625913aa1b6bae324e7760f345134b",
+   "dtype": "uint16",
+   "metadata": {},
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "shape": [
+    220,
+    161,
+    122
+   ],
+   "translate": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "Labels"
+  },
+  "custom_footprints_seed_ero_2_thre160_255_segs_6.tif": {
+   "data": "49f4048a53c59ac339af7c037c1173d4983f2f4c9c548c38ad64811ea4fce5d6",
+   "dtype": "uint16",
+   "metadata": {},
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "shape": [
+    220,
+    161,
+    122
+   ],
+   "translate": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "Labels"
+  },
+  "dog": {
+   "data": "ffadcd601e038261acbec728e5b3c9b616d1eb89f7b62afe35b420872120e627",
+   "dtype": "uint8",
+   "metadata": {},
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "shape": [
+    220,
+    161,
+    122
+   ],
+   "translate": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "Image"
+  },
+  "dog_boundary": {
+   "data": "bbe34f7b2d038cfccb9ba9e8abc9e3f3f737aab62c700efcae080808c1b05d5a",
+   "dtype": "uint8",
+   "metadata": {
+    "sprout_boundary": {
+     "device": "cpu",
+     "image": "dog",
+     "intensity_lower": null,
+     "intensity_upper": null,
+     "kind": "black",
+     "method": "Top-hat",
+     "shape": "ball",
+     "size": 2,
+     "threshold_lower": 25.0,
+     "threshold_upper": null
+    }
+   },
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "shape": [
+    220,
+    161,
+    122
+   ],
+   "translate": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "Labels"
+  },
+  "dog_preview_120-220": {
+   "data": "2f428f77a12fc7ca58922f3ba5562c9784d3139ae680ecfffdac6eb3844ade5c",
+   "dtype": "uint8",
+   "metadata": {
+    "sprout_threshold_preview": {
+     "connected_components": null,
+     "erosion_steps": 0,
+     "image": "dog",
+     "lower": 120.0,
+     "upper": 220.0
+    }
+   },
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "shape": [
+    220,
+    161,
+    122
+   ],
+   "translate": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "Labels"
+  },
+  "dog_preview_140-255_ero1_cc8": {
+   "data": "d08c27aa9176213430211e59bf42a2a7a7f93e204f945d044c71f5c9b1dacaae",
+   "dtype": "uint16",
+   "metadata": {
+    "sprout_threshold_preview": {
+     "connected_components": 8,
+     "erosion_steps": 1,
+     "image": "dog",
+     "lower": 140.0,
+     "upper": 255.0
+    }
+   },
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "shape": [
+    220,
+    161,
+    122
+   ],
+   "translate": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "Labels"
+  },
+  "dog_seed": {
+   "data": "e0c94471f3b6e448dff608bb64cfad73c5369a0967c949a662236e67bc5d6c41",
+   "dtype": "uint32",
+   "metadata": {},
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "shape": [
+    220,
+    161,
+    122
+   ],
+   "translate": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "type": "Labels"
+  }
+ },
+ "seeds_live_slice": "b2a825684dfb396fa434e2e901e9c24feb8237c62de792f6f2ed09439aa9a186",
+ "seeds_live_status": "Current slice: 430 voxels (2.19%)"
+}

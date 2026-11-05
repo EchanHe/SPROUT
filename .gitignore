@@ -28,9 +28,9 @@ data/*
 !data/demo_dog.tiff
 
 src/*
-test_*.bat
-test_*.py
-test_*.ipynb
+/test_*.bat
+/test_*.py
+/test_*.ipynb
 
 
 
