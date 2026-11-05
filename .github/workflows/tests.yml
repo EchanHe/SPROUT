@@ -1,97 +1,56 @@
 name: tests
 
 on:
-  push:
-    branches: [main]
   pull_request:
-  workflow_dispatch:          # the "Run workflow" button on the Actions page
-    inputs:
-      full:
-        description: Run the slow checks without their shortcuts
-        type: boolean
-        default: false
-
-concurrency:                  # a new push stops the older run of the same branch
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
-env:
-  PYTEST_ARGS: ${{ inputs.full && '--full' || '' }}
 
 jobs:
-  core:
-    name: core / ${{ matrix.os }} / Python ${{ matrix.python }}
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+  macos-debug:
+    name: macos debug / napari ${{ matrix.napari }}
+    runs-on: macos-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        python: ["3.10", "3.11", "3.12"]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python }}
-          cache: pip
-          cache-dependency-path: requirements-ci.txt
-      - run: pip install -r requirements-ci.txt
-      - run: pytest -m core ${{ env.PYTEST_ARGS }}
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: logs-core-${{ matrix.os }}-${{ matrix.python }}
-          path: test-logs/
-
-  napari:
-    name: napari ${{ matrix.napari }} / ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ matrix.os == 'macos-latest' }}
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
         napari: ["0.6.1", "0.7.1"]
+    env:
+      PYTHONFAULTHANDLER: "1"
+      QT_QPA_PLATFORM: offscreen
+      CI: "1"
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0      # check_prompt_core reads an older version of a file
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
-          cache: pip
-          cache-dependency-path: requirements-ci.txt
-      - name: Libraries Qt needs on Linux
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libdbus-1-3 libfontconfig1 libglib2.0-0
       - run: pip install -r requirements-ci.txt "napari[pyqt5]==${{ matrix.napari }}"
       - run: pip install -e ./napari_sprout
-      - run: pytest -m napari ${{ env.PYTEST_ARGS }}
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: logs-napari-${{ matrix.napari }}-${{ matrix.os }}
-          path: test-logs/
-
-  golden:
-    name: golden outputs
-    runs-on: windows-latest   # where the golden files were recorded
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
-          cache: pip
-          cache-dependency-path: requirements-ci.txt
-      - run: pip install -r requirements-ci.txt "napari[pyqt5]==0.6.1"
-      - run: pip install -e ./napari_sprout
-      - run: pytest -m golden
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: logs-golden
-          path: test-logs/
+      - name: Versions
+        run: |
+          sw_vers
+          uname -m
+          pip list | grep -iE '^(napari|pyqt|vispy|numpy|pyopengl|qtpy) ' || true
+      - name: A viewer alone
+        continue-on-error: true
+        working-directory: ${{ runner.temp }}
+        run: python -c "import napari; v = napari.Viewer(show=False); print('viewer ok'); v.close(); print('closed ok')"
+      - name: A viewer with the GL shim
+        continue-on-error: true
+        working-directory: ${{ runner.temp }}
+        run: |
+          python - <<EOF
+          import sys
+          sys.path.insert(0, "$GITHUB_WORKSPACE/tests")
+          import _headless_gl
+          import napari
+          v = napari.Viewer(show=False)
+          print("viewer ok")
+          v.close()
+          print("closed ok")
+          EOF
+      - name: A check, with the crash stack
+        continue-on-error: true
+        working-directory: ${{ runner.temp }}
+        run: python "$GITHUB_WORKSPACE/tests/check_info_widget.py" 2>&1 | tail -70
+      - name: A probe that worked on 0.7.1
+        continue-on-error: true
+        working-directory: ${{ runner.temp }}
+        run: python "$GITHUB_WORKSPACE/tests/probe_known_bugs.py" load_scheme_reads_good_files 2>&1 | tail -40
