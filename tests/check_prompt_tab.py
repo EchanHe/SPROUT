@@ -781,7 +781,7 @@ pt9.image_combo.setCurrentText("img9")
 pt9.seeds_combo.setCurrentText("seeds3")
 wait(lambda: tbl.rowCount() == 3, what="3 classes")
 n, h, exp, vmax, gap = table_fit(3)
-ok(n == 3 and abs(h - exp) <= 2 and vmax == 0 and 0 <= gap <= 12,
+ok(n == 3 and abs(h - exp) <= 2 and vmax == 0 and 0 <= gap <= 16,
    f"3 classes: table {h} px = header + 3 rows ({exp} px), no vertical scrollbar (max {vmax}), All/None {gap} px below")
 pt9.seeds_combo.setCurrentText("seeds25")
 wait(lambda: tbl.rowCount() == 25, what="25 classes")

@@ -51,7 +51,7 @@ def quiet(fn, *a, **k):
 print("== 1. lazy imports")
 probe = textwrap.dedent(r"""
     import os, sys, json
-    os.environ["QT_QPA_PLATFORM"] = "offscreen"
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     sys.path[:0] = [%r, %r, %r]
     import sprout_core.prompt_points, sprout_core.prompt_seg, sprout_core.prompt_engine, sprout_core.nni_engine
     after_core = [m for m in ("torch", "nnInteractive", "segment_anything", "sklearn") if m in sys.modules]
