@@ -117,7 +117,6 @@ def test_6_empty_2d_mask(operation):
 
 
 @pytest.mark.core
-@bug(7, "a list written as a string stays a string in the optional values")
 def test_7_string_list_is_parsed(monkeypatch):
     monkeypatch.chdir(ROOT)
     config = grow_template()

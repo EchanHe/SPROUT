@@ -69,7 +69,7 @@ def _generate_one_threshold_step(img, lower, upper, footprint_list, erosion_step
         mask[boundary] = False
     mask = _apply_erosions(mask, footprint_list, erosion_steps)
     seed, _ = sprout_core.get_ccomps_with_size_order(mask, segments)
-    seed = seed.astype("uint16")
+    seed = sprout_core.cast_labels(seed, np.uint16)
     path = _save_step(seed, output_folder, step_index, lower, upper, erosion_steps)
     return step_index, path
 
@@ -221,7 +221,7 @@ def seed_sweep_erosion(
 
     # Step 0: no erosion
     seed, _ = sprout_core.get_ccomps_with_size_order(mask.copy(), segments_list[0])
-    seed = seed.astype("uint16")
+    seed = sprout_core.cast_labels(seed, np.uint16)
     path = _save_step(seed, output_folder, 0, threshold, upper_threshold, 0)
     ordered_paths.append(path)
     if verbose:
@@ -233,7 +233,7 @@ def seed_sweep_erosion(
             mask, kernal_size=1, footprint=footprint_list[ero_iter - 1]
         )
         seed, _ = sprout_core.get_ccomps_with_size_order(mask, segments_list[ero_iter])
-        seed = seed.astype("uint16")
+        seed = sprout_core.cast_labels(seed, np.uint16)
         path = _save_step(seed, output_folder, ero_iter, threshold, upper_threshold, ero_iter)
         ordered_paths.append(path)
         if verbose:
