@@ -1,7 +1,8 @@
 """
 One test per known bug: each says what should happen and is marked xfail until the bug is fixed.
 
-strict=True turns the run red when a bug stops failing, so the mark gets removed with the fix.
+strict=True turns the run red when a bug stops failing, so the mark gets removed with the fix;
+the test then stays here and keeps the bug from coming back.
 `raises` is the failure of the bug itself: any other exception is a real failure, so a broken
 test cannot pass as "still the known bug". The numbers are those of the bug list in the PRs.
 
@@ -17,7 +18,6 @@ import pandas as pd
 import pytest
 import tifffile
 import yaml
-from scipy.spatial import QhullError
 
 from test_checks import environment
 
@@ -107,9 +107,13 @@ def test_5_negative_ids_do_not_wrap():
 
 
 @pytest.mark.core
-@bug(6, "2D erosion of an empty mask crashes", raises=ValueError)
-def test_6_erosion_of_an_empty_2d_mask():
-    assert not sprout_core.erosion_binary_img_on_sub(np.zeros((16, 16), bool)).any()
+@pytest.mark.parametrize("operation", [
+    lambda mask: sprout_core.erosion_binary_img_on_sub(mask),
+    lambda mask: sprout_core.dilation_binary_img_on_sub(mask, margin=2, kernal_size=1),
+    lambda mask: sprout_core.closing_binary_img_on_sub(mask, margin=2, kernal_size=1),
+], ids=["erosion", "dilation", "closing"])
+def test_6_empty_2d_mask(operation):
+    assert not operation(np.zeros((16, 16), bool)).any()
 
 
 @pytest.mark.core
@@ -122,7 +126,6 @@ def test_7_string_list_is_parsed(monkeypatch):
 
 
 @pytest.mark.core
-@bug(8, "sprout.py without --config crashes before its error message")
 def test_8_missing_config_gives_a_message(tmp_path):
     r = subprocess.run([sys.executable, str(ROOT / "sprout.py"), "--seeds"], cwd=tmp_path, env=environment(tmp_path),
                        capture_output=True, text=True, encoding="utf-8", errors="replace")
@@ -132,7 +135,6 @@ def test_8_missing_config_gives_a_message(tmp_path):
 
 
 @pytest.mark.core
-@bug(9, "a missing final_grow_output_folder fails after Grow has finished", raises=FileNotFoundError)
 def test_9_final_output_folder_is_created(tmp_path):
     folder = tmp_path / "does" / "not" / "exist"
     make_grow.grow_mp(**small_grow_files(tmp_path), output_folder=str(tmp_path / "out"), thresholds=[100],
@@ -142,22 +144,20 @@ def test_9_final_output_folder_is_created(tmp_path):
 
 
 @pytest.mark.core
-@bug(10, "the convex hull of a flat seed crashes", raises=QhullError)
-def test_10_convex_hull_of_a_flat_seed():
+@pytest.mark.parametrize("limits, allowed", [([1, None], False), ([None, 100], True)])
+def test_10_convex_hull_of_a_flat_seed(limits, allowed):
     mask = np.zeros((10, 10, 10), bool)
     mask[5, 2:8, 2:8] = True
-    assert make_adaptive_seed.split_convex_hull_check(mask, [1, None]) is False
+    assert make_adaptive_seed.split_convex_hull_check(mask, limits) is allowed
 
 
 @pytest.mark.core
-@bug(11, "a missing file gives 'No active exception to reraise'", raises=RuntimeError)
 def test_11_missing_tiff_is_named(tmp_path):
     with pytest.raises(FileNotFoundError, match="no_such.tif"):
         sprout_core.check_tiff_files([str(tmp_path / "no_such.tif")])
 
 
 @pytest.mark.core
-@bug(11, "an unreadable file gives an UnboundLocalError instead of the reason", raises=UnboundLocalError)
 def test_11_unreadable_tiff_gives_the_reason(tmp_path):
     path = tmp_path / "bad.tif"
     path.write_text("not a tif")
@@ -180,7 +180,6 @@ def test_12_csv_column_with_a_blank(tmp_path, monkeypatch):
 
 
 @pytest.mark.core
-@bug(14, "sam_predict.yaml points to ./data/demo, the demo data is in ./demo_data")
 def test_14_paths_of_the_sam_template_exist():
     config = yaml.safe_load(open(ROOT / "template" / "sam_predict.yaml", encoding="utf-8"))
     assert (ROOT / config["img_path"]).is_file() and (ROOT / config["seg_path"]).is_file()
@@ -202,18 +201,20 @@ def test_15_more_threads_than_cores(tmp_path):
     assert r.returncode == 0
 
 
-PLUGIN_BUGS = [
-    ("edit_keeps_scale", 2, "Edit results drop the scale and translate of their layer"),
-    ("mapping_keeps_scale", 2, "Label Mapping results drop the scale and translate of their layer"),
-    ("float_image_threshold_row", 13, "a float image crashes the threshold tables"),
-    ("import_adaptive_template", 16, "Import of make_adaptive_seed.yaml fails on its single threshold"),
-    ("load_scheme_checks_the_file", 17, "Load Scheme accepts any JSON file"),
-    ("export_writes_the_image_path", 18, "Export writes the layer name as img_path"),
+PLUGIN_PROBES = [
+    pytest.param("edit_keeps_scale", marks=bug(2, "Edit results drop the scale and translate of their layer")),
+    pytest.param("mapping_keeps_scale", marks=bug(2, "Label Mapping results drop the scale and translate")),
+    pytest.param("float_image_threshold_row", marks=bug(13, "a float image crashes the threshold tables")),
+    "import_adaptive_template",        # 16
+    "import_single_values_into_grow",  # 16
+    "load_scheme_checks_the_file",     # 17
+    "load_scheme_reads_good_files",    # 17
+    pytest.param("export_writes_the_image_path", marks=bug(18, "Export writes the layer name as img_path")),
 ]
 
 
 @pytest.mark.napari
-@pytest.mark.parametrize("probe", [pytest.param(p, id=f"{n}_{p}", marks=bug(n, why)) for p, n, why in PLUGIN_BUGS])
+@pytest.mark.parametrize("probe", PLUGIN_PROBES)
 def test_plugin(probe, tmp_path):
     if importlib.util.find_spec("napari") is None:
         pytest.skip("needs napari")

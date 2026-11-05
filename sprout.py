@@ -60,7 +60,7 @@ def main():
     prompt_group.add_argument('--nninteractive', '--nn', action='store_true', help="Use nnInteractive for prompt extraction")
     
     parser.add_argument('--batch', action='store_true', help="Run in batch mode using pipeline functions")
-    parser.add_argument('--config', type=str, help="Path to the YAML config file")
+    parser.add_argument('--config', type=str, required=True, help="Path to the YAML config file")
 
     args = parser.parse_args()
 
@@ -74,20 +74,12 @@ def main():
         
     
     if args.seeds:
-        if not args.config:
-            print("[ERROR] --config is required when using --seeds")
-            parser.print_help()
-            exit(1)
         # config = load_config(args.config)
         if args.batch:
             run_batch_seeds(args.config)
         else:
             run_make_seeds(args.config)
     elif args.grow:
-        if not args.config:
-            print("[ERROR] --config is required when using --grow")
-            parser.print_help()
-            exit(1)
         # config = load_config(args.config)
         if args.batch:
             run_batch_grow(args.config)
@@ -95,10 +87,6 @@ def main():
             run_make_grow(args.config)
     elif args.adaptive_seed:
         
-        if not args.config:
-            print("[ERROR] --config is required when using --adaptive_seed")
-            parser.print_help()
-            exit(1)
         if args.batch:
             run_batch_adaptive_seed(args.config)
         else:
@@ -112,10 +100,6 @@ def main():
         if args.sam:
             from sprout_core.sam_predict import run_sam_yaml
             from sprout_core.batch_sam import run_batch_sam
-            if not args.config:
-                print("[ERROR] --config is required when using --prompt --sam")
-                parser.print_help()
-                exit(1)
             # config = load_config(args.config)
             if args.batch:
                 run_batch_sam(args.config)
@@ -124,10 +108,6 @@ def main():
         elif args.nninteractive:
             import sprout_core.nninteractive_predict as nninteractive_predict 
             import sprout_core.batch_nninteractive as batch_nninteractive
-            if not args.config:
-                print("[ERROR] --config is required when using --prompt --nninteractive")
-                parser.print_help()
-                exit(1)
             if args.batch:
                 batch_nninteractive.run_batch_nninteractive(args.config)
             else:

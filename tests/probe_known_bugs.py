@@ -39,10 +39,19 @@ def labels():
     return seg
 
 
-def seed_tab(viewer):
+def sprout_tab(viewer, kind):
     _, sprout = viewer.window.add_plugin_dock_widget("napari-sprout", "SPROUT")
     C.pump(10)
-    return next(w for w in sprout.findChildren(object) if hasattr(w, "import_yaml") and hasattr(w, "params_status"))
+    return next(w for w in sprout.findChildren(object) if type(w).__name__ == kind)
+
+
+def seed_tab(viewer):
+    return sprout_tab(viewer, "SeedGenerationWidget")
+
+
+def table(params):
+    t = params.threshold_table
+    return [[t.cellWidget(r, c).value() for c in range(t.columnCount())] for r in range(t.rowCount())]
 
 
 def keeps_scale(layer):
@@ -96,8 +105,22 @@ def import_adaptive_template(viewer):
     C.pump(10)
     tab.import_yaml(str(ROOT / "template" / "make_adaptive_seed.yaml"))
     C.pump(10)
+    rows = table(tab.main_param_widget)
     status = tab.params_status.text()
-    result("Failed" not in status, status)
+    result("Failed" not in status and len(rows) == 1 and rows[0][0] == 1, f"{status} {rows}")
+
+
+def import_single_values_into_grow(viewer):
+    tab = sprout_tab(viewer, "SeedGrowthWidget")
+    viewer.add_image(np.zeros((8, 8, 8), np.uint8), name="I")
+    viewer.add_labels(labels(), name="L")
+    C.pump(10)
+    path = TMP / "grow.yaml"
+    path.write_text("thresholds: 100\nupper_thresholds: 200\ndilation_steps: 3\n")
+    tab.import_yaml(str(path))
+    C.pump(10)
+    rows = table(tab.main_param_widget)
+    result(rows == [[100, 200, 3]], f"{tab.params_status.text()} {rows}")
 
 
 def load_scheme_checks_the_file(viewer):
@@ -112,7 +135,27 @@ def load_scheme_checks_the_file(viewer):
         mapping.load_scheme()
     except Exception as e:
         result(False, f"{type(e).__name__}: {e}")
-    result(mapping.scheme == before, f"scheme after loading any JSON: {mapping.scheme!r}")
+    if mapping.scheme != before:
+        result(False, f"scheme after loading any JSON: {mapping.scheme!r}")
+    path.write_text("not json")
+    mapping.load_scheme()
+    result(mapping.scheme == before and mapping.status.text().endswith("list of class names."), mapping.status.text())
+
+
+def load_scheme_reads_good_files(viewer):
+    viewer.add_labels(labels(), name="L")
+    _, mapping = viewer.window.add_plugin_dock_widget("napari-sprout", "Label Mapping")
+    C.pump(10)
+    path = TMP / "scheme.json"
+    DIALOGS.open_path = str(path)
+    path.write_text('["head", "body"]')
+    mapping.load_scheme()
+    if mapping.scheme != ["head", "body"]:
+        result(False, f"a saved scheme: {mapping.scheme!r}")
+    path.write_text('{"scheme": ["leg"], "label2class": {"1": "leg"}}')
+    mapping.load_scheme()
+    result(mapping.scheme == ["leg"] and "not loaded" in mapping.status.text(),
+           f"an exported mapping: {mapping.scheme!r}, {mapping.status.text()}")
 
 
 def export_writes_the_image_path(viewer):

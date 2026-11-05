@@ -1,8 +1,8 @@
 # Path to the input grayscale image (2D or 3D)
-img_path: "./data/demo/2d_cell.tif"
+img_path: "./demo_data/2d_cell.tif"
 
 # Path to the segmentation mask used to generate prompts
-seg_path: "./data/demo/2d_cell_seed.tif"
+seg_path: "./demo_data/2d_cell_seed.tif"
 
 # Folder to save all generated prompts, intermediate images and final outputs
 output_folder: "./result/demo_cell_sam"

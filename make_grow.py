@@ -386,6 +386,8 @@ def grow_mp(**kwargs):
     output_folder = os.path.join(output_folder, base_name)
     
     os.makedirs(output_folder , exist_ok=True)
+    if final_grow_output_folder is not None:
+        os.makedirs(final_grow_output_folder, exist_ok=True)
     
 
     

@@ -353,6 +353,11 @@ class ThresholdWidget(QGroupBox):
         return binary
 
 
+def as_list(value):
+    """A YAML file may hold one value where the tables take a list."""
+    return value if value is None or isinstance(value, list) else [value]
+
+
 def get_max_min_value_by_dtype(dtype):
     if dtype == np.uint8:
         return 0, 255

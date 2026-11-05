@@ -300,6 +300,8 @@ def dilation_binary_img_on_sub(input, margin, kernal_size, is_round=True):
 
             input[min_z:max_z+1, min_y:max_y+1, min_x:max_x+1] = subset_3d
     else:
+        if not _foreground(input).any():
+            return input
         subset_2d , max_min_ids= get_sub_binary_image_by_pos(input, margin = margin)
         min_y ,max_y, min_x, max_x = max_min_ids
 
@@ -362,6 +364,8 @@ def erosion_binary_img_on_sub(input, kernal_size = 1, footprint='ball'):
             
             input[min_z:max_z+1, min_y:max_y+1, min_x:max_x+1] = subset_3d
     else:
+        if not _foreground(input).any():
+            return input
         subset_2d , max_min_ids= get_sub_binary_image_by_pos(input, margin = 1)
         min_y ,max_y, min_x, max_x = max_min_ids
         
@@ -402,6 +406,8 @@ def closing_binary_img_on_sub(input, margin, kernal_size, is_round=True):
             # subset_3d = binary_closing(subset_3d, cube(kernal_size))
             input[min_z:max_z+1, min_y:max_y+1, min_x:max_x+1] = subset_3d
     else:
+        if not _foreground(input).any():
+            return input
         subset_2d , max_min_ids= get_sub_binary_image_by_pos(input, margin = margin)
         min_y ,max_y, min_x, max_x = max_min_ids
         if is_round:
@@ -1185,18 +1191,13 @@ def check_tiff_files(tifffile_list):
     for file_path in tifffile_list:
         # Check if the file exists
         # print(file_path)
-        if os.path.isfile(file_path):
-            try:
-                # Attempt to open the file using tifffile.imread
-                img = tifffile.imread(file_path)
-            except Exception as e:
-                print(f"File at index {file_path} cannot be opened. Error: {e}")
-                raise
-            finally:
-                # Release the image variable
-                del img
-        else:
-            print(f"File at index {file_path} does not exist.")
+        if not os.path.isfile(file_path):
+            raise FileNotFoundError(f"File does not exist: {file_path}")
+        try:
+            # Attempt to open the file using tifffile.imread
+            tifffile.imread(file_path)
+        except Exception as e:
+            print(f"File at index {file_path} cannot be opened. Error: {e}")
             raise
     
     # Release variables (optional in Python, done automatically by garbage collection)
@@ -1215,11 +1216,8 @@ def check_files(file_list):
     for file_path in file_list:
         # Check if the file exists
         print(file_path)
-        if os.path.isfile(file_path):
-            pass
-        else:
-            print(f"File at index {file_path} does not exist.")
-            raise
+        if not os.path.isfile(file_path):
+            raise FileNotFoundError(f"File does not exist: {file_path}")
     
     # Release variables (optional in Python, done automatically by garbage collection)
     # del df

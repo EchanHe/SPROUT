@@ -10,7 +10,7 @@ import threading
 lock = threading.Lock()
 import time
 import yaml
-from scipy.spatial import ConvexHull
+from scipy.spatial import ConvexHull, QhullError
 
 # Add the lib directory to the system path
 import sprout_core.sprout_core as sprout_core
@@ -50,8 +50,11 @@ def split_convex_hull_check(mask, split_convex_hull_limit):
         # split_size_temp = np.sum(mask)
         coords = np.column_stack(np.where(mask))
         if len(coords) >= 4:  # Convex hull needs at least 4 points in 3D
-            hull = ConvexHull(coords)
-            convex_hull_volume = int(hull.volume)
+            try:
+                hull = ConvexHull(coords)
+                convex_hull_volume = int(hull.volume)
+            except QhullError:      # all voxels in one plane or line: no volume
+                convex_hull_volume = 0
         else:
             return False
         if (lower is not None) and (convex_hull_volume < lower):
