@@ -221,6 +221,6 @@ def test_plugin(probe, tmp_path):
     r = subprocess.run([sys.executable, str(TESTS / "probe_known_bugs.py"), probe], cwd=tmp_path,
                        env=environment(tmp_path), capture_output=True, text=True, encoding="utf-8", errors="replace",
                        timeout=300)
-    if r.returncode not in (0, 3):                 # 3: the bug is still there; anything else: the probe broke
+    if r.returncode not in (0, 42):                # 42: the bug is still there; anything else: the probe broke
         pytest.fail(f"exit code {r.returncode}\n{(r.stdout + r.stderr)[-2000:]}", pytrace=False)
     assert r.returncode == 0, r.stdout[-500:]

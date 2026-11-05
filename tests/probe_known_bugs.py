@@ -3,7 +3,7 @@ The known bugs of the plugin, one per run, for test_known_bugs.py.
 
     python tests/probe_known_bugs.py <name>
 
-Exit code 0: it works. 3: the bug is still there. Anything else: the probe itself broke.
+Exit code 0: it works. 42: the bug is still there. Anything else: the probe itself broke.
 """
 import os
 import sys
@@ -25,11 +25,12 @@ PT.SETTINGS = ("SPROUT-checks", "napari-sprout-checks")      # not the user's
 DIALOGS = C.Dialogs().install()
 TMP = Path(tempfile.mkdtemp(prefix="sprout_known_bugs_"))
 SCALE, TRANSLATE = (2.0, 1.0, 1.0), (5.0, 0.0, 0.0)
+BUG = 42                                           # not 3: that is how abort() ends on Windows
 
 
 def result(ok, why):
     print(("works: " if ok else "BUG: ") + why, flush=True)
-    os._exit(0 if ok else 3)                       # the answer is known: no Qt teardown
+    os._exit(0 if ok else BUG)                     # the answer is known: no Qt teardown
 
 
 def labels():
@@ -86,8 +87,17 @@ def mapping_keeps_scale(viewer):
 
 
 def float_image_threshold_row(viewer):
+    def uncaught(kind, error, trace):              # napari 0.7: through a Qt slot, else PyQt aborts
+        if issubclass(kind, ValueError):
+            result(False, str(error))
+        sys.__excepthook__(kind, error, trace)
+
+    sys.excepthook = uncaught
     tab = seed_tab(viewer)
-    viewer.add_image(np.random.default_rng(0).random((8, 8, 8), dtype=np.float32), name="F")
+    try:
+        viewer.add_image(np.random.default_rng(0).random((8, 8, 8), dtype=np.float32), name="F")
+    except ValueError as e:
+        result(False, str(e))
     C.pump(10)
     tab.image_combo.setCurrentText("F")
     C.pump(10)
