@@ -32,6 +32,7 @@ TESTS = Path(__file__).resolve().parent
 ROOT = TESTS.parent
 LOGS = ROOT / "test-logs"
 QT_NOISE = ("WARNING:", "Note that Qt no longer ships fonts")
+QT_PLATFORM = "cocoa" if sys.platform == "darwin" else "offscreen"   # macOS: napari crashes without a GL context
 
 
 @dataclass
@@ -98,7 +99,7 @@ def git_status():
 
 def environment(tmp):
     env = dict(os.environ)
-    env.update(QT_QPA_PLATFORM="offscreen", MPLBACKEND="Agg", PYTHONUTF8="1", PYTHONIOENCODING="utf-8",
+    env.update(QT_QPA_PLATFORM=QT_PLATFORM, MPLBACKEND="Agg", PYTHONUTF8="1", PYTHONIOENCODING="utf-8",
                CUDA_VISIBLE_DEVICES="", TMP=str(tmp), TEMP=str(tmp), TMPDIR=str(tmp),
                NAPARI_CONFIG=str(tmp / "napari.yaml"), XDG_CONFIG_HOME=str(tmp / "config"))
     if os.environ.get("CI"):
