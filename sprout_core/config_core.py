@@ -553,6 +553,13 @@ def validate_input_yaml(config, rules):
                 pass
         
         
+        # A CSV column with a blank cell is read as float: an int 5 arrives as 5.0
+        if rule["type"] is int and isinstance(value, float) and value.is_integer():
+            value = int(value)
+            config[param] = value
+            if param in optional_values:
+                optional_values[param] = value
+
         if rule.get("required", False) or (not(rule.get("required", False)) and (value is not None)):
             # Check data type
             if not (isinstance(value, rule["type"])):

@@ -165,7 +165,6 @@ def test_11_unreadable_tiff_gives_the_reason(tmp_path):
 
 
 @pytest.mark.core
-@bug(12, "a blank cell makes pandas read the column as float, so 5 becomes 5.0 and is refused", raises=ValueError)
 def test_12_csv_column_with_a_blank(tmp_path, monkeypatch):
     monkeypatch.chdir(ROOT)
     path = tmp_path / "grow.csv"
@@ -174,8 +173,18 @@ def test_12_csv_column_with_a_blank(tmp_path, monkeypatch):
     config = grow_template()
     config.pop("min_growth_size", None)
     config["num_threads"] = 1
-    config_core.validate_input_yaml(config_core.merge_row_and_yaml_no_conflict(row, config),
-                                    config_core.input_val_make_grow)
+    merged = config_core.merge_row_and_yaml_no_conflict(row, config)
+    value = config_core.validate_input_yaml(merged, config_core.input_val_make_grow)["min_growth_size"]
+    assert value == 5 and type(value) is int
+
+
+@pytest.mark.core
+def test_12_a_real_float_is_still_refused(monkeypatch):
+    monkeypatch.chdir(ROOT)
+    config = grow_template()
+    config.update(min_growth_size=5.5, num_threads=1)
+    with pytest.raises(ValueError, match="min_growth_size"):
+        config_core.validate_input_yaml(config, config_core.input_val_make_grow)
 
 
 @pytest.mark.core
