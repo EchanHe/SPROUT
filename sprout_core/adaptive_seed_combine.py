@@ -41,7 +41,7 @@ import numpy as np
 import tifffile
 from skimage import measure
 
-from sprout_core.sprout_core import _bincount
+from sprout_core.sprout_core import _apply_lut, _bincount
 
 
 # ---------------------------------------------------------------------------
@@ -207,24 +207,19 @@ def _metadata_list(metadata_by_seed_id):
 def _apply_top_n(combine_seed, metadata_by_seed_id, top_n):
     if top_n is None:
         return combine_seed, metadata_by_seed_id
-    seed_areas = []
-    for seed_id in sorted(metadata_by_seed_id):
-        area = int((combine_seed == seed_id).sum())
-        seed_areas.append((area, seed_id))
-    keep_ids = {seed_id for _, seed_id in sorted(seed_areas, reverse=True)[:top_n]}
-    output = np.zeros_like(combine_seed)
+    seed_ids = sorted(metadata_by_seed_id)
+    length = max([int(combine_seed.max())] + seed_ids) + 1
+    counts = _bincount(combine_seed, length)
+    ranked = sorted(((int(counts[sid]), sid) for sid in seed_ids), reverse=True)[:top_n]
+    lut = np.zeros(length, combine_seed.dtype)
     new_metadata = {}
-    next_id = 1
-    for _, old_seed_id in sorted(seed_areas, reverse=True):
-        if old_seed_id not in keep_ids:
-            continue
-        output[combine_seed == old_seed_id] = next_id
+    for next_id, (area, old_seed_id) in enumerate(ranked, start=1):
+        lut[old_seed_id] = next_id
         item = dict(metadata_by_seed_id[old_seed_id])
         item["original_seed_id"] = int(old_seed_id)
-        item["area"] = int((output == next_id).sum())
+        item["area"] = area
         new_metadata[next_id] = item
-        next_id += 1
-    return output, new_metadata
+    return _apply_lut(lut, combine_seed), new_metadata
 
 
 def _save_intermediate_seed(combine_seed, intermediate_folder, prefix, step_index):
@@ -605,10 +600,11 @@ def adaptive_seed_s2l_from_seeds(
         # removed. Assumes the loosest seed cleanly captures the whole target.
         combine_seed[array_seeds[-1] == 0] = 0
 
+    final_areas = _bincount(combine_seed, next_seed_id)
     for seed_id, item in metadata_by_seed_id.items():
         if item["finalization_reason"] is None:
             item["finalization_reason"] = "never_merged"
-        item["area"] = int((combine_seed == seed_id).sum())
+        item["area"] = int(final_areas[seed_id])
 
     # Drop ghost seeds with no voxels left (e.g. an emerged seed later fully
     # overwritten by a neighbouring grow); they hold no pixels in combine_seed.
@@ -825,10 +821,11 @@ def adaptive_seed_l2s_from_seeds(
                 f"total={time.perf_counter() - start_time:.2f}s"
             )
 
+    final_areas = _bincount(combine_seed, next_seed_id)
     for seed_id, item in metadata_by_seed_id.items():
         if item["finalization_reason"] is None:
             item["finalization_reason"] = "active_at_end"
-        item["area"] = int((combine_seed == seed_id).sum())
+        item["area"] = int(final_areas[seed_id])
 
     combine_seed, metadata_by_seed_id = _apply_top_n(combine_seed, metadata_by_seed_id, top_n)
     seed_metadata = _metadata_list(metadata_by_seed_id)
