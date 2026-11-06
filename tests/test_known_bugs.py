@@ -75,7 +75,6 @@ def test_1_overwrite_stays_in_the_threshold(tmp_path):
 
 
 @pytest.mark.core
-@bug(3, "float thresholds are cut to int, so [0.5, 0.9] becomes [0, 0]")
 def test_3_float_thresholds_are_kept():
     thresholds, _ = config_core.check_and_assign_thresholds([0.5, 0.9], None)
     assert thresholds == [0.5, 0.9]
@@ -209,7 +208,10 @@ def test_15_more_threads_than_cores(tmp_path):
 PLUGIN_PROBES = [
     "edit_keeps_scale",                # 2
     "mapping_keeps_scale",             # 2
-    pytest.param("float_image_threshold_row", marks=bug(13, "a float image crashes the threshold tables")),
+    "float_image_threshold_row",       # 13
+    "float_image_keeps_decimals",      # 13
+    "float_image_grow_table",          # 13
+    "float_image_histogram_row",       # 13
     "import_adaptive_template",        # 16
     "import_single_values_into_grow",  # 16
     "load_scheme_checks_the_file",     # 17

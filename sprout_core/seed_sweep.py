@@ -80,7 +80,7 @@ def _generate_one_threshold_step(img, lower, upper, footprint_list, erosion_step
 
 def _single_upper(upper_thresholds):
     """The upper threshold of an erosion sweep, given as one value or a list of one."""
-    if upper_thresholds is None or isinstance(upper_thresholds, int):
+    if upper_thresholds is None or isinstance(upper_thresholds, (int, float)):
         return upper_thresholds
     if len(upper_thresholds) != 1:
         raise ValueError(f"An erosion sweep has one threshold, so it takes one upper threshold. Got {upper_thresholds}.")
@@ -327,8 +327,8 @@ def run_seed_sweep(config_path):
     start = time.time()
 
     # Auto-detect mode: single int or [x] → erosion, list >1 → threshold
-    if isinstance(thresholds, int) or (isinstance(thresholds, list) and len(thresholds) == 1):
-        single_threshold = thresholds if isinstance(thresholds, int) else thresholds[0]
+    if isinstance(thresholds, (int, float)) or (isinstance(thresholds, list) and len(thresholds) == 1):
+        single_threshold = thresholds[0] if isinstance(thresholds, list) else thresholds
         single_upper = _single_upper(upper_thresholds)
         ordered_paths, _ = seed_sweep_erosion(
             img=img,

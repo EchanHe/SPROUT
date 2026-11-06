@@ -167,8 +167,8 @@ def run_sweep_adaptive_seed_from_dict(config):
         if verbose:
             print(f"[sweep_adaptive] Phase 1: sweep into {sweep_folder}")
 
-        if isinstance(thresholds, int) or (isinstance(thresholds, list) and len(thresholds) == 1):
-            single_threshold = thresholds if isinstance(thresholds, int) else thresholds[0]
+        if isinstance(thresholds, (int, float)) or (isinstance(thresholds, list) and len(thresholds) == 1):
+            single_threshold = thresholds[0] if isinstance(thresholds, list) else thresholds
             single_upper = _single_upper(upper_thresholds)
             ordered_paths, sweep_direction = seed_sweep_erosion(
                 img=img,

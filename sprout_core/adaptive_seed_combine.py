@@ -67,10 +67,10 @@ COMBINE_L2S_KEYS = frozenset({
 # ---------------------------------------------------------------------------
 
 def _threshold_from_name(path):
-    match = re.search(r"thre_(\d+)", Path(path).name)
+    match = re.search(r"thre_(\d+(?:\.\d+)?)", Path(path).name)
     if match is None:
         raise ValueError(f"Could not find a threshold value in file name: {path}")
-    return int(match.group(1))
+    return float(match.group(1))
 
 
 def load_threshold_sweep_seeds(file_paths, sort_by_threshold=True, strict_to_loose=True):
