@@ -827,6 +827,11 @@ def adaptive_seed_l2s_from_seeds(
             item["finalization_reason"] = "active_at_end"
         item["area"] = int(final_areas[seed_id])
 
+    # A disappeared seed that was not kept holds no voxels
+    metadata_by_seed_id = {
+        sid: item for sid, item in metadata_by_seed_id.items() if item["area"] > 0
+    }
+
     combine_seed, metadata_by_seed_id = _apply_top_n(combine_seed, metadata_by_seed_id, top_n)
     seed_metadata = _metadata_list(metadata_by_seed_id)
 

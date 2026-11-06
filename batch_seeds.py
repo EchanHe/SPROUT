@@ -195,7 +195,7 @@ def run_batch_sweep_adaptive_seed(file_path):
     _, extension = os.path.splitext(file_path)
     print(f"processing config the file {file_path}")
     if extension == '.yaml':
-        with open(file_path, 'r') as f:
+        with open(file_path, 'r', encoding='utf-8') as f:
             yaml_config = yaml.safe_load(f)
 
     print("Config for pipeline")
@@ -206,18 +206,24 @@ def run_batch_sweep_adaptive_seed(file_path):
     df = pd.read_csv(csv_path)
     sprout_core.check_tiff_files(df['img_path'])
 
+    yaml_config.pop("csv_path", None)
+    df['error'] = None
     for index, row in df.iterrows():
-        yaml_config.pop("csv_path", None)
-        config = config_core.merge_row_and_yaml_no_conflict(dict(row), yaml_config)
+        # a CSV column overrides the YAML, a blank cell keeps the YAML value
+        row = {k: v for k, v in row.items() if k != 'error' and not pd.isna(v)}
+        shared = {k: v for k, v in yaml_config.items() if k not in row}
         try:
+            config = config_core.merge_row_and_yaml_no_conflict(row, shared)
             make_sweep_adaptive_seed.run_sweep_adaptive_seed_from_dict(config)
         except Exception as e:
-            print(f"Error occurs when processing {config['img_path']}: {e}")
+            print(f"Error occurs when processing {row['img_path']}: {e}")
             df.loc[index, 'error'] = str(e)
 
-        df.loc[index, 'output_folder'] = config['output_folder']
+        df.loc[index, 'output_folder'] = row.get('output_folder', yaml_config.get('output_folder'))
 
-    df.to_csv(os.path.join(config['output_folder'],
+    output_folder = yaml_config['output_folder']
+    os.makedirs(output_folder, exist_ok=True)
+    df.to_csv(os.path.join(output_folder,
                            os.path.basename(csv_path) + f"_running_results_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"), index=False)
 
 

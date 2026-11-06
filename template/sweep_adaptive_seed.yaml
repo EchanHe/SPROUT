@@ -1,5 +1,5 @@
 # ── Input ────────────────────────────────────────────────────────────────────
-img_path: "./demo_data/foram_img.tif"
+img_path: "./demo_data/dog_img.tif"
 output_folder: "./result/sweep_adaptive"
 
 # ── Sweep (segment generation) ───────────────────────────────────────────────
@@ -42,9 +42,9 @@ s2l_mask_by_last_seed: false
 
 # loose_to_strict parameters
 # min fraction of a next-seed region (by its own area) overlapping a current seed to assign it there
-l2s_min_new_coverage: ~
+l2s_min_new_coverage: 0.5
 # max fraction of a new region (by its own area) overlapping any current seed, at/below which an unassigned region is treated as new
-l2s_max_new_coverage: ~
+l2s_max_new_coverage: 0.05
 # keep the last shape of seeds that disappear at a stricter threshold
 l2s_keep_disappeared: true
 
@@ -69,7 +69,7 @@ l2s_keep_disappeared: true
 # Direction of the pre-existing sweep files (only used with seeds_folder).
 # "s2l": step_000 is the strictest mask (lower ↓ / upper ↑ over steps).
 # "l2s": step_000 is the loosest mask (lower ↑ / upper ↓, or erosion sweep).
-# Default: "s2l". When running a fresh sweep this is auto-detected.
+# Default: read from the file names. When running a fresh sweep this is auto-detected.
 # seeds_sweep_direction: s2l
 
 # Root path prepended to all relative paths (useful for batch scripts).

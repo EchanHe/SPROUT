@@ -1,0 +1,308 @@
+"""
+The sweep route: what a run has to keep true, checked on a small image with a known answer.
+
+The expected values are computed here in the plainest way, not with the code under test.
+"""
+import builtins
+import inspect
+import subprocess
+import sys
+import tracemalloc
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import pytest
+import tifffile
+import yaml
+from scipy import ndimage
+from skimage import measure
+
+from test_checks import environment
+
+TESTS = Path(__file__).resolve().parent
+ROOT = TESTS.parent
+sys.path.insert(0, str(ROOT))
+
+import batch_seeds  # noqa: E402
+import make_sweep_adaptive_seed as sweep  # noqa: E402
+import sprout_core.config_core as config_core  # noqa: E402
+from sprout_core import adaptive_seed_combine as combine  # noqa: E402
+from sprout_core import seed_sweep  # noqa: E402
+
+THRESHOLDS = [200, 150, 100]
+pytestmark = pytest.mark.core
+
+
+def image():
+    """Two bright cores in one dim body, and a separate dim block."""
+    img = np.zeros((20, 40, 40), np.uint8)
+    img[4:16, 4:24, 4:24] = 120
+    img[6:14, 6:12, 6:12] = 220
+    img[6:14, 16:22, 16:22] = 220
+    img[6:14, 28:36, 28:36] = 170
+    return img
+
+
+def template(name="sweep_adaptive_seed.yaml"):
+    return yaml.safe_load(open(ROOT / "template" / name, encoding="utf-8"))
+
+
+def config(tmp_path, **changes):
+    path = tmp_path / "img.tif"
+    if not path.exists():
+        tifffile.imwrite(path, image())
+    values = template()
+    values.update(img_path=str(path), output_folder=str(tmp_path / "out"), thresholds=list(THRESHOLDS), segments=10,
+                  num_threads=1, min_area=1, top_n=None, verbose=False)
+    values.update(changes)
+    return values
+
+
+def run(values):
+    sweep.run_sweep_adaptive_seed_from_dict(values)
+    return Path(values["output_folder"]) / "img"
+
+
+def result(folder, name="s2l"):
+    return tifffile.imread(folder / "combine" / f"{name}_label.tif")
+
+
+def boundary_file(folder):
+    boundary = np.zeros(image().shape, np.uint8)
+    boundary[:, 14, :] = 1
+    tifffile.imwrite(folder / "boundary.tif", boundary)
+    return boundary > 0
+
+
+# ---- what the steps hold
+
+def test_steps_are_the_components_of_each_threshold(tmp_path):
+    folder = run(config(tmp_path))
+    steps = sorted((folder / "sweep").glob("step_*.tif"))
+    assert len(steps) == len(THRESHOLDS)
+    for path, threshold in zip(steps, THRESHOLDS):
+        expected = ndimage.label(image() >= threshold)[0]
+        got = tifffile.imread(path)
+        assert np.array_equal(got > 0, expected > 0), path.name
+        assert len(np.unique(got)) == len(np.unique(expected)), path.name
+
+
+def test_the_order_of_the_thresholds_does_not_matter(tmp_path):
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    down = run(config(tmp_path / "a"))
+    up = run(config(tmp_path / "b", thresholds=THRESHOLDS[::-1]))
+    assert np.array_equal(result(down), result(up))
+
+
+def test_threads_do_not_change_the_result(tmp_path):
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    one = run(config(tmp_path / "a", num_threads=1))
+    two = run(config(tmp_path / "b", num_threads=2))
+    assert np.array_equal(result(one), result(two))
+
+
+def test_strict_to_loose_keeps_the_cores_apart(tmp_path):
+    seeds = result(run(config(tmp_path)))
+    img = image()
+    assert seeds[10, 8, 8] != seeds[10, 18, 18] and seeds[10, 8, 8] and seeds[10, 18, 18]
+    assert seeds[10, 30, 30] not in (0, seeds[10, 8, 8], seeds[10, 18, 18])
+    assert not seeds[img < min(THRESHOLDS)].any()
+
+
+def test_both_gives_what_each_direction_gives(tmp_path):
+    for name in "abc":
+        (tmp_path / name).mkdir()
+    both = run(config(tmp_path / "a", direction="both"))
+    s2l = run(config(tmp_path / "b", direction="strict_to_loose"))
+    l2s = run(config(tmp_path / "c", direction="loose_to_strict"))
+    assert np.array_equal(result(both, "s2l"), result(s2l, "s2l"))
+    assert np.array_equal(result(both, "l2s"), result(l2s, "l2s"))
+
+
+# ---- the combine alone
+
+def nested_steps():
+    img = ndimage.gaussian_filter(np.random.default_rng(0).random((24, 32, 32)), 1.5)
+    return [measure.label(img >= np.quantile(img, q), connectivity=1) for q in (0.95, 0.85, 0.7, 0.5)]
+
+
+@pytest.mark.parametrize("keep", [True, False])
+def test_every_seed_of_the_metadata_is_in_the_image(keep):
+    steps = [np.zeros((6, 6, 6), np.uint16) for _ in range(2)]
+    steps[0][1:3, 1:3, 1:3] = 1
+    steps[0][4:6, 4:6, 4:6] = 2
+    steps[1][1:3, 1:3, 1:3] = 1                  # the second region disappears at the stricter step
+    seeds, metadata = combine.adaptive_seed_l2s_from_seeds(steps, input_mode="label", keep_disappeared=keep)
+    assert {item["seed_id"] for item in metadata} == set(np.unique(seeds)) - {0}
+    assert all(item["area"] == np.count_nonzero(seeds == item["seed_id"]) for item in metadata)
+
+
+@pytest.mark.parametrize("run_combine", [combine.adaptive_seed_s2l_from_seeds,
+                                         lambda s, **k: combine.adaptive_seed_l2s_from_seeds(s[::-1], **k)],
+                         ids=["s2l", "l2s"])
+def test_metadata_on_a_nested_sweep(run_combine):
+    seeds, metadata = run_combine(nested_steps(), input_mode="label", min_area=3)
+    assert {item["seed_id"] for item in metadata} == set(np.unique(seeds)) - {0}
+    assert all(item["area"] == np.count_nonzero(seeds == item["seed_id"]) for item in metadata)
+
+
+def test_memory_does_not_grow_with_the_regions():
+    shape = (64, 64, 64)
+    step = np.zeros(shape, np.uint16)
+    step[::4, ::4, ::4] = np.arange(1, 16 ** 3 + 1).reshape(16, 16, 16)    # 4096 regions
+    tracemalloc.start()
+    combine.adaptive_seed_s2l_from_seeds([step, step.copy()], input_mode="label")
+    peak = tracemalloc.get_traced_memory()[1]
+    tracemalloc.stop()
+    assert peak < 200 * step.size                # a mask per region would be 4096 * size
+
+
+# ---- configuration
+
+def test_workspace_reaches_the_boundary(tmp_path, monkeypatch):
+    boundary = boundary_file(tmp_path)
+    values = config(tmp_path, workspace=str(tmp_path), img_path="img.tif", output_folder="out",
+                    boundary_path="boundary.tif")
+    monkeypatch.chdir(tmp_path.parent)
+    sweep.run_sweep_adaptive_seed_from_dict(values)
+    assert not result(tmp_path / "out" / "img")[boundary].any()
+
+
+def test_workspace_in_seed_sweep_alone(tmp_path, monkeypatch):
+    boundary = boundary_file(tmp_path)
+    values = config(tmp_path, workspace=str(tmp_path), img_path="img.tif", output_folder="out",
+                    boundary_path="boundary.tif")
+    path = tmp_path / "sweep.yaml"
+    keys = config_core.input_val_seed_sweep
+    path.write_text(yaml.safe_dump({k: v for k, v in values.items() if k in keys}), encoding="utf-8")
+    monkeypatch.chdir(tmp_path.parent)
+    seed_sweep.run_seed_sweep(str(path))
+    steps = sorted((tmp_path / "out" / "img").glob("step_*.tif"))
+    assert steps and not tifffile.imread(steps[-1])[boundary].any()
+
+
+def test_a_wrong_seeds_folder_is_an_error(tmp_path):
+    values = config(tmp_path, seeds_folder=str(tmp_path / "no_such_folder"))
+    with pytest.raises(FileNotFoundError, match="no_such_folder"):
+        sweep.run_sweep_adaptive_seed_from_dict(values)
+
+
+@pytest.mark.parametrize("changes", [dict(thresholds=THRESHOLDS), dict(thresholds=THRESHOLDS[::-1]),
+                                     dict(thresholds=100, erosion_steps=3)],
+                         ids=["descending", "ascending", "erosion"])
+def test_seeds_folder_gives_what_a_fresh_run_gives(tmp_path, changes):
+    fresh = run(config(tmp_path, **changes))
+    again = config(tmp_path, output_folder=str(tmp_path / "again"), seeds_folder=str(fresh / "sweep"), **changes)
+    assert np.array_equal(result(fresh), result(run(again)))
+
+
+def test_step_files_of_two_runs_are_refused(tmp_path):
+    folder = run(config(tmp_path, output_folder=str(tmp_path / "a")))
+    steps = folder / "sweep"
+    (steps / "step_003_thre_180_None_ero_0.tif").write_bytes((steps / "step_000_thre_200_None_ero_0.tif").read_bytes())
+    values = config(tmp_path, output_folder=str(tmp_path / "b"), seeds_folder=str(steps))
+    with pytest.raises(ValueError, match="monotonic"):
+        sweep.run_sweep_adaptive_seed_from_dict(values)
+
+
+def test_seeds_sweep_direction_still_decides(tmp_path):
+    folder = run(config(tmp_path, output_folder=str(tmp_path / "a")))
+    steps = folder / "sweep"
+    named = steps.parent / "own_steps"
+    named.mkdir()
+    for index, path in enumerate(sorted(steps.glob("step_*.tif"))):
+        (named / f"step_{index}.tif").write_bytes(path.read_bytes())
+    values = config(tmp_path, output_folder=str(tmp_path / "b"), seeds_folder=str(named))
+    with pytest.raises(ValueError, match="seeds_sweep_direction"):
+        sweep.run_sweep_adaptive_seed_from_dict(values)
+    assert np.array_equal(result(folder), result(run({**values, "seeds_sweep_direction": "s2l"})))
+
+
+def test_an_erosion_sweep_takes_one_upper_threshold(tmp_path):
+    values = config(tmp_path, thresholds=[100], erosion_steps=2, upper_thresholds=[200, 255])
+    with pytest.raises(ValueError, match="upper"):
+        sweep.run_sweep_adaptive_seed_from_dict(values)
+
+
+def test_combine_keys_exist_in_the_functions():
+    known = {*inspect.signature(combine.adaptive_seed_s2l_from_seeds).parameters,
+             *inspect.signature(combine.adaptive_seed_l2s_from_seeds).parameters}
+    assert combine.COMBINE_SHARED_KEYS | combine.COMBINE_S2L_KEYS | combine.COMBINE_L2S_KEYS <= known
+
+
+# ---- templates
+
+def test_single_and_batch_templates_agree():
+    single, batch = template(), template("batch_sweep_adaptive_seed.yaml")
+    for key in single.keys() & batch.keys() - {"output_folder"}:
+        assert single[key] == batch[key], key
+
+
+def test_template_image_has_something_to_sweep():
+    path = ROOT / template()["img_path"]
+    assert len(np.unique(tifffile.imread(path)[::8, ::8, ::8])) > 2
+
+
+def test_template_loads_whatever_the_locale(monkeypatch):
+    real = builtins.open
+
+    def locale_open(file, mode="r", *args, **kwargs):
+        if "b" not in mode and not args and "encoding" not in kwargs:
+            kwargs["encoding"] = "cp932"
+        return real(file, mode, *args, **kwargs)
+
+    seen = []
+    monkeypatch.setattr(builtins, "open", locale_open)
+    monkeypatch.setattr(sweep, "run_sweep_adaptive_seed_from_dict", seen.append)
+    sweep.run_sweep_adaptive_seed(str(ROOT / "template" / "sweep_adaptive_seed.yaml"))
+    assert seen
+
+
+def test_a_console_without_arrows(tmp_path):
+    values = config(tmp_path, verbose=True)
+    path = tmp_path / "sweep.yaml"
+    path.write_text(yaml.safe_dump(values), encoding="utf-8")
+    env = environment(tmp_path)
+    env.update(PYTHONUTF8="0", PYTHONIOENCODING="cp1252")
+    r = subprocess.run([sys.executable, str(ROOT / "sprout.py"), "--sweep_adaptive", "--config", str(path)],
+                       cwd=ROOT, env=env, capture_output=True)
+    assert r.returncode == 0, r.stderr[-1000:]
+
+
+# ---- batch
+
+def batch_files(tmp_path, csv, **changes):
+    tifffile.imwrite(tmp_path / "img.tif", image())
+    tifffile.imwrite(tmp_path / "other.tif", image())
+    (tmp_path / "input.csv").write_text(csv.format(folder=tmp_path), encoding="utf-8")
+    values = template("batch_sweep_adaptive_seed.yaml")
+    values.update(csv_path=str(tmp_path / "input.csv"), output_folder=str(tmp_path / "out"), thresholds=list(THRESHOLDS),
+                  segments=10, num_threads=1, min_area=1, top_n=None, verbose=False)
+    values.update(changes)
+    path = tmp_path / "batch.yaml"
+    path.write_text(yaml.safe_dump(values), encoding="utf-8")
+    return str(path)
+
+
+def test_a_csv_column_overrides_the_config(tmp_path):
+    path = batch_files(tmp_path, '''img_path,thresholds
+{folder}/img.tif,"[200, 150]"
+{folder}/other.tif,
+''')
+    batch_seeds.run_batch_sweep_adaptive_seed(path)
+    assert len(list((tmp_path / "out" / "img" / "sweep").glob("step_*.tif"))) == 2
+    assert len(list((tmp_path / "out" / "other" / "sweep").glob("step_*.tif"))) == 3     # a blank cell: the config
+
+
+def test_a_failed_row_does_not_stop_the_batch(tmp_path):
+    path = batch_files(tmp_path, '''img_path,thresholds
+{folder}/img.tif,"[200, 100, 150]"
+{folder}/other.tif,
+''')
+    batch_seeds.run_batch_sweep_adaptive_seed(path)
+    assert (tmp_path / "out" / "other" / "combine" / "s2l_label.tif").is_file()
+    report = pd.read_csv(next((tmp_path / "out").glob("*_running_results_*.csv")))
+    assert report["error"].notna().tolist() == [True, False]
