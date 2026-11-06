@@ -41,7 +41,7 @@ import numpy as np
 import tifffile
 from skimage import measure
 
-from sprout_core.sprout_core import _apply_lut, _bincount
+from sprout_core.sprout_core import _apply_lut, _bincount, check_cancel
 
 
 # ---------------------------------------------------------------------------
@@ -429,6 +429,7 @@ def adaptive_seed_s2l_from_seeds(
     verbose=False,
     log_every=1,
     vectorize_overlap=False,
+    cancel=None,
     mask_by_last_seed=False,
 ):
     """Strict-to-loose adaptive seed: emerge / grow / lock events.
@@ -491,6 +492,7 @@ def adaptive_seed_s2l_from_seeds(
     for seed_index, seed in enumerate(array_seeds[1:], start=1):
         step_start = time.perf_counter()
 
+        check_cancel(cancel)
         if vectorize_overlap:
             regions, new_labeled = extract_regions(
                 seed, min_area=min_area, connectivity=connectivity,

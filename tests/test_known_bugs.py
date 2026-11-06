@@ -212,6 +212,7 @@ PLUGIN_PROBES = [
     "float_image_keeps_decimals",      # 13
     "float_image_grow_table",          # 13
     "float_image_histogram_row",       # 13
+    "sweep_method_of_the_seeds_tab",
     "import_adaptive_template",        # 16
     "import_single_values_into_grow",  # 16
     "load_scheme_checks_the_file",     # 17

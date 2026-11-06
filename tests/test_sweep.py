@@ -27,6 +27,7 @@ sys.path.insert(0, str(ROOT))
 import batch_seeds  # noqa: E402
 import make_sweep_adaptive_seed as sweep  # noqa: E402
 import sprout_core.config_core as config_core  # noqa: E402
+import sprout_core.sprout_core as sprout_core  # noqa: E402
 from sprout_core import adaptive_seed_combine as combine  # noqa: E402
 from sprout_core import seed_sweep  # noqa: E402
 
@@ -161,6 +162,46 @@ def test_regions_of_each_direction(tmp_path):
 
 def test_a_run_says_where_its_seeds_are(tmp_path):
     assert sweep.run_sweep_adaptive_seed_from_dict(config(tmp_path)) == [tmp_path / "out" / "img" / "FINAL_sweep_seed.tif"]
+
+
+# ---- from an array, as napari runs it
+
+def from_array(tmp_path, **changes):
+    values = dict(img=image(), thresholds=list(THRESHOLDS), erosion_steps=0, segments=10,
+                  output_folder=str(tmp_path / "array"), base_name="img")
+    values.update(changes)
+    return sweep.make_sweep_adaptive_seed(**values)
+
+
+def test_an_array_gives_what_a_yaml_gives(tmp_path):
+    seeds = from_array(tmp_path)["img_FINAL_sweep_seed"]
+    assert np.array_equal(seeds, result(run(config(tmp_path))))
+    assert seeds.dtype == np.uint16
+    assert (tmp_path / "array" / "img" / "FINAL_sweep_seed.tif").is_file()
+    assert (tmp_path / "array" / "img" / "sweep_regions.csv").is_file()
+
+
+@pytest.mark.parametrize("changes", [dict(thresholds=THRESHOLDS[::-1]), dict(thresholds=[100], erosion_steps=2),
+                                     dict(upper_thresholds=[255, 255, 255])],
+                         ids=["ascending", "erosion", "upper"])
+def test_an_array_in_each_mode(tmp_path, changes):
+    values = {k: v for k, v in changes.items()}
+    fresh = run(config(tmp_path, **values))
+    assert np.array_equal(from_array(tmp_path, **changes)["img_FINAL_sweep_seed"], result(fresh))
+
+
+def test_progress_ends_at_the_total(tmp_path):
+    seen = []
+    from_array(tmp_path, progress=lambda done, total, text: seen.append((done, total)))
+    assert seen == [(1, 4), (2, 4), (3, 4), (4, 4)]
+
+
+@pytest.mark.parametrize("at", [0, 2, 3], ids=["start", "steps", "combine"])
+def test_stop_leaves_no_final(tmp_path, at):
+    seen = []
+    with pytest.raises(sprout_core.Cancelled):
+        from_array(tmp_path, cancel=lambda: len(seen) >= at, progress=lambda *a: seen.append(a))
+    assert not (tmp_path / "array" / "img" / "FINAL_sweep_seed.tif").exists()
 
 
 # ---- the combine alone

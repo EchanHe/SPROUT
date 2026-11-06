@@ -171,6 +171,30 @@ def float_image_histogram_row(viewer):
     result(values == ([0.25], [0.75]), str(values))
 
 
+def sweep_method_of_the_seeds_tab(viewer):
+    tab = seed_tab(viewer)
+    img = np.zeros((8, 8, 8), np.uint8)
+    img[1:3] = 200
+    img[5:7] = 150
+    viewer.add_image(img, name="I", scale=SCALE, translate=TRANSLATE)
+    C.pump(10)
+    tab.image_combo.setCurrentText("I")
+    params = tab.main_param_widget
+    params.seed_method_combo.setCurrentText("Sweep (Thresholds)")
+    greyed = not tab.advanced_params_box.no_split_spin.isEnabled() and tab.advanced_params_box.min_size_spin.isEnabled()
+    params.populate_thresholds_from_list([180, 100], [255, 255])
+    tab.output_folder_line.setText(str(TMP))
+    tab.generate_seeds()
+    name = "I_FINAL_sweep_seed"
+    C.wait(lambda: name in viewer.layers, 60, "sweep layer")
+    C.pump(10)
+    seeds = viewer.layers[name].data
+    ok, why = keeps_scale(viewer.layers[name])
+    final = TMP / "I" / "FINAL_sweep_seed.tif"
+    result(greyed and ok and final.is_file() and len(np.unique(seeds)) == 3 and len(viewer.layers) == 2,
+           f"{why}, greyed {greyed}, ids {np.unique(seeds)}, layers {[l.name for l in viewer.layers]}")
+
+
 def load_scheme_checks_the_file(viewer):
     viewer.add_labels(labels(), name="L")
     _, mapping = viewer.window.add_plugin_dock_widget("napari-sprout", "Label Mapping")

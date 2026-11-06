@@ -9,7 +9,7 @@
 **Q: Should I use adaptive seed or sweep adaptive seed?**
 
 -   Use **sweep adaptive seed** for many seeds or a long list of thresholds: it uses every step and stays fast.
--   Use **adaptive seed** to reproduce results of the paper, or to work in napari.
+-   Use **adaptive seed** to reproduce results of the paper.
 -   They give different seeds, so compare them on your own data. See [the comparison](./config_sweep_adaptive_seed.md#which-adaptive-seed-should-i-use).
 
 **Q: Can I use a probability map of a model as the image?**

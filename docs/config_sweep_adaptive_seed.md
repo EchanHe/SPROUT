@@ -23,9 +23,15 @@ With `direction: loose_to_strict`, the steps are combined the other way: seeds s
 | Method | Every step is used | The method of the paper: follows splits, stops after `no_split_max_iter` steps without a split |
 | Many seeds | Run time hardly changes | Run time grows with the number of seeds |
 | A long list of close thresholds | Every threshold is used | Set `no_split_max_iter` above the number of thresholds, or it may stop early |
-| napari | Command line only for now | Seeds tab |
+| napari | Seeds tab, Method `Sweep (Thresholds)` | Seeds tab, Method `Adaptive` |
 
 Use sweep adaptive seed when you want many seeds or a long list of thresholds. Use adaptive seed to reproduce results of the paper. The two give different seeds, so compare them on your own data.
+
+### In napari
+
+In the Seeds tab, set Method to `Sweep (Thresholds)`. The rows of the threshold table are the steps, in descending or ascending order; with one row, each erosion step is a step. Threads, Segments and the footprints work as here, and `Min segment size` under the advanced parameters is `min_area`.
+
+napari runs `strict_to_loose` and adds one layer, `<image>_FINAL_sweep_seed`, which the Grow tab picks up. The files below are written to the output folder. The other parameters of this page are for YAML runs.
 
 ## Required Parameters
 

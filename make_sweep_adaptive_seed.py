@@ -38,6 +38,7 @@ import tifffile
 import yaml
 
 import sprout_core.config_core as config_core
+import sprout_core.sprout_core as sprout_core
 from sprout_core.adaptive_seed_combine import (
     COMBINE_L2S_KEYS,
     COMBINE_S2L_KEYS,
@@ -147,6 +148,76 @@ def _save_result(combine_seed, seed_metadata, steps, step_paths, output_folder, 
 # Core pipeline (accepts config dict — used by both single and batch runs)
 # ---------------------------------------------------------------------------
 
+def _is_erosion_sweep(thresholds):
+    return isinstance(thresholds, (int, float)) or (isinstance(thresholds, list) and len(thresholds) == 1)
+
+
+def _run_sweep(img, folder, thresholds, upper_thresholds, erosion_steps, segments, boundary, footprints,
+               num_threads, verbose, seeds, cancel=None, step=None):
+    """Phase 1: one threshold is an erosion sweep, several are a threshold sweep. Fills `seeds`."""
+    if _is_erosion_sweep(thresholds):
+        return seed_sweep_erosion(
+            img=img,
+            output_folder=folder,
+            threshold=thresholds[0] if isinstance(thresholds, list) else thresholds,
+            upper_threshold=_single_upper(upper_thresholds),
+            erosion_steps=erosion_steps,
+            segments=segments,
+            boundary=boundary,
+            footprints=footprints,
+            verbose=verbose,
+            seeds_out=seeds,
+            cancel=cancel,
+            step=step,
+        )
+    return seed_sweep_threshold(
+        img=img,
+        output_folder=folder,
+        thresholds=thresholds,
+        upper_thresholds=upper_thresholds,
+        erosion_steps=erosion_steps,
+        segments=segments,
+        boundary=boundary,
+        footprints=footprints,
+        num_threads=num_threads,
+        verbose=verbose,
+        seeds_out=seeds,
+        cancel=cancel,
+        step=step,
+    )
+
+
+def make_sweep_adaptive_seed(img, thresholds, erosion_steps, segments, output_folder, base_name="sweep",
+                             upper_thresholds=None, boundary=None, footprints=None, num_threads=1, min_area=1,
+                             cancel=None, progress=None):
+    """Sweep and strict-to-loose combine of an array, for napari. Returns {layer name: seeds}.
+
+    Writes the same files as a YAML run. cancel: raises Cancelled between steps.
+    progress: callable(done, total, text).
+    """
+    n_steps = erosion_steps + 1 if _is_erosion_sweep(thresholds) else len(thresholds)
+    steps = sprout_core.StepProgress(progress, n_steps + 1)
+    folder = os.path.abspath(os.path.join(output_folder, base_name))
+    seeds = []
+    paths, sweep_direction = _run_sweep(
+        img, os.path.join(folder, "steps"), thresholds, upper_thresholds, erosion_steps, segments, boundary,
+        footprints, num_threads, False, seeds, cancel, steps.step,
+    )
+    if sweep_direction == "l2s":
+        seeds, paths = seeds[::-1], paths[::-1]
+    result, metadata = adaptive_seed_s2l_from_seeds(seeds, min_area=min_area, input_mode="label", verbose=False,
+                                                    cancel=cancel)
+    sprout_core.check_cancel(cancel)
+    _save_result(result, metadata, seeds, paths, folder)
+    config_core.save_config_with_output({"params": {
+        "thresholds": thresholds, "upper_thresholds": upper_thresholds, "erosion_steps": erosion_steps,
+        "segments": segments, "footprints": footprints, "num_threads": num_threads, "min_area": min_area,
+        "direction": "strict_to_loose", "input_mode": "label",
+    }}, folder)
+    steps.step("combine")
+    return {f"{base_name}_FINAL_sweep_seed": sprout_core.cast_labels(result, np.uint16)}
+
+
 def run_sweep_adaptive_seed_from_dict(config):
     """Run the full sweep + combine pipeline from a config dict. Returns the paths of the final seeds."""
     optional = config_core.validate_input_yaml(config, config_core.input_val_sweep_adaptive_seed)
@@ -211,38 +282,10 @@ def run_sweep_adaptive_seed_from_dict(config):
         if verbose:
             print(f"[sweep_adaptive] Phase 1: sweep into {sweep_folder}")
 
-        if isinstance(thresholds, (int, float)) or (isinstance(thresholds, list) and len(thresholds) == 1):
-            single_threshold = thresholds[0] if isinstance(thresholds, list) else thresholds
-            single_upper = _single_upper(upper_thresholds)
-            ordered_paths, sweep_direction = seed_sweep_erosion(
-                img=img,
-                output_folder=sweep_folder,
-                threshold=single_threshold,
-                upper_threshold=single_upper,
-                erosion_steps=erosion_steps,
-                segments=segments_count,
-                boundary=boundary,
-                footprints=footprints,
-                verbose=verbose,
-                seeds_out=seeds,
-            )
-        else:
-            ordered_paths, sweep_direction = seed_sweep_threshold(
-                img=img,
-                output_folder=sweep_folder,
-                thresholds=thresholds,
-                upper_thresholds=upper_thresholds,
-                erosion_steps=erosion_steps,
-                segments=segments_count,
-                boundary=boundary,
-                footprints=footprints,
-                num_threads=num_threads,
-                verbose=verbose,
-                seeds_out=seeds,
-            )
-
-    if verbose:
-        print(f"[sweep_adaptive] loaded {len(seeds)} sweep steps (sweep_direction={sweep_direction})")
+        ordered_paths, sweep_direction = _run_sweep(
+            img, sweep_folder, thresholds, upper_thresholds, erosion_steps, segments_count, boundary,
+            footprints, num_threads, verbose, seeds,
+        )
 
     # ------------------------------------------------------------------ #
     # Phase 2: combine                                                     #

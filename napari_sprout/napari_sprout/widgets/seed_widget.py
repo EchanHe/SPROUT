@@ -12,7 +12,7 @@ from typing import Optional
 from napari.layers import Image, Labels
 from napari.utils.notifications import show_info, show_error
 
-from ..utils.util_widget import (as_list, create_output_folder_row, SeedOptionalParamGroupBox,
+from ..utils.util_widget import (SWEEP_METHOD, as_list, create_output_folder_row, SeedOptionalParamGroupBox,
                                  MainSeedParamWidget, ThresholdWidget,apply_threshold_preview)
 from ..utils.histogram_threshold_widget import PREVIEW_NAME, HistogramThresholdWidget, append_threshold_row
 from ..utils.boundary_check import boundary_ok
@@ -34,6 +34,7 @@ if root_dir not in sys.path:
     
 from make_seeds import make_seeds
 from make_adaptive_seed import make_adaptive_seed_thre, make_adaptive_seed_ero
+from make_sweep_adaptive_seed import make_sweep_adaptive_seed
 from sprout_core import roi as R
 from sprout_core.roi import RoiError
 
@@ -51,7 +52,7 @@ class SeedWorker:
                     ):
         self.roi = roi   # sprout_core.roi.Roi or None (whole image)
         ## Parameters for both original and adaptive seed making
-        self.seed_mode = seed_mode  # "Original", "Adaptive (Erosion)", "Adaptive (Thresholds)"
+        self.seed_mode = seed_mode  # "Original", "Adaptive (Erosion)", "Adaptive (Thresholds)", SWEEP_METHOD
         self.img = img
         self.boundary = boundary
         self.thresholds = thresholds
@@ -87,7 +88,7 @@ class SeedWorker:
         the number of files written (files_written)."""
         watch = jobs.FolderWatch(self.folder)
         try:
-            if self.seed_mode not in ["Original", "Adaptive (Erosion)", "Adaptive (Thresholds)"]:
+            if self.seed_mode not in ["Original", "Adaptive (Erosion)", "Adaptive (Thresholds)", SWEEP_METHOD]:
                 raise ValueError("Invalid seed mode selected.")
             if self.roi is not None:
                 # ROI as a wall: run on its bbox + 1, outside the ROI counts as boundary
@@ -167,6 +168,21 @@ class SeedWorker:
                     return_for_napari=True,
                     cancel=cancel, progress=progress
                 )
+            elif self.seed_mode == SWEEP_METHOD:
+                seeds_dict = make_sweep_adaptive_seed(
+                    img=self.img,
+                    boundary=self.boundary,
+                    thresholds=self.thresholds,
+                    upper_thresholds=self.upper_thresholds,
+                    erosion_steps=self.erosion_steps,
+                    segments=self.segments,
+                    output_folder=self.output_folder,
+                    num_threads=self.num_threads,
+                    footprints=self.footprints,
+                    base_name=self.base_name,
+                    min_area=self.min_size,
+                    cancel=cancel, progress=progress
+                )
             jobs.check_cancel(cancel)         # Stop after the last step: no layers either
             if self.roi is not None:
                 seeds_dict = R.paste_seeds(self.roi, seeds_dict)
@@ -178,7 +194,7 @@ class SeedWorker:
 
     def stopped(self, e, done, total):
         """The orange line after Stop."""
-        unit = {"Original": "seeds", "Adaptive (Erosion)": "steps"}.get(self.seed_mode, "thresholds")
+        unit = {"Original": "seeds", "Adaptive (Erosion)": "steps", SWEEP_METHOD: "steps"}.get(self.seed_mode, "thresholds")
         return jobs.stopped_text(done, total, unit, getattr(e, "files_written", None))
 
 
@@ -437,6 +453,7 @@ class SeedGenerationWidget(QWidget):
         hub.layer_renamed.connect(self._on_layer_renamed)
         # Tab reaches Import / Export YAML where they are shown: before the parameters
         put_in_tab_order(self.main_param_widget.seed_method_combo, self.import_btn, self.export_btn)
+        self.main_param_widget.seed_method_combo.currentTextChanged.connect(self.advanced_params_box.set_method)
 
     def showEvent(self, event):
         super().showEvent(event)
