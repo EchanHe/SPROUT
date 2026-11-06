@@ -6,8 +6,6 @@ from tifffile import imread, imwrite
 import os,sys
 from datetime import datetime
 
-import threading
-lock = threading.Lock()
 import time
 import yaml
 from scipy.spatial import ConvexHull, QhullError
@@ -66,32 +64,23 @@ def split_convex_hull_check(mask, split_convex_hull_limit):
         
     return split_size_condition
 
-def detect_inter(ccomp_combine_seed,ero_seed, seed_ids, inter_log , lock):
+def detect_inter(ccomp_combine_seed, ero_seed, inter_log, background=0):
     """
-    Detect intersections between seeds and combined components.
+    Detect the seeds inside a combined component, in one pass and in ascending id order.
 
     Args:
         ccomp_combine_seed (np.ndarray): Combined seed mask.
         ero_seed (np.ndarray): Eroded seed mask.
-        seed_ids (list): List of seed IDs to process.
         inter_log (dict): Dictionary to log intersection results.
-        lock (threading.Lock): Threading lock for shared resources.
+        background (int, optional): Background value. Defaults to 0.
     """
-    
-    for seed_id in seed_ids:
-        # seed_ccomp = ero_seed == seed_id
-        coords = np.where(ero_seed == seed_id)
-        # Check if there are intersection using the sum of intersection
-        inter = np.sum(ccomp_combine_seed[coords])
-
-        with lock:
-            if inter>0:
-                inter_log["inter_count"] +=1
-                
-                inter_log["inter_ids"] = np.append(inter_log["inter_ids"] , seed_id)
-                
-                prop = round(inter / np.sum(ccomp_combine_seed),6)*100
-                inter_log["inter_props"] = np.append(inter_log["inter_props"], prop)
+    inter_counts = np.bincount(ero_seed[ccomp_combine_seed])
+    inter_ids = np.flatnonzero(inter_counts)
+    inter_ids = inter_ids[inter_ids != background]
+    region_size = np.sum(ccomp_combine_seed)
+    inter_log["inter_count"] = inter_ids.size
+    inter_log["inter_ids"] = inter_ids.astype(float)
+    inter_log["inter_props"] = np.array([round(c / region_size, 6) * 100 for c in inter_counts[inter_ids]])
 
 def save_seed(seed, output_folder, output_name, return_for_napari=False, seeds_dict=None):
     """
@@ -344,7 +333,6 @@ def make_adaptive_seed_ero(
 
 
 
-        seed_ids = [int(value) for value in np.unique(seed) if value != background]
         combine_ids = [int(value) for value in np.unique(combine_seed) if value != background]
        
         has_split = False
@@ -361,22 +349,7 @@ def make_adaptive_seed_ero(
             sprout_core.check_cancel(cancel)
             ccomp_combine_seed = combine_seed == combine_id
             
-            inter_log["inter_count"] = 0
-            inter_log["inter_ids"] = np.array([])
-            inter_log["inter_props"] = np.array([])
-            
-            sublists = [seed_ids[i::num_threads] for i in range(num_threads)]
-            # One thread per sublist; an exception in a thread is re-raised here
-            sprout_core.run_threads(detect_inter, [(ccomp_combine_seed,
-                                                    seed,
-                                                    sublist,
-                                                    inter_log,
-                                                    lock) for sublist in sublists])
-            # Threads append ids in whatever order they finish; sort so that new ids are
-            # assigned in ascending order, exactly as with a single thread.
-            _order = np.argsort(inter_log["inter_ids"], kind="stable")
-            inter_log["inter_ids"] = inter_log["inter_ids"][_order]
-            inter_log["inter_props"] = inter_log["inter_props"][_order]
+            detect_inter(ccomp_combine_seed, seed, inter_log, background)
         
         
             ## if there are any intersection between seed and the init seed
@@ -426,6 +399,7 @@ def make_adaptive_seed_ero(
                     output_dict["split_ori_id_filtered"][ero_iter][combine_id] = filtered_inter_ids
                     output_dict["split_prop"][ero_iter][combine_id] = inter_log["inter_props"]                    
         
+        if combine_ids:
             output_dict["total_id"][ero_iter] = len(np.unique(combine_seed))-1
     
         if has_split:
@@ -775,7 +749,6 @@ def make_adaptive_seed_thre(
                       return_for_napari=return_for_napari, seeds_dict=seeds_dict)
 
         
-        seed_ids = [int(value) for value in np.unique(seed) if value != background]
         combine_ids = [int(value) for value in np.unique(combine_seed) if value != background]
         
         
@@ -793,22 +766,7 @@ def make_adaptive_seed_thre(
             sprout_core.check_cancel(cancel)
             ccomp_combine_seed = combine_seed == combine_id
             
-            inter_log["inter_count"] = 0
-            inter_log["inter_ids"] = np.array([])
-            inter_log["inter_props"] = np.array([])
-            
-            sublists = [seed_ids[i::num_threads] for i in range(num_threads)]
-            # One thread per sublist; an exception in a thread is re-raised here
-            sprout_core.run_threads(detect_inter, [(ccomp_combine_seed,
-                                                    seed,
-                                                    sublist,
-                                                    inter_log,
-                                                    lock) for sublist in sublists])
-            # Threads append ids in whatever order they finish; sort so that new ids are
-            # assigned in ascending order, exactly as with a single thread.
-            _order = np.argsort(inter_log["inter_ids"], kind="stable")
-            inter_log["inter_ids"] = inter_log["inter_ids"][_order]
-            inter_log["inter_props"] = inter_log["inter_props"][_order]
+            detect_inter(ccomp_combine_seed, seed, inter_log, background)
         
         
             ## if there are any intersection between seed and the init seed
@@ -888,6 +846,7 @@ def make_adaptive_seed_thre(
                     output_dict["split_prop"][threshold][combine_id] = inter_log["inter_props"]
                 
         
+        if combine_ids:
             output_dict["total_id"][threshold] = len(np.unique(combine_seed))-1
     
         if has_split:

@@ -181,11 +181,11 @@ try:
     r, why = raises(make_adaptive_seed.make_adaptive_seed_ero, img=dog, threshold=140, upper_threshold=255,
                     erosion_steps=3, segments=10, num_threads=2, output_folder=str(tmp / "a1_ero"),
                     footprints="ball", return_for_napari=True)
-    ok(r, f"make_adaptive_seed_ero raises the thread's exception ({why.splitlines()[-1]})")
+    ok(r, f"make_adaptive_seed_ero raises the exception ({why.splitlines()[-1]})")
     r, why = raises(make_adaptive_seed.make_adaptive_seed_thre, img=dog, thresholds=[130, 150, 170],
                     upper_thresholds=[255, 255, 255], erosion_steps=1, segments=10, num_threads=2,
                     output_folder=str(tmp / "a1_thre"), footprints="ball", return_for_napari=True)
-    ok(r, f"make_adaptive_seed_thre raises the thread's exception ({why.splitlines()[-1]})")
+    ok(r, f"make_adaptive_seed_thre raises the exception ({why.splitlines()[-1]})")
 finally:
     make_adaptive_seed.detect_inter = saved
 
