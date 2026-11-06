@@ -63,7 +63,8 @@ l2s_keep_disappeared: true
 # Output subfolder name. Defaults to the image filename without extension.
 # base_name: ~
 
-# If set and the folder exists, skip sweep and load step_*.tif files from here.
+# If set, skip sweep and load step_*.tif files from here (the steps folder of an earlier run).
+# A folder that does not exist is an error.
 # seeds_folder: ~
 
 # Direction of the pre-existing sweep files (only used with seeds_folder).

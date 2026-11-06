@@ -46,6 +46,14 @@ The output will segment the four target bones, but allows a more flexible parame
 
 Also if the task requires segmenting more bones, adaptive seed generation can retain small parts.
 
+### Example: sweep adaptive seed
+
+```bash
+python sprout.py --sweep_adaptive --config ./template/sweep_adaptive_seed.yaml
+```
+
+This makes one seed per threshold of the template and combines them, in a few seconds on the dog. The result is `./result/sweep_adaptive/dog_img/FINAL_sweep_seed.tif`; give it to growth as `seg_path`. See [the options](./config_sweep_adaptive_seed.md).
+
 ### Example: Threshold-based Growth
 
  Growth can be applied by with multiple threshold ranges (from narrow to wide). This allows seed regions to expand incrementally and helps control overgrowth. 

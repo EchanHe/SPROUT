@@ -13,7 +13,7 @@ This configuration file defines the arguments used for growing labeled seeds in 
 | Parameter        | Required | Type            | Description                                                                          |
 | ---------------- | -------- | --------------- | ------------------------------------------------------------------------------------ |
 | `img_path`       | ✅        | `str`           | Path to the input image file (must end with `.tif` or `.tiff`).                      |
-| `seg_path`       | ✅        | `str`           | Path to the seed/segmentation image to grow (must end with `.tif` or `.tiff`).       |
+| `seg_path`       | ✅        | `str`           | Path to the seed/segmentation image to grow (must end with `.tif` or `.tiff`), such as `FINAL_adaptive_seed.tif` or `FINAL_sweep_seed.tif`. |
 | `thresholds`     | ✅        | `int` or `list` | List of intensity lower thresholds to grow along. Should be ordered from high to low, to gradually allow growing more area/volume     |
 | `dilation_steps` | ✅        | `int` or `list` | Number of dilation steps at each threshold. Should match the length of `thresholds`. Or set as an int, it will propagate to match length of `thresholds`|
 | `touch_rule`     | ✅        | `str`           | Rule when a label touches another. Currently supports `"stop"` or `"overwrite"`.                 |

@@ -7,6 +7,8 @@
 - napari: **ROI & Boundary** tab: run any tab inside a region of interest; make boundary masks (top-hat).
 - napari: Threshold Preview; progress and Stop for Seeds, Grow and Boundary.
 - YAML: `seed` (nnInteractive pipeline, default 0); `prune_every_iter` (adaptive seed).
+- **Sweep adaptive seed** (`--sweep_adaptive`): one seed per threshold or erosion step, combined into `FINAL_sweep_seed.tif`, with `sweep_regions.csv` and `sweep_steps.csv`. See `docs/config_sweep_adaptive_seed.md`.
+- Float images: decimal thresholds in seeds, adaptive seed, sweep and grow, in the YAML and in napari, for example on probability maps.
 
 ### Results that change
 - Grow: multi-threaded runs give the single-thread result; seed voxels outside the allowed range do not grow.
@@ -15,11 +17,18 @@
 - Adaptive seed: deterministic id order; the boundary also applies in threshold mode.
 - nnInteractive pipeline: fixed random seed (earlier runs were not reproducible).
 - napari Edit: "Split all" + "Sort by size" now splits every region.
+- Grow: `touch_rule: overwrite` stays inside the threshold (it left a one-voxel ring outside).
+- A non-integer threshold is no longer cut: 150.7 was 150.
 
 ### Changed
 - napari: Edit "all regions" operations are much faster; Undo restores the layer it changed.
 - napari: result layers are at least uint16; files keep the smallest dtype.
 - napari: the old Prompts and Load docks were removed.
+- napari: Edit and Label Mapping results keep the scale and translate of their layer.
+- napari: Seeds and Grow Export write the file of a layer, and Import finds the layer by it.
+- Adaptive seed is much faster with many seeds, with the same results.
+- A footprint for the other dimension is an error (it did nothing). A negative label id is an error (it wrapped around).
+- `num_threads` above the CPU cores falls back to the cores, with a warning (it was an error).
 
 ## 1.0.0 (2026-10-15)
 First release.

@@ -10,6 +10,8 @@ This mode generates seeds by either varying thresholds or erosion steps and trac
 
 Similar to the `--seeds` mode, it requires a configuration file with parameters for seed generation.
 
+This is the method of the paper. For many seeds or a long list of thresholds, see [sweep adaptive seed](./config_sweep_adaptive_seed.md). With close thresholds, set `no_split_max_iter` above the number of thresholds, or the run may stop early.
+
 ## Required Parameters
 
 | Parameter         | Required | Type               | Description |
