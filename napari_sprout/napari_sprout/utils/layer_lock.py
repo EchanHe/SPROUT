@@ -15,6 +15,11 @@ from napari.layers import Labels
 _held = {}   # id(layer) -> [layer, runs holding it, editable before the first]
 
 
+def placement(layer):
+    """What a new layer needs to lie over `layer` in the viewer."""
+    return {"scale": layer.scale, "translate": layer.translate}
+
+
 def lock_layers(viewer, arrays):
     """Lock every Labels layer of `viewer` whose data is one of `arrays` (by identity).
     Returns the locked layers (pass them to unlock_layers)."""

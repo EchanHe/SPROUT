@@ -62,7 +62,6 @@ def small_grow_files(folder):
 
 
 @pytest.mark.core
-@bug(1, "touch_rule='overwrite' grows into voxels below the threshold")
 def test_1_overwrite_stays_in_the_threshold(tmp_path):
     img = np.zeros((20, 20, 20), np.uint8)
     img[:, :, :10] = 200
@@ -210,8 +209,8 @@ def test_15_more_threads_than_cores(tmp_path):
 
 
 PLUGIN_PROBES = [
-    pytest.param("edit_keeps_scale", marks=bug(2, "Edit results drop the scale and translate of their layer")),
-    pytest.param("mapping_keeps_scale", marks=bug(2, "Label Mapping results drop the scale and translate")),
+    "edit_keeps_scale",                # 2
+    "mapping_keeps_scale",             # 2
     pytest.param("float_image_threshold_row", marks=bug(13, "a float image crashes the threshold tables")),
     "import_adaptive_template",        # 16
     "import_single_values_into_grow",  # 16
