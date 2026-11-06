@@ -41,6 +41,8 @@ import numpy as np
 import tifffile
 from skimage import measure
 
+from sprout_core.sprout_core import _bincount
+
 
 # ---------------------------------------------------------------------------
 # Parameter key sets for direction splitting (used by both/direction logic)
@@ -115,19 +117,51 @@ def _detect_input_mode(seeds, input_mode):
     return "binary"
 
 
+def _regions_from_labels(labels, min_area):
+    """All regions of a label map in one pass, as flat voxel indices (ascending label).
+
+    Same regions in the same order as one `labels == id` scan per id, without a
+    full-volume mask per region.
+    """
+    flat = labels.reshape(-1)
+    voxels = np.flatnonzero(flat)
+    if voxels.size == 0:
+        return []
+    values = flat[voxels]
+    order = np.argsort(values, kind="stable")
+    voxels, values = voxels[order], values[order]
+    starts = np.flatnonzero(np.r_[True, values[1:] != values[:-1]])
+    stops = np.r_[starts[1:], values.size]
+    regions = []
+    for start, stop in zip(starts.tolist(), stops.tolist()):
+        if stop - start >= min_area:
+            regions.append({"voxels": voxels[start:stop], "area": stop - start,
+                            "source_label": int(values[start])})
+    return regions
+
+
+def _clear_seed(flat_seed, seed_voxels, seed_id):
+    """flat_seed[flat_seed == seed_id] = 0, reading only the seed's last-written voxels."""
+    voxels = seed_voxels[seed_id]
+    flat_seed[voxels[flat_seed[voxels] == seed_id]] = 0
+
+
 def extract_regions(mask, min_area=1, connectivity=1, input_mode="binary", return_labeled=False):
     """Extract regions from a binary mask or an already-labelled segmentation.
 
     In binary mode, nonzero voxels are split into connected components. In label
     mode, each nonzero value is treated as one already-separated region.
 
-    If return_labeled=True, region dicts omit the 'mask' key and the labeled
-    array is returned as a second value. Used by the vectorized overlap path.
+    Each region holds its flat voxel indices under 'voxels'. If return_labeled=True,
+    region dicts have no voxels and the labeled array is returned as a second value.
+    Used by the vectorized overlap path.
     """
     regions = []
 
     if input_mode == "binary":
         labeled = measure.label(mask.astype(bool), background=0, connectivity=connectivity)
+        if not return_labeled:
+            return _regions_from_labels(labeled, min_area)
         sizes = np.bincount(labeled.ravel())
         for label_id in range(1, len(sizes)):
             area = int(sizes[label_id])
@@ -140,6 +174,9 @@ def extract_regions(mask, min_area=1, connectivity=1, input_mode="binary", retur
         if return_labeled:
             return regions, labeled
         return regions
+
+    if not return_labeled:
+        return _regions_from_labels(mask, min_area)
 
     for source_label in sorted(np.unique(mask)):
         if source_label == 0:
@@ -331,7 +368,7 @@ def _current_seed_ids(combine_seed):
 
 
 def _choose_old_seed_for_region(
-    combine_seed,
+    flat_seed,
     region,
     min_new_coverage,
     max_new_coverage,
@@ -339,7 +376,7 @@ def _choose_old_seed_for_region(
     """Match one region of the next (stricter) seed to the current seeds.
 
     Compares a single `region` (a connected block of the next sweep seed)
-    against the seeds already in `combine_seed`, scored by how much of the
+    against the seeds already in `flat_seed`, scored by how much of the
     region's own area each current seed covers:
       - returns a current seed id if coverage >= `min_new_coverage`
         (the region is that seed's shrunk / continued form; ambiguous if >1);
@@ -347,7 +384,7 @@ def _choose_old_seed_for_region(
         (max coverage <= `max_new_coverage`) → treat it as a brand-new region;
       - returns "ignore" otherwise (overlaps a seed but not enough to claim).
     """
-    overlap_values = combine_seed[region["mask"]]
+    overlap_values = flat_seed[region["voxels"]]
     overlap_values = overlap_values[overlap_values != 0]
     if overlap_values.size == 0:
         return None, False
@@ -424,6 +461,8 @@ def adaptive_seed_s2l_from_seeds(
     input_mode = _detect_input_mode(array_seeds, input_mode)
 
     combine_seed = np.zeros(array_seeds[0].shape, dtype=np.uint32)
+    flat_seed = combine_seed.reshape(-1)
+    seed_voxels = {}
     metadata_by_seed_id = {}
     locked_seed_ids = set()
     next_seed_id = 1
@@ -432,7 +471,8 @@ def adaptive_seed_s2l_from_seeds(
         array_seeds[0], min_area=min_area, connectivity=connectivity, input_mode=input_mode
     )
     for region in initial_regions:
-        combine_seed[region["mask"]] = next_seed_id
+        flat_seed[region["voxels"]] = next_seed_id
+        seed_voxels[next_seed_id] = region["voxels"].copy()
         metadata_by_seed_id[next_seed_id] = {
             "area": int(region["area"]),
             "source_label": int(region["source_label"]),
@@ -475,7 +515,7 @@ def adaptive_seed_s2l_from_seeds(
             emerged_count = grown_count = merge_count = skipped_locked_count = 0
 
             for region in regions:
-                overlap_values = combine_seed[region["mask"]]
+                overlap_values = flat_seed[region["voxels"]]
 
                 if min_current_coverage is None and max_emerge_coverage is None:
                     significant_seed_ids = [
@@ -504,7 +544,8 @@ def adaptive_seed_s2l_from_seeds(
                         is_emerge = max_curr_overlap_ratio <= max_emerge_coverage
 
                 if is_emerge:
-                    combine_seed[region["mask"]] = next_seed_id
+                    flat_seed[region["voxels"]] = next_seed_id
+                    seed_voxels[next_seed_id] = region["voxels"].copy()
                     metadata_by_seed_id[next_seed_id] = {
                         "area": int(region["area"]),
                         "source_label": int(region["source_label"]),
@@ -525,8 +566,9 @@ def adaptive_seed_s2l_from_seeds(
                     if seed_id in locked_seed_ids:
                         skipped_locked_count += 1
                         continue
-                    combine_seed[combine_seed == seed_id] = 0
-                    combine_seed[region["mask"]] = seed_id
+                    _clear_seed(flat_seed, seed_voxels, seed_id)
+                    flat_seed[region["voxels"]] = seed_id
+                    seed_voxels[seed_id] = region["voxels"].copy()
                     metadata_by_seed_id[seed_id]["area"] = int(region["area"])
                     metadata_by_seed_id[seed_id]["source_label"] = int(region["source_label"])
                     metadata_by_seed_id[seed_id]["last_index"] = int(seed_index)
@@ -631,6 +673,8 @@ def adaptive_seed_l2s_from_seeds(
     input_mode = _detect_input_mode(array_seeds, input_mode)
 
     combine_seed = np.zeros(array_seeds[0].shape, dtype=np.uint32)
+    flat_seed = combine_seed.reshape(-1)
+    seed_voxels = {}
     metadata_by_seed_id = {}
     locked_seed_ids = set()
     next_seed_id = 1
@@ -639,7 +683,8 @@ def adaptive_seed_l2s_from_seeds(
         array_seeds[0], min_area=min_area, connectivity=connectivity, input_mode=input_mode
     )
     for region in initial_regions:
-        combine_seed[region["mask"]] = next_seed_id
+        flat_seed[region["voxels"]] = next_seed_id
+        seed_voxels[next_seed_id] = region["voxels"].copy()
         metadata_by_seed_id[next_seed_id] = {
             "area": int(region["area"]),
             "source_label": int(region["source_label"]),
@@ -662,7 +707,8 @@ def adaptive_seed_l2s_from_seeds(
 
     for seed_index, seed in enumerate(array_seeds[1:], start=1):
         step_start = time.perf_counter()
-        old_seed_ids = _current_seed_ids(combine_seed)
+        old_seed_ids = np.flatnonzero(_bincount(combine_seed, next_seed_id))
+        old_seed_ids = [int(sid) for sid in old_seed_ids if sid != 0]
         regions = extract_regions(
             seed, min_area=min_area, connectivity=connectivity, input_mode=input_mode
         )
@@ -673,7 +719,7 @@ def adaptive_seed_l2s_from_seeds(
 
         for region_id, region in enumerate(regions):
             chosen, is_ambiguous = _choose_old_seed_for_region(
-                combine_seed, region, min_new_coverage, max_new_coverage
+                flat_seed, region, min_new_coverage, max_new_coverage
             )
             if is_ambiguous:
                 ambiguous_region_count += 1
@@ -700,15 +746,16 @@ def adaptive_seed_l2s_from_seeds(
                 # decides whether its last-shape voxels are kept.
                 locked_seed_ids.add(old_seed_id)
                 if not keep_disappeared:
-                    combine_seed[combine_seed == old_seed_id] = 0
+                    _clear_seed(flat_seed, seed_voxels, old_seed_id)
                 continue
 
             assigned = sorted(assigned, key=lambda rid: regions[rid]["area"], reverse=True)
-            combine_seed[combine_seed == old_seed_id] = 0
+            _clear_seed(flat_seed, seed_voxels, old_seed_id)
 
             if len(assigned) == 1:
                 region = regions[assigned[0]]
-                combine_seed[region["mask"]] = old_seed_id
+                flat_seed[region["voxels"]] = old_seed_id
+                seed_voxels[old_seed_id] = region["voxels"].copy()
                 metadata_by_seed_id[old_seed_id]["area"] = int(region["area"])
                 metadata_by_seed_id[old_seed_id]["source_label"] = int(region["source_label"])
                 metadata_by_seed_id[old_seed_id]["last_index"] = int(seed_index)
@@ -719,7 +766,8 @@ def adaptive_seed_l2s_from_seeds(
             split_count += 1
             child_seed_ids = [old_seed_id]
             first_region = regions[assigned[0]]
-            combine_seed[first_region["mask"]] = old_seed_id
+            flat_seed[first_region["voxels"]] = old_seed_id
+            seed_voxels[old_seed_id] = first_region["voxels"].copy()
             metadata_by_seed_id[old_seed_id]["area"] = int(first_region["area"])
             metadata_by_seed_id[old_seed_id]["source_label"] = int(first_region["source_label"])
             metadata_by_seed_id[old_seed_id]["last_index"] = int(seed_index)
@@ -729,7 +777,8 @@ def adaptive_seed_l2s_from_seeds(
             )
             for rid in assigned[1:]:
                 region = regions[rid]
-                combine_seed[region["mask"]] = next_seed_id
+                flat_seed[region["voxels"]] = next_seed_id
+                seed_voxels[next_seed_id] = region["voxels"].copy()
                 child_seed_ids.append(next_seed_id)
                 metadata_by_seed_id[next_seed_id] = {
                     "area": int(region["area"]),
@@ -749,7 +798,8 @@ def adaptive_seed_l2s_from_seeds(
 
         for region_id in new_region_ids:
             region = regions[region_id]
-            combine_seed[region["mask"]] = next_seed_id
+            flat_seed[region["voxels"]] = next_seed_id
+            seed_voxels[next_seed_id] = region["voxels"].copy()
             metadata_by_seed_id[next_seed_id] = {
                 "area": int(region["area"]),
                 "source_label": int(region["source_label"]),
