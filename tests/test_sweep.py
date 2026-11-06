@@ -64,8 +64,8 @@ def run(values):
     return Path(values["output_folder"]) / "img"
 
 
-def result(folder, name="s2l"):
-    return tifffile.imread(folder / "combine" / f"{name}_label.tif")
+def result(folder, suffix=""):
+    return tifffile.imread(folder / f"FINAL_sweep_seed{suffix}.tif")
 
 
 def boundary_file(folder):
@@ -79,7 +79,7 @@ def boundary_file(folder):
 
 def test_steps_are_the_components_of_each_threshold(tmp_path):
     folder = run(config(tmp_path))
-    steps = sorted((folder / "sweep").glob("step_*.tif"))
+    steps = sorted((folder / "steps").glob("step_*.tif"))
     assert len(steps) == len(THRESHOLDS)
     for path, threshold in zip(steps, THRESHOLDS):
         expected = ndimage.label(image() >= threshold)[0]
@@ -118,8 +118,49 @@ def test_both_gives_what_each_direction_gives(tmp_path):
     both = run(config(tmp_path / "a", direction="both"))
     s2l = run(config(tmp_path / "b", direction="strict_to_loose"))
     l2s = run(config(tmp_path / "c", direction="loose_to_strict"))
-    assert np.array_equal(result(both, "s2l"), result(s2l, "s2l"))
-    assert np.array_equal(result(both, "l2s"), result(l2s, "l2s"))
+    assert np.array_equal(result(both, "_s2l"), result(s2l))
+    assert np.array_equal(result(both, "_l2s"), result(l2s))
+
+
+# ---- what a run leaves
+
+def test_the_output_folder(tmp_path):
+    folder = run(config(tmp_path))
+    names = {path.name for path in folder.iterdir() if not path.name.startswith("config_")}
+    assert names == {"FINAL_sweep_seed.tif", "sweep_regions.csv", "sweep_steps.csv", "sweep_metadata.json", "steps"}
+
+
+def test_regions_say_what_the_image_holds(tmp_path):
+    folder = run(config(tmp_path))
+    seeds = result(folder)
+    regions = pd.read_csv(folder / "sweep_regions.csv")
+    assert sorted(regions["id"]) == sorted(set(np.unique(seeds)) - {0})
+    for _, row in regions.iterrows():
+        assert row["area"] == np.count_nonzero(seeds == row["id"])
+    core = regions[regions["id"] == seeds[10, 8, 8]].iloc[0]
+    assert core["first_threshold"] == 200 and "thre_200" in core["first_step"]
+    side = regions[regions["id"] == seeds[10, 30, 30]].iloc[0]
+    assert side["first_threshold"] == 150
+
+
+@pytest.mark.parametrize("direction, order", [("strict_to_loose", [200, 150, 100]), ("loose_to_strict", [100, 150, 200])])
+def test_steps_are_in_the_order_of_the_combine(tmp_path, direction, order):
+    steps = pd.read_csv(run(config(tmp_path, direction=direction)) / "sweep_steps.csv")
+    assert steps["lower"].tolist() == order
+    assert steps["order"].tolist() == [0, 1, 2]
+    by_threshold = dict(zip(steps["lower"], steps["labels"]))
+    assert by_threshold == {t: ndimage.label(image() >= t)[0].max() for t in THRESHOLDS}
+
+
+def test_regions_of_each_direction(tmp_path):
+    folder = run(config(tmp_path, direction="both"))
+    for suffix in ("_s2l", "_l2s"):
+        for name in (f"FINAL_sweep_seed{suffix}.tif", f"sweep_regions{suffix}.csv", f"sweep_steps{suffix}.csv"):
+            assert (folder / name).is_file()
+
+
+def test_a_run_says_where_its_seeds_are(tmp_path):
+    assert sweep.run_sweep_adaptive_seed_from_dict(config(tmp_path)) == [tmp_path / "out" / "img" / "FINAL_sweep_seed.tif"]
 
 
 # ---- the combine alone
@@ -195,13 +236,13 @@ def test_a_wrong_seeds_folder_is_an_error(tmp_path):
                          ids=["descending", "ascending", "erosion"])
 def test_seeds_folder_gives_what_a_fresh_run_gives(tmp_path, changes):
     fresh = run(config(tmp_path, **changes))
-    again = config(tmp_path, output_folder=str(tmp_path / "again"), seeds_folder=str(fresh / "sweep"), **changes)
+    again = config(tmp_path, output_folder=str(tmp_path / "again"), seeds_folder=str(fresh / "steps"), **changes)
     assert np.array_equal(result(fresh), result(run(again)))
 
 
 def test_step_files_of_two_runs_are_refused(tmp_path):
     folder = run(config(tmp_path, output_folder=str(tmp_path / "a")))
-    steps = folder / "sweep"
+    steps = folder / "steps"
     (steps / "step_003_thre_180_None_ero_0.tif").write_bytes((steps / "step_000_thre_200_None_ero_0.tif").read_bytes())
     values = config(tmp_path, output_folder=str(tmp_path / "b"), seeds_folder=str(steps))
     with pytest.raises(ValueError, match="monotonic"):
@@ -210,7 +251,7 @@ def test_step_files_of_two_runs_are_refused(tmp_path):
 
 def test_seeds_sweep_direction_still_decides(tmp_path):
     folder = run(config(tmp_path, output_folder=str(tmp_path / "a")))
-    steps = folder / "sweep"
+    steps = folder / "steps"
     named = steps.parent / "own_steps"
     named.mkdir()
     for index, path in enumerate(sorted(steps.glob("step_*.tif"))):
@@ -293,8 +334,8 @@ def test_a_csv_column_overrides_the_config(tmp_path):
 {folder}/other.tif,
 ''')
     batch_seeds.run_batch_sweep_adaptive_seed(path)
-    assert len(list((tmp_path / "out" / "img" / "sweep").glob("step_*.tif"))) == 2
-    assert len(list((tmp_path / "out" / "other" / "sweep").glob("step_*.tif"))) == 3     # a blank cell: the config
+    assert len(list((tmp_path / "out" / "img" / "steps").glob("step_*.tif"))) == 2
+    assert len(list((tmp_path / "out" / "other" / "steps").glob("step_*.tif"))) == 3     # a blank cell: the config
 
 
 def test_a_failed_row_does_not_stop_the_batch(tmp_path):
@@ -303,6 +344,8 @@ def test_a_failed_row_does_not_stop_the_batch(tmp_path):
 {folder}/other.tif,
 ''')
     batch_seeds.run_batch_sweep_adaptive_seed(path)
-    assert (tmp_path / "out" / "other" / "combine" / "s2l_label.tif").is_file()
+    final = tmp_path / "out" / "other" / "FINAL_sweep_seed.tif"
+    assert final.is_file()
     report = pd.read_csv(next((tmp_path / "out").glob("*_running_results_*.csv")))
     assert report["error"].notna().tolist() == [True, False]
+    assert report["final_output_path"].iloc[1] == str(final)

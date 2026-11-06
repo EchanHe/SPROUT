@@ -208,13 +208,15 @@ def run_batch_sweep_adaptive_seed(file_path):
 
     yaml_config.pop("csv_path", None)
     df['error'] = None
+    df['final_output_path'] = None
     for index, row in df.iterrows():
         # a CSV column overrides the YAML, a blank cell keeps the YAML value
-        row = {k: v for k, v in row.items() if k != 'error' and not pd.isna(v)}
+        row = {k: v for k, v in row.items() if k not in ('error', 'final_output_path') and not pd.isna(v)}
         shared = {k: v for k, v in yaml_config.items() if k not in row}
         try:
             config = config_core.merge_row_and_yaml_no_conflict(row, shared)
-            make_sweep_adaptive_seed.run_sweep_adaptive_seed_from_dict(config)
+            finals = make_sweep_adaptive_seed.run_sweep_adaptive_seed_from_dict(config)
+            df.loc[index, 'final_output_path'] = ";".join(str(path) for path in finals)
         except Exception as e:
             print(f"Error occurs when processing {row['img_path']}: {e}")
             df.loc[index, 'error'] = str(e)

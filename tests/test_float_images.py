@@ -90,7 +90,7 @@ def test_sweep(tmp_path, thresholds):
     config.update(img_path=str(path), output_folder=str(tmp_path / "out"), thresholds=thresholds, segments=5,
                   num_threads=1, min_area=1, top_n=None, verbose=False)
     sweep.run_sweep_adaptive_seed_from_dict(config)
-    final = tifffile.imread(tmp_path / "out" / "p" / "combine" / "s2l_label.tif")
+    final = tifffile.imread(tmp_path / "out" / "p" / "FINAL_sweep_seed.tif")
     assert len(np.unique(final)) == 3
     assert np.array_equal(final > 0, probability_map() >= 0.8)      # a region over two seeds locks them
 
@@ -102,10 +102,10 @@ def test_seeds_folder_with_decimal_names(tmp_path):
     config.update(img_path=str(path), output_folder=str(tmp_path / "a"), thresholds=[0.4, 0.8], segments=5,
                   num_threads=1, min_area=1, top_n=None, verbose=False)
     sweep.run_sweep_adaptive_seed_from_dict(config)
-    fresh = tifffile.imread(tmp_path / "a" / "p" / "combine" / "s2l_label.tif")
+    fresh = tifffile.imread(tmp_path / "a" / "p" / "FINAL_sweep_seed.tif")
     sweep.run_sweep_adaptive_seed_from_dict({**config, "output_folder": str(tmp_path / "b"),
-                                             "seeds_folder": str(tmp_path / "a" / "p" / "sweep")})
-    assert np.array_equal(fresh, tifffile.imread(tmp_path / "b" / "p" / "combine" / "s2l_label.tif"))
+                                             "seeds_folder": str(tmp_path / "a" / "p" / "steps")})
+    assert np.array_equal(fresh, tifffile.imread(tmp_path / "b" / "p" / "FINAL_sweep_seed.tif"))
 
 
 def test_files_sort_by_a_decimal_threshold(tmp_path):
