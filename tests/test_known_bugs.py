@@ -82,7 +82,6 @@ def test_3_float_thresholds_are_kept():
 
 
 @pytest.mark.core
-@bug(4, "a footprint for the other dimension does nothing and says nothing")
 @pytest.mark.parametrize("make, footprint", [(blob_2d, "ball_XY"), (blob_2d, "Z"), (blob_2d, "2XZ_1Y"),
                                              (blob_3d, "disk"), (blob_3d, "square")])
 def test_4_wrong_footprint_erodes_or_is_refused(make, footprint):

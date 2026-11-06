@@ -313,6 +313,10 @@ def dilation_binary_img_on_sub(input, margin, kernal_size, is_round=True):
     
     return input
 
+FOOTPRINTS_3D = ('ball', 'cube', 'ball_XY', 'ball_XZ', 'ball_YZ', 'X', 'Y', 'Z', '2XZ_1Y', '2XY_1Z', '2YZ_1X')
+FOOTPRINTS_2D = ('ball', 'cube', 'disk', 'square', 'X', 'Y')
+
+
 def erosion_binary_img_on_sub(input, kernal_size = 1, footprint='ball'):
     """Binary erosion on the bounding box of the foreground.
 
@@ -325,6 +329,9 @@ def erosion_binary_img_on_sub(input, kernal_size = 1, footprint='ball'):
         assert type(kernal_size) is int
     
     is_3d = (input.ndim == 3)
+    footprints = FOOTPRINTS_3D if is_3d else FOOTPRINTS_2D
+    if footprint not in footprints:
+        raise ValueError(f"Footprint '{footprint}' does not work on a {input.ndim}D image, use one of {footprints}.")
     if is_3d:
         if not _foreground(input).any():
             return input
