@@ -96,7 +96,6 @@ def test_4_wrong_footprint_erodes_or_is_refused(make, footprint):
 
 
 @pytest.mark.core
-@bug(5, "a negative id wraps around: -1 becomes 255")
 def test_5_negative_ids_do_not_wrap():
     try:
         out = sprout_core.cast_labels(np.array([-1, 0, 1], np.int32))
@@ -216,7 +215,10 @@ PLUGIN_PROBES = [
     "import_single_values_into_grow",  # 16
     "load_scheme_checks_the_file",     # 17
     "load_scheme_reads_good_files",    # 17
-    pytest.param("export_writes_the_image_path", marks=bug(18, "Export writes the layer name as img_path")),
+    "export_writes_the_image_path",    # 18
+    "grow_export_writes_the_paths",    # 18
+    "export_then_import_finds_the_layer",   # 18
+    "export_of_an_unsaved_layer_warns",     # 18
 ]
 
 

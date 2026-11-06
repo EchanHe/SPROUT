@@ -180,5 +180,51 @@ def export_writes_the_image_path(viewer):
     result(Path(written) == path, f"img_path: {written}")
 
 
+def grow_export_writes_the_paths(viewer):
+    image, seeds = TMP / "img.tif", TMP / "seeds.tif"
+    tifffile.imwrite(image, np.zeros((8, 8, 8), np.uint8))
+    tifffile.imwrite(seeds, labels())
+    tab = sprout_tab(viewer, "SeedGrowthWidget")
+    viewer.open(str(image), plugin="napari")
+    viewer.open(str(seeds), plugin="napari", layer_type="labels")
+    C.pump(10)
+    tab.image_combo.setCurrentText("img")
+    tab.seeds_combo.setCurrentText("seeds")
+    out = TMP / "export.yaml"
+    tab.export_yaml(str(out))
+    written = yaml.safe_load(open(out, encoding="utf-8"))
+    result(Path(written["img_path"]) == image and Path(written["seg_path"]) == seeds, str(written))
+
+
+def export_then_import_finds_the_layer(viewer):
+    path = TMP / "img.tif"
+    tifffile.imwrite(path, np.zeros((8, 8, 8), np.uint8))
+    tab = seed_tab(viewer)
+    viewer.add_image(np.zeros((8, 8, 8), np.uint8), name="other")
+    viewer.open(str(path), plugin="napari")
+    C.pump(10)
+    tab.image_combo.setCurrentText("img")
+    out = TMP / "export.yaml"
+    tab.export_yaml(str(out))
+    tab.image_combo.setCurrentText("other")
+    tab.import_yaml(str(out))
+    C.pump(10)
+    result(tab.image_combo.currentText() == "img", f"{tab.params_status.text()} [{tab.image_combo.currentText()}]")
+
+
+def export_of_an_unsaved_layer_warns(viewer):
+    tab = seed_tab(viewer)
+    viewer.add_image(np.zeros((8, 8, 8), np.uint8), name="in_memory")
+    C.pump(10)
+    out = TMP / "export.yaml"
+    tab.export_yaml(str(out))
+    written = yaml.safe_load(open(out, encoding="utf-8"))["img_path"]
+    level, text = tab.params_status.level, tab.params_status.text()
+    tab.import_yaml(str(out))
+    C.pump(10)
+    result(written == "in_memory" and level == "warn" and "in_memory" in text
+           and tab.image_combo.currentText() == "in_memory", f"{written}: {level}: {text}")
+
+
 if __name__ == "__main__":
     globals()[sys.argv[1]](napari.Viewer(show=False))

@@ -16,6 +16,7 @@ from ..utils.util_widget import (as_list, create_output_folder_row, SeedOptional
                                  MainSeedParamWidget, ThresholdWidget,apply_threshold_preview)
 from ..utils.histogram_threshold_widget import PREVIEW_NAME, HistogramThresholdWidget, append_threshold_row
 from ..utils.boundary_check import boundary_ok
+from ..utils.layer_files import layer_name, saved_note, yaml_path
 from ..utils.roi_widget import RoiSelect
 from ..utils.status import RUN_BUTTON, STOP_BUTTON, StatusLine, follow_theme
 from ..utils import jobs
@@ -839,13 +840,13 @@ class SeedGenerationWidget(QWidget):
 
                 # input parameters
                 if 'img_path' in params:
-                    input_image_name = params['img_path']
+                    input_image_name = layer_name(self.viewer, params['img_path'])
                     if input_image_name in [self.image_combo.itemText(i) for i in range(self.image_combo.count())]:
                         self.image_combo.setCurrentText(input_image_name)
                     else:
                         notes.append(f"Input image '{input_image_name}' not found in current layers.")
                 if 'boundary_path' in params:
-                    boundary_name = params['boundary_path']
+                    boundary_name = layer_name(self.viewer, params['boundary_path'])
                     if boundary_name in [self.boundary_combo.itemText(i) for i in range(self.boundary_combo.count())]:
                         self.boundary_combo.setCurrentText(boundary_name)
                     else:
@@ -944,13 +945,10 @@ class SeedGenerationWidget(QWidget):
                 all_params.update(main_params)
                 all_params.update(advanced_params)
 
-                # get input image name
-                input_image_name = self.image_combo.currentText()
-                all_params["img_path"] = input_image_name
-                
-                # get the boundary image name
-                boundary_name = self.boundary_combo.currentText()
-                all_params["boundary_path"] = boundary_name
+                # the files of the input layers
+                unsaved = []
+                all_params["img_path"] = yaml_path(self.viewer, self.image_combo.currentText(), unsaved)
+                all_params["boundary_path"] = yaml_path(self.viewer, self.boundary_combo.currentText(), unsaved)
 
                 # Get and parse threshold lists from the main widget
                 # deactivated as the listparam group is not used
@@ -995,10 +993,6 @@ class SeedGenerationWidget(QWidget):
 
                 all_params_flow = convert_lists(all_params)
 
-                with open(file_path, "w") as f:
-                    yaml.dump(all_params_flow, f, sort_keys=False, default_flow_style=False)
-                
-                self.params_status.set(f"Parameters successfully saved to {os.path.basename(file_path)}.", "ok")
                 # Reorder keys to write seed_method, img_path, boundary_path first
                 ordered_keys = ["seed_method", "img_path", "boundary_path"]
                 rest_keys = [k for k in all_params_flow.keys() if k not in ordered_keys]
@@ -1007,5 +1001,7 @@ class SeedGenerationWidget(QWidget):
 
                 with open(file_path, "w") as f:
                     yaml.dump(ordered_params, f, sort_keys=False, default_flow_style=False)
+
+                self.params_status.set(*saved_note(os.path.basename(file_path), unsaved))
             except Exception as e:
                 self.params_status.set(f"Failed to save parameters: {e}", "error")
