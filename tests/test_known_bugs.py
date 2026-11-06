@@ -191,14 +191,14 @@ def test_14_paths_of_the_sam_template_exist():
 
 
 @pytest.mark.core
-@bug(15, "num_threads above the CPU cores is an error, so the templates fail on small machines")
 def test_15_more_threads_than_cores(tmp_path):
     code = ("import psutil, yaml\n"
             "psutil.cpu_count = lambda *a, **k: 2\n"
             "import sprout_core.config_core as c\n"
             "config = yaml.safe_load(open('template/make_grow.yaml', encoding='utf-8'))\n"
             "assert config['num_threads'] > 2\n"
-            "c.validate_input_yaml(config, c.input_val_make_grow)\n")
+            "c.validate_input_yaml(config, c.input_val_make_grow)\n"
+            "assert config['num_threads'] == 2\n")
     r = subprocess.run([sys.executable, "-c", code], cwd=ROOT, env=environment(tmp_path), capture_output=True,
                        text=True, encoding="utf-8", errors="replace")
     if r.returncode and "num_threads" not in r.stdout + r.stderr:

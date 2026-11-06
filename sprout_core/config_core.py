@@ -553,6 +553,14 @@ def validate_input_yaml(config, rules):
                 pass
         
         
+        # More threads than cores gain nothing: a template must still run on a small machine
+        if param == "num_threads" and isinstance(value, int) and "max" in rule and value > rule["max"]:
+            print(f"[WARNING] num_threads {value} is above the {rule['max']} CPU cores: using {rule['max']}.")
+            value = rule["max"]
+            config[param] = value
+            if param in optional_values:
+                optional_values[param] = value
+
         # A CSV column with a blank cell is read as float: an int 5 arrives as 5.0
         if rule["type"] is int and isinstance(value, float) and value.is_integer():
             value = int(value)
