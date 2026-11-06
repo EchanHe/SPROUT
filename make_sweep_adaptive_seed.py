@@ -138,6 +138,7 @@ def run_sweep_adaptive_seed_from_dict(config):
         sweep_direction = optional.get("seeds_sweep_direction", "s2l")
     else:
         sweep_folder = os.path.join(output_folder_root, "sweep")
+        seeds = []
 
         img = config_core.check_and_load_data(None, img_path, "img")
         boundary = config_core.check_and_load_data(
@@ -173,6 +174,7 @@ def run_sweep_adaptive_seed_from_dict(config):
                 boundary=boundary,
                 footprints=footprints,
                 verbose=verbose,
+                seeds_out=seeds,
             )
         else:
             ordered_paths, sweep_direction = seed_sweep_threshold(
@@ -186,9 +188,8 @@ def run_sweep_adaptive_seed_from_dict(config):
                 footprints=footprints,
                 num_threads=num_threads,
                 verbose=verbose,
+                seeds_out=seeds,
             )
-
-        seeds = [tifffile.imread(str(p)) for p in ordered_paths]
 
     if verbose:
         print(f"[sweep_adaptive] loaded {len(seeds)} sweep steps (sweep_direction={sweep_direction})")

@@ -71,7 +71,7 @@ def _generate_one_threshold_step(img, lower, upper, footprint_list, erosion_step
     seed, _ = sprout_core.get_ccomps_with_size_order(mask, segments)
     seed = sprout_core.cast_labels(seed, np.uint16)
     path = _save_step(seed, output_folder, step_index, lower, upper, erosion_steps)
-    return step_index, path
+    return step_index, path, seed
 
 
 def _detect_threshold_direction(thresholds, upper_thresholds):
@@ -130,6 +130,7 @@ def seed_sweep_threshold(
     footprints=None,
     num_threads=1,
     verbose=True,
+    seeds_out=None,
 ):
     """Threshold sweep: each threshold → one TIFF, steps are parallel.
 
@@ -156,6 +157,8 @@ def seed_sweep_threshold(
         )
 
     ordered_paths = [None] * len(thresholds)
+    if seeds_out is not None:
+        seeds_out[:] = [None] * len(thresholds)
 
     def _worker(args):
         idx, lower, upper = args
@@ -170,14 +173,18 @@ def seed_sweep_threshold(
         with ThreadPoolExecutor(max_workers=num_threads) as executor:
             futures = {executor.submit(_worker, p): p[0] for p in pairs}
             for future in as_completed(futures):
-                idx, path = future.result()
+                idx, path, seed = future.result()
                 ordered_paths[idx] = path
+                if seeds_out is not None:
+                    seeds_out[idx] = seed
                 if verbose:
                     print(f"[seed_sweep] step {idx:03d} done → {path.name}")
     else:
         for p in pairs:
-            idx, path = _worker(p)
+            idx, path, seed = _worker(p)
             ordered_paths[idx] = path
+            if seeds_out is not None:
+                seeds_out[idx] = seed
             if verbose:
                 print(f"[seed_sweep] step {idx:03d} done → {path.name}")
 
@@ -194,6 +201,7 @@ def seed_sweep_erosion(
     boundary=None,
     footprints=None,
     verbose=True,
+    seeds_out=None,
 ):
     """Erosion sweep: one threshold, progressively eroded, steps are sequential.
 
@@ -224,6 +232,8 @@ def seed_sweep_erosion(
     seed = sprout_core.cast_labels(seed, np.uint16)
     path = _save_step(seed, output_folder, 0, threshold, upper_threshold, 0)
     ordered_paths.append(path)
+    if seeds_out is not None:
+        seeds_out.append(seed)
     if verbose:
         print(f"[seed_sweep] step 000 done → {path.name}")
 
@@ -236,6 +246,8 @@ def seed_sweep_erosion(
         seed = sprout_core.cast_labels(seed, np.uint16)
         path = _save_step(seed, output_folder, ero_iter, threshold, upper_threshold, ero_iter)
         ordered_paths.append(path)
+        if seeds_out is not None:
+            seeds_out.append(seed)
         if verbose:
             print(f"[seed_sweep] step {ero_iter:03d} done → {path.name}")
 
