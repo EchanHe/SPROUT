@@ -231,6 +231,13 @@ def test_metadata_on_a_nested_sweep(run_combine):
     assert all(item["area"] == np.count_nonzero(seeds == item["seed_id"]) for item in metadata)
 
 
+def test_a_seed_is_only_cleared_where_it_still_is():
+    """The voxels a seed has lost to another seed stay with that seed. Smallest case found by fuzzing."""
+    steps = [np.array([[1, 2, 2], [1, 0, 1], [2, 0, 0]], np.uint16), np.array([[2, 0, 2], [0, 2, 2], [3, 2, 0]], np.uint16)]
+    seeds, _ = combine.adaptive_seed_l2s_from_seeds(steps, input_mode="label", min_new_coverage=None, max_new_coverage=None)
+    assert seeds.tolist() == [[1, 0, 1], [0, 1, 1], [2, 1, 0]]
+
+
 def test_memory_does_not_grow_with_the_regions():
     shape = (64, 64, 64)
     step = np.zeros(shape, np.uint16)
