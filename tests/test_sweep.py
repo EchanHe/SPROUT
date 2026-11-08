@@ -249,6 +249,83 @@ def test_memory_does_not_grow_with_the_regions():
     assert peak < 200 * step.size                # a mask per region would be 4096 * size
 
 
+# ---- steps on disk (memory_limit_gb)
+
+@pytest.mark.parametrize("direction", ["strict_to_loose", "loose_to_strict", "both"])
+def test_steps_from_disk_give_what_steps_in_memory_give(tmp_path, direction):
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    memory = run(config(tmp_path / "a", direction=direction, num_threads=2))
+    disk = run(config(tmp_path / "b", direction=direction, num_threads=2, memory_limit_gb=0))
+    names = sorted(p.name for p in memory.iterdir() if not p.name.startswith("config_") and p.is_file())
+    assert names == sorted(p.name for p in disk.iterdir() if not p.name.startswith("config_") and p.is_file())
+    for name in names:
+        assert (memory / name).read_bytes() == (disk / name).read_bytes(), name
+
+
+def test_the_limit_decides_where_the_steps_are(tmp_path, capsys):
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    run(config(tmp_path / "a", verbose=True, memory_limit_gb=0))
+    assert "steps read from disk one at a time" in capsys.readouterr().out
+    run(config(tmp_path / "b", verbose=True, memory_limit_gb=1))
+    assert "steps kept in memory" in capsys.readouterr().out
+
+
+def test_steps_on_disk_take_less_memory(tmp_path):
+    img = np.tile(image(), (2, 3, 3))
+    tifffile.imwrite(tmp_path / "img.tif", img)
+    thresholds = [220, 210, 200, 190, 180, 170, 160, 150, 140, 130]
+    peaks = {}
+    for limit in (None, 0):
+        values = config(tmp_path, output_folder=str(tmp_path / f"out_{limit}"), thresholds=thresholds,
+                        num_threads=1, memory_limit_gb=limit)
+        tracemalloc.start()
+        run(values)
+        peaks[limit] = tracemalloc.get_traced_memory()[1]
+        tracemalloc.stop()
+    steps = len(thresholds) * img.size * 2                      # all steps as uint16
+    assert peaks[0] < peaks[None] - steps / 2, (peaks, steps)
+
+
+def test_the_plan_stays_under_the_limit():
+    voxels, n_steps = 10 ** 6, 10
+    steps, work = n_steps * voxels * sweep.STEP_BYTES, voxels * sweep.WORK_BYTES
+    gb = 2 ** 30
+    assert sweep._memory_plan(voxels, n_steps, 8, (steps + 8 * work) / gb, False) == (True, 8)
+    assert sweep._memory_plan(voxels, n_steps, 8, (steps + 8 * work - 1) / gb, False) == (False, 8)
+    assert sweep._memory_plan(voxels, n_steps, 8, 3.5 * work / gb, False) == (False, 3)
+    assert sweep._memory_plan(voxels, n_steps, 8, 0, False) == (False, 1)        # always at least one
+    assert sweep._memory_plan(voxels, n_steps, 8, None, False) == (True, 8)     # the default: as before
+
+
+def test_by_default_the_steps_stay_in_memory(tmp_path, capsys):
+    run(config(tmp_path, verbose=True, num_threads=2))
+    out = capsys.readouterr().out
+    assert "memory limit" not in out and "num_threads" not in out and "[WARNING]" not in out
+
+
+def test_a_warning_when_the_steps_may_not_fit(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(sweep.psutil, "virtual_memory", lambda: type("Memory", (), {"available": 1000})())
+    run(config(tmp_path, verbose=True))
+    assert "[WARNING]" in capsys.readouterr().out and (tmp_path / "out" / "img" / "FINAL_sweep_seed.tif").exists()
+
+
+def test_out_of_memory_says_what_to_set(tmp_path, monkeypatch):
+    def no_memory(*args, **kwargs):
+        raise MemoryError("Unable to allocate 6.5 GiB")
+    monkeypatch.setattr(sweep, "seed_sweep_threshold", no_memory)
+    with pytest.raises(MemoryError, match="memory_limit_gb"):
+        run(config(tmp_path))
+    with pytest.raises(MemoryError, match="memory_limit_gb"):
+        sweep.make_sweep_adaptive_seed(image(), list(THRESHOLDS), 0, 10, str(tmp_path / "napari"))
+
+
+def test_fewer_threads_are_said(tmp_path, capsys):
+    run(config(tmp_path, verbose=True, num_threads=4, memory_limit_gb=0))
+    assert "num_threads 4 -> 1" in capsys.readouterr().out
+
+
 # ---- configuration
 
 def test_workspace_reaches_the_boundary(tmp_path, monkeypatch):

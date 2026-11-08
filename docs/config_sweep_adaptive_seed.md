@@ -23,6 +23,7 @@ With `direction: loose_to_strict`, the steps are combined the other way: seeds s
 | Method | Every step is used | The method of the paper: follows splits, stops after `no_split_max_iter` steps without a split |
 | Many seeds | Run time hardly changes | Run time grows with the number of seeds |
 | A long list of close thresholds | Every threshold is used | Set `no_split_max_iter` above the number of thresholds, or it may stop early |
+| Memory | All steps at once, see [Large images](#large-images) | One step at a time |
 | napari | Seeds tab, Method `Sweep (Thresholds)` | Seeds tab, Method `Adaptive` |
 
 Use sweep adaptive seed when you want many seeds or a long list of thresholds. Use adaptive seed to reproduce results of the paper. The two give different seeds, so compare them on your own data.
@@ -32,6 +33,10 @@ Use sweep adaptive seed when you want many seeds or a long list of thresholds. U
 In the Seeds tab, set Method to `Sweep (Thresholds)`. The rows of the threshold table are the steps, in descending or ascending order; with one row, each erosion step is a step. Threads, Segments and the footprints work as here, and `Min segment size` under the advanced parameters is `min_area`.
 
 napari runs `strict_to_loose` and adds one layer, `<image>_FINAL_sweep_seed`, which the Grow tab picks up. The files below are written to the output folder. The other parameters of this page are for YAML runs.
+
+### Large images
+
+By default all steps stay in memory: about 2 bytes per voxel per step, plus 7 bytes per voxel per thread. If a run warns or runs out of memory, set `memory_limit_gb`. Steps that do not fit are then read back from disk, and fewer threads run at once: slower, same result.
 
 ## Required Parameters
 
@@ -59,6 +64,7 @@ napari runs `strict_to_loose` and adds one layer, `<image>_FINAL_sweep_seed`, wh
 | `base_name` | image name | Name of the result folder. |
 | `workspace` | none | Prepended to all relative paths. |
 | `save_intermediate` | `false` | Save the combined seed after every step. |
+| `memory_limit_gb` | none: all in memory | Memory for the steps, in GB; see [Large images](#large-images). The run prints what it chose. |
 | `verbose` | `true` | Print progress. |
 | `seeds_folder` | none | Skip the sweep and use the `step_*.tif` files of this folder (the `steps` folder of an earlier run). A folder that does not exist is an error. |
 | `seeds_sweep_direction` | from the file names | Order of the files in `seeds_folder`: `s2l` or `l2s`. Needed only for files with other names. |

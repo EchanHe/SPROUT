@@ -1320,6 +1320,17 @@ input_val_sweep_adaptive_seed = {
         "default": False,
         "description": "Save combine_seed after each combine step.",
     },
+    "memory_limit_gb": {
+        "type": (int, float),
+        "min": 0,
+        "required": False,
+        "default": None,
+        "description": (
+            "Memory the steps of the sweep may take, in GB. If they need more, they are read back "
+            "from disk one at a time and fewer threads run at once (slower, same result). "
+            "Null (default): all steps in memory."
+        ),
+    },
     "verbose": {
         "type": bool,
         "required": False,

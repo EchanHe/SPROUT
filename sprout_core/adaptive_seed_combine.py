@@ -87,17 +87,22 @@ def load_threshold_sweep_seeds(file_paths, sort_by_threshold=True, strict_to_loo
 
 
 def _validate_seeds(seeds):
-    if not seeds:
+    if not len(seeds):
         raise ValueError("seeds must contain at least one mask.")
-    array_seeds = [np.asarray(seed) for seed in seeds]
-    shape = array_seeds[0].shape
-    if array_seeds[0].ndim not in (2, 3):
+    if hasattr(seeds, "shape_of"):
+        # steps on disk (seed_sweep.StepFiles): checked from the file headers, read one at a time later
+        array_seeds, shapes = seeds, [seeds.shape_of(index) for index in range(len(seeds))]
+    else:
+        array_seeds = [np.asarray(seed) for seed in seeds]
+        shapes = [seed.shape for seed in array_seeds]
+    shape = shapes[0]
+    if len(shape) not in (2, 3):
         raise ValueError("seeds must contain 2D or 3D masks.")
-    for index, seed in enumerate(array_seeds):
-        if seed.shape != shape:
+    for index, seed_shape in enumerate(shapes):
+        if seed_shape != shape:
             raise ValueError(
                 f"All seed masks must have the same shape. "
-                f"seeds[0] has {shape}, seeds[{index}] has {seed.shape}."
+                f"seeds[0] has {shape}, seeds[{index}] has {seed_shape}."
             )
     return array_seeds
 
@@ -455,8 +460,9 @@ def adaptive_seed_s2l_from_seeds(
     start_time = time.perf_counter()
     array_seeds = _validate_seeds(seeds)
     input_mode = _detect_input_mode(array_seeds, input_mode)
+    first_seed = array_seeds[0]                  # read once when the steps are on disk
 
-    combine_seed = np.zeros(array_seeds[0].shape, dtype=np.uint32)
+    combine_seed = np.zeros(first_seed.shape, dtype=np.uint32)
     flat_seed = combine_seed.reshape(-1)
     seed_voxels = {}
     metadata_by_seed_id = {}
@@ -464,7 +470,7 @@ def adaptive_seed_s2l_from_seeds(
     next_seed_id = 1
 
     initial_regions = extract_regions(
-        array_seeds[0], min_area=min_area, connectivity=connectivity, input_mode=input_mode
+        first_seed, min_area=min_area, connectivity=connectivity, input_mode=input_mode
     )
     for region in initial_regions:
         flat_seed[region["voxels"]] = next_seed_id
@@ -482,13 +488,14 @@ def adaptive_seed_s2l_from_seeds(
     if verbose:
         print(
             f"[s2l] start: seeds={len(array_seeds)}, "
-            f"shape={array_seeds[0].shape}, input_mode={input_mode}, "
+            f"shape={first_seed.shape}, input_mode={input_mode}, "
             f"initial_regions={len(initial_regions)}"
         )
 
     if save_intermediate:
         _save_intermediate_seed(combine_seed, intermediate_folder, intermediate_prefix, 0)
 
+    del first_seed
     for seed_index, seed in enumerate(array_seeds[1:], start=1):
         step_start = time.perf_counter()
 
@@ -669,8 +676,9 @@ def adaptive_seed_l2s_from_seeds(
     start_time = time.perf_counter()
     array_seeds = _validate_seeds(seeds)
     input_mode = _detect_input_mode(array_seeds, input_mode)
+    first_seed = array_seeds[0]                  # read once when the steps are on disk
 
-    combine_seed = np.zeros(array_seeds[0].shape, dtype=np.uint32)
+    combine_seed = np.zeros(first_seed.shape, dtype=np.uint32)
     flat_seed = combine_seed.reshape(-1)
     seed_voxels = {}
     metadata_by_seed_id = {}
@@ -678,7 +686,7 @@ def adaptive_seed_l2s_from_seeds(
     next_seed_id = 1
 
     initial_regions = extract_regions(
-        array_seeds[0], min_area=min_area, connectivity=connectivity, input_mode=input_mode
+        first_seed, min_area=min_area, connectivity=connectivity, input_mode=input_mode
     )
     for region in initial_regions:
         flat_seed[region["voxels"]] = next_seed_id
@@ -696,13 +704,14 @@ def adaptive_seed_l2s_from_seeds(
     if verbose:
         print(
             f"[l2s] start: seeds={len(array_seeds)}, "
-            f"shape={array_seeds[0].shape}, input_mode={input_mode}, "
+            f"shape={first_seed.shape}, input_mode={input_mode}, "
             f"initial_regions={len(initial_regions)}"
         )
 
     if save_intermediate:
         _save_intermediate_seed(combine_seed, intermediate_folder, intermediate_prefix, 0)
 
+    del first_seed
     for seed_index, seed in enumerate(array_seeds[1:], start=1):
         step_start = time.perf_counter()
         old_seed_ids = np.flatnonzero(_bincount(combine_seed, next_seed_id))

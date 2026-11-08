@@ -9,6 +9,7 @@
 - YAML: `seed` (nnInteractive pipeline, default 0); `prune_every_iter` (adaptive seed).
 - **Sweep adaptive seed** (`--sweep_adaptive`, napari Seeds tab `Sweep (Thresholds)`): one seed per threshold or erosion step, combined into `FINAL_sweep_seed.tif`, with `sweep_regions.csv` and `sweep_steps.csv`. See `docs/config_sweep_adaptive_seed.md`.
 - Float images: decimal thresholds in seeds, adaptive seed, sweep and grow, in the YAML and in napari, for example on probability maps.
+- Sweep: `memory_limit_gb` caps the memory of large scans (steps on disk, fewer threads; same result).
 
 ### Results that change
 - Grow: multi-threaded runs give the single-thread result; seed voxels outside the allowed range do not grow.
@@ -27,6 +28,7 @@
 - napari: Edit and Label Mapping results keep the scale and translate of their layer.
 - napari: Seeds and Grow Export write the file of a layer, and Import finds the layer by it.
 - Adaptive seed is much faster with many seeds, with the same results.
+- Adaptive seed is about 2x faster on large scans with small seeds, with the same results.
 - A footprint for the other dimension is an error (it did nothing). A negative label id is an error (it wrapped around).
 - `num_threads` above the CPU cores falls back to the cores, with a warning (it was an error).
 

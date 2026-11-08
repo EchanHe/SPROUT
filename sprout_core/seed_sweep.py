@@ -18,11 +18,12 @@ import re
 import sys
 import time
 import yaml
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import numpy as np
-from tifffile import imwrite
+from tifffile import TiffFile, imread, imwrite
 
 import sprout_core.sprout_core as sprout_core
 import sprout_core.config_core as config_core
@@ -76,6 +77,30 @@ def _generate_one_threshold_step(img, lower, upper, footprint_list, erosion_step
     seed = sprout_core.cast_labels(seed, np.uint16)
     path = _save_step(seed, output_folder, step_index, lower, upper, erosion_steps)
     return step_index, path, seed
+
+
+class StepFiles(Sequence):
+    """Steps saved by a sweep, read from disk only when one is used.
+
+    The combine uses one step at a time, so a scan whose steps do not fit in memory together can
+    still be combined. A slice is another StepFiles: seeds[::-1] reads nothing.
+    """
+
+    def __init__(self, paths):
+        self.paths = [Path(p) for p in paths]
+
+    def __len__(self):
+        return len(self.paths)
+
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            return StepFiles(self.paths[index])
+        return imread(str(self.paths[index]))
+
+    def shape_of(self, index):
+        """Shape of a step from its file header, without reading its voxels."""
+        with TiffFile(str(self.paths[index])) as tif:
+            return tuple(tif.series[0].shape)
 
 
 def _single_upper(upper_thresholds):
@@ -204,6 +229,8 @@ def seed_sweep_threshold(
             img, lower, upper, footprint_list, erosion_steps,
             segments_list[idx], idx, output_folder, boundary
         )
+        if seeds_out is None:
+            done = done[:2] + (None,)       # a future keeps its result: do not keep the step alive in it
         if step is not None:
             step(f"threshold {lower}")
         return done

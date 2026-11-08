@@ -34,6 +34,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import psutil
 import tifffile
 import yaml
 
@@ -48,6 +49,7 @@ from sprout_core.adaptive_seed_combine import (
 )
 from sprout_core.seed_sweep import (
     STEP_NAME,
+    StepFiles,
     _single_upper,
     detect_direction_from_files,
     seed_sweep_erosion,
@@ -148,6 +150,49 @@ def _save_result(combine_seed, seed_metadata, steps, step_paths, output_folder, 
 # Core pipeline (accepts config dict — used by both single and batch runs)
 # ---------------------------------------------------------------------------
 
+STEP_BYTES = 2      # per voxel of a saved step (uint16)
+WORK_BYTES = 7      # per voxel of a step being computed: its int32 labels, the mask, the uint16 copy
+
+
+OUT_OF_MEMORY_HINT = ("[sweep_adaptive] Out of memory: set memory_limit_gb in the config to keep the steps "
+                      "on disk and run fewer threads at once (slower, same result).")
+
+
+def _memory_plan(voxels, n_steps, num_threads, memory_limit_gb, verbose):
+    """(steps in memory, threads) that stay under memory_limit_gb.
+
+    None: all steps in memory and num_threads, and only a warning when that may not fit in the free
+    memory. Otherwise the steps stay in memory if they fit next to the steps being computed, or the
+    combine reads them back from disk one at a time; fewer threads compute fewer steps at once. Both
+    only change the speed, not the result.
+    """
+    steps, work = n_steps * voxels * STEP_BYTES, voxels * WORK_BYTES
+    if memory_limit_gb is None:
+        free = psutil.virtual_memory().available
+        if verbose and steps + num_threads * work > free:
+            print(f"[sweep_adaptive] [WARNING] the steps and {num_threads} thread(s) may need about "
+                  f"{(steps + num_threads * work) / 2 ** 30:.1f} GB, {free / 2 ** 30:.1f} GB is free. "
+                  f"If the run runs out of memory, set memory_limit_gb.")
+        return True, num_threads
+    limit = memory_limit_gb * 2 ** 30
+    in_memory = steps + num_threads * work <= limit
+    threads = num_threads if in_memory else max(1, min(num_threads, int(limit // work)))
+    if verbose:
+        where = "kept in memory" if in_memory else "read from disk one at a time"
+        print(f"[sweep_adaptive] memory limit {limit / 2 ** 30:.1f} GB (memory_limit_gb): steps {where} "
+              f"(all steps take about {steps / 2 ** 30:.1f} GB), {threads} thread(s) "
+              f"(about {work / 2 ** 30:.1f} GB each)")
+        if threads < num_threads:
+            print(f"[sweep_adaptive] num_threads {num_threads} -> {threads} to stay under the memory limit")
+        if work > limit:
+            print("[sweep_adaptive] [WARNING] one step alone needs more than the memory limit")
+    return in_memory, threads
+
+
+def _n_steps(thresholds, erosion_steps):
+    return erosion_steps + 1 if _is_erosion_sweep(thresholds) else len(thresholds)
+
+
 def _is_erosion_sweep(thresholds):
     return isinstance(thresholds, (int, float)) or (isinstance(thresholds, list) and len(thresholds) == 1)
 
@@ -189,24 +234,30 @@ def _run_sweep(img, folder, thresholds, upper_thresholds, erosion_steps, segment
 
 def make_sweep_adaptive_seed(img, thresholds, erosion_steps, segments, output_folder, base_name="sweep",
                              upper_thresholds=None, boundary=None, footprints=None, num_threads=1, min_area=1,
-                             cancel=None, progress=None):
+                             cancel=None, progress=None, memory_limit_gb=None):
     """Sweep and strict-to-loose combine of an array, for napari. Returns {layer name: seeds}.
 
     Writes the same files as a YAML run. cancel: raises Cancelled between steps.
-    progress: callable(done, total, text).
+    progress: callable(done, total, text). memory_limit_gb: as in the YAML.
     """
-    n_steps = erosion_steps + 1 if _is_erosion_sweep(thresholds) else len(thresholds)
+    n_steps = _n_steps(thresholds, erosion_steps)
     steps = sprout_core.StepProgress(progress, n_steps + 1)
     folder = os.path.abspath(os.path.join(output_folder, base_name))
-    seeds = []
-    paths, sweep_direction = _run_sweep(
-        img, os.path.join(folder, "steps"), thresholds, upper_thresholds, erosion_steps, segments, boundary,
-        footprints, num_threads, False, seeds, cancel, steps.step,
-    )
-    if sweep_direction == "l2s":
-        seeds, paths = seeds[::-1], paths[::-1]
-    result, metadata = adaptive_seed_s2l_from_seeds(seeds, min_area=min_area, input_mode="label", verbose=False,
-                                                    cancel=cancel)
+    in_memory, threads = _memory_plan(img.size, n_steps, num_threads, memory_limit_gb, False)
+    seeds = [] if in_memory else None
+    try:
+        paths, sweep_direction = _run_sweep(
+            img, os.path.join(folder, "steps"), thresholds, upper_thresholds, erosion_steps, segments, boundary,
+            footprints, threads, False, seeds, cancel, steps.step,
+        )
+        if not in_memory:
+            seeds = StepFiles(paths)
+        if sweep_direction == "l2s":
+            seeds, paths = seeds[::-1], paths[::-1]
+        result, metadata = adaptive_seed_s2l_from_seeds(seeds, min_area=min_area, input_mode="label",
+                                                        verbose=False, cancel=cancel)
+    except MemoryError as e:
+        raise MemoryError(f"{e}\n{OUT_OF_MEMORY_HINT}") from e
     sprout_core.check_cancel(cancel)
     _save_result(result, metadata, seeds, paths, folder)
     config_core.save_config_with_output({"params": {
@@ -220,6 +271,13 @@ def make_sweep_adaptive_seed(img, thresholds, erosion_steps, segments, output_fo
 
 def run_sweep_adaptive_seed_from_dict(config):
     """Run the full sweep + combine pipeline from a config dict. Returns the paths of the final seeds."""
+    try:
+        return _run_from_dict(config)
+    except MemoryError as e:
+        raise MemoryError(f"{e}\n{OUT_OF_MEMORY_HINT}") from e
+
+
+def _run_from_dict(config):
     optional = config_core.validate_input_yaml(config, config_core.input_val_sweep_adaptive_seed)
 
     workspace = optional.get("workspace", "") or ""
@@ -255,7 +313,10 @@ def run_sweep_adaptive_seed_from_dict(config):
         ordered_paths = tif_paths = sorted(Path(seeds_folder).glob("step_*.tif"))
         if not tif_paths:
             raise ValueError(f"No step_*.tif files found in seeds_folder: {seeds_folder}")
-        seeds = [tifffile.imread(str(p)) for p in tif_paths]
+        seeds = StepFiles(tif_paths)
+        first_shape = seeds.shape_of(0)
+        if _memory_plan(int(np.prod(first_shape)), len(seeds), 1, optional.get("memory_limit_gb"), verbose)[0]:
+            seeds = list(seeds)
         # The direction comes from the file names unless the YAML sets it
         sweep_direction = config.get("seeds_sweep_direction") or detect_direction_from_files(tif_paths)
     else:
@@ -282,10 +343,15 @@ def run_sweep_adaptive_seed_from_dict(config):
         if verbose:
             print(f"[sweep_adaptive] Phase 1: sweep into {sweep_folder}")
 
+        in_memory, num_threads = _memory_plan(img.size, _n_steps(thresholds, erosion_steps), num_threads,
+                                              optional.get("memory_limit_gb"), verbose)
+        seeds = seeds if in_memory else None
         ordered_paths, sweep_direction = _run_sweep(
             img, sweep_folder, thresholds, upper_thresholds, erosion_steps, segments_count, boundary,
             footprints, num_threads, verbose, seeds,
         )
+        if not in_memory:
+            seeds = StepFiles(ordered_paths)
 
     # ------------------------------------------------------------------ #
     # Phase 2: combine                                                     #
@@ -307,11 +373,11 @@ def run_sweep_adaptive_seed_from_dict(config):
     if sweep_direction == "s2l":
         # step_000 = strictest → already correct for s2l; reverse for l2s
         seeds_s2l, paths_s2l = seeds, ordered_paths
-        seeds_l2s, paths_l2s = list(reversed(seeds)), list(reversed(ordered_paths))
+        seeds_l2s, paths_l2s = seeds[::-1], ordered_paths[::-1]
     else:
         # step_000 = loosest → already correct for l2s; reverse for s2l
         seeds_l2s, paths_l2s = seeds, ordered_paths
-        seeds_s2l, paths_s2l = list(reversed(seeds)), list(reversed(ordered_paths))
+        seeds_s2l, paths_s2l = seeds[::-1], ordered_paths[::-1]
 
     if direction == "both":
         shared = {k: v for k, v in combine_kwargs.items() if k in COMBINE_SHARED_KEYS}

@@ -264,7 +264,7 @@ python sprout.py --sweep_adaptive --config ./template/sweep_adaptive_seed.yaml
 python sprout.py --sweep_adaptive --batch --config path/to/batch_sweep_adaptive_seed.yaml
 ```
 
-The seeds are in `FINAL_sweep_seed.tif`, and `sweep_regions.csv` tells where each seed comes from.
+The seeds are in `FINAL_sweep_seed.tif`, and `sweep_regions.csv` tells where each seed comes from. For large scans, `memory_limit_gb` caps the memory.
 
 For the parameters, the output, and how to choose between this and adaptive seed see:
 

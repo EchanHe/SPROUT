@@ -16,6 +16,7 @@ connectivity: 3
 input_mode: label
 top_n: 100
 save_intermediate: false
+memory_limit_gb: ~
 verbose: true
 
 # s2l params (null = use function default)
