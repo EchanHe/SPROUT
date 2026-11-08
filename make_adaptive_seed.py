@@ -279,7 +279,7 @@ def make_adaptive_seed_ero(
         save_seed(init_seed, output_folder, output_img_name, return_for_napari=return_for_napari, seeds_dict=seeds_dict)      
         
     
-    init_ids = [int(value) for value in np.unique(init_seed) if value != background]
+    init_ids = [int(value) for value in sprout_core.unique_labels(init_seed) if value != background]
     if not init_ids:
         raise RuntimeError("No components found from the initial seeds. Exiting.")
     
@@ -291,7 +291,7 @@ def make_adaptive_seed_ero(
     combine_seed = sprout_core.cast_labels(combine_seed, np.uint16)
 
 
-    output_dict = {"total_id": {0: len(np.unique(combine_seed))-1},
+    output_dict = {"total_id": {0: len(sprout_core.unique_labels(combine_seed))-1},
                    "split_id" : {0: {}},
                    "split_ori_id": {0: {}},
                    "split_ori_id_filtered":  {0: {}},
@@ -333,7 +333,7 @@ def make_adaptive_seed_ero(
 
 
 
-        combine_ids = [int(value) for value in np.unique(combine_seed) if value != background]
+        combine_ids = [int(value) for value in sprout_core.unique_labels(combine_seed) if value != background]
        
         has_split = False
         ## Comparing each ccomp from eroded seed
@@ -400,7 +400,7 @@ def make_adaptive_seed_ero(
                     output_dict["split_prop"][ero_iter][combine_id] = inter_log["inter_props"]                    
         
         if combine_ids:
-            output_dict["total_id"][ero_iter] = len(np.unique(combine_seed))-1
+            output_dict["total_id"][ero_iter] = len(sprout_core.unique_labels(combine_seed))-1
     
         if has_split:
             no_consec_split_count=0
@@ -689,7 +689,7 @@ def make_adaptive_seed_thre(
                   return_for_napari=return_for_napari, seeds_dict=seeds_dict)
             
     
-    init_ids = [int(value) for value in np.unique(init_seed) if value != background]
+    init_ids = [int(value) for value in sprout_core.unique_labels(init_seed) if value != background]
     if not init_ids:
         raise RuntimeError("No components found from the initial seeds. Exiting.")
     max_seed_id = int(np.max(init_ids))
@@ -699,7 +699,7 @@ def make_adaptive_seed_thre(
     # at least uint16 as before; new ids from splits are checked with ensure_label_capacity
     combine_seed = sprout_core.cast_labels(combine_seed, np.uint16)
 
-    output_dict = {"total_id": {0: len(np.unique(combine_seed))-1},
+    output_dict = {"total_id": {0: len(sprout_core.unique_labels(combine_seed))-1},
                    "split_id" : {0: {}},
                    "split_ori_id": {0: {}},
                    "split_ori_id_filtered":  {0: {}},
@@ -749,7 +749,7 @@ def make_adaptive_seed_thre(
                       return_for_napari=return_for_napari, seeds_dict=seeds_dict)
 
         
-        combine_ids = [int(value) for value in np.unique(combine_seed) if value != background]
+        combine_ids = [int(value) for value in sprout_core.unique_labels(combine_seed) if value != background]
         
         
         has_split = False
@@ -847,7 +847,7 @@ def make_adaptive_seed_thre(
                 
         
         if combine_ids:
-            output_dict["total_id"][threshold] = len(np.unique(combine_seed))-1
+            output_dict["total_id"][threshold] = len(sprout_core.unique_labels(combine_seed))-1
     
         if has_split:
             no_consec_split_count=0

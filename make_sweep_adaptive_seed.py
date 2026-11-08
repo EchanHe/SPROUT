@@ -135,7 +135,7 @@ def _save_result(combine_seed, seed_metadata, steps, step_paths, output_folder, 
         "lower": settings[index][0],
         "upper": settings[index][1],
         "erosion": settings[index][2],
-        "labels": len(np.unique(step)) - 1,
+        "labels": len(sprout_core.unique_labels(step)) - 1,
         "seeds_started": started.count(index),
     } for index, step in enumerate(steps)]).to_csv(output_folder / f"sweep_steps{suffix}.csv", index=False)
 
