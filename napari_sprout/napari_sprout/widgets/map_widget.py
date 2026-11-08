@@ -1,6 +1,7 @@
 import numpy as np
 import json
 import weakref
+from pathlib import Path
 from qtpy.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QComboBox, QListWidget, QLineEdit, QMessageBox, QFileDialog, QRadioButton, QButtonGroup
@@ -203,9 +204,21 @@ class LabelMapperWidget(QWidget):
         path, _ = QFileDialog.getOpenFileName(self, "Load Scheme", filter="JSON files (*.json)")
         if not path:
             return
-        with open(path, 'r') as f:
-            self.scheme = json.load(f)
+        try:
+            with open(path, 'r') as f:
+                scheme = json.load(f)
+        except ValueError:
+            scheme = None
+        from_mapping_file = isinstance(scheme, dict)
+        if from_mapping_file:                   # a file from Export also holds the scheme
+            scheme = scheme.get("scheme")
+        if not isinstance(scheme, list) or not all(isinstance(name, str) for name in scheme):
+            self.status.set(f"{Path(path).name} is not a scheme: expected a list of class names.", "error")
+            return
+        self.scheme = scheme
         self.update_scheme_ui()
+        if from_mapping_file:
+            self.status.set(f"Loaded {len(scheme)} classes. The label mapping in this file is not loaded.", "warn")
 
     def save_scheme(self):
         path, _ = QFileDialog.getSaveFileName(self, "Save Scheme", filter="JSON files (*.json)")
