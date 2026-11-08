@@ -15,6 +15,7 @@ not_for_commit/*
 ./slide/*
 
 /*.yaml
+tests/local_paths.yaml
 
 avizo/*
 !avizo/GenSutures.py

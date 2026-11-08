@@ -4,6 +4,8 @@ on nnInteractive 1.1.3 or 2.6.0 (whichever the running env has).
 
     python check_prob_session.py [--device cuda:1] [--weights ...] [--old path/to/old_nni_prob_session.py]
 
+--weights defaults to nni_weights in tests/local_paths.yaml.
+
 Cases: a (160,200,200) foram crop and a (250,161,122) dog crop (both images contain zeros, so the
 1.x nonzero-crop offset is exercised). Per case: positive point -> predict; whole-seed scribble
 -> predict (autozoom + refinement); negative point -> predict; then reset + initial seg with
@@ -29,10 +31,17 @@ sys.path.insert(0, str(ROOT))
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--device", default="cuda:1")
-ap.add_argument("--weights", default=r"C:/Users/yichen/work/weights/nnInteractive_v1.0")
+ap.add_argument("--weights", default=None, help="model folder (default: nni_weights in tests/local_paths.yaml)")
 ap.add_argument("--old", default=None, help="file with the pre-change nnInteractiveSessionWithProb (1.x compare)")
 ap.add_argument("--max-disagree", type=float, default=1e-4, help="max fraction of disagreeing predicted voxels")
 args = ap.parse_args()
+
+from tests.local_paths import local_path, not_set  # noqa: E402
+
+args.weights = args.weights or local_path("nni_weights")
+if args.weights is None:
+    sys.exit(f"No weights: pass --weights, or {not_set('nni_weights')}")
+args.weights = str(args.weights)
 
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False

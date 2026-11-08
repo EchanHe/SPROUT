@@ -28,6 +28,8 @@ from pathlib import Path
 
 import pytest
 
+from local_paths import local_path
+
 TESTS = Path(__file__).resolve().parent
 ROOT = TESTS.parent
 LOGS = ROOT / "test-logs"
@@ -45,6 +47,7 @@ class Check:
     timeout: int = 600        # seconds
     repeat: int = 1           # for failures that only show now and then
     needs: tuple = ()         # modules; without them the check is skipped
+    paths: tuple = ()         # keys of tests/local_paths.yaml; without them the check is skipped
 
 
 NAPARI = ("napari",)
@@ -80,13 +83,17 @@ CHECKS = [
     Check("check_core_flow.py", "golden", 2),
     Check("check_roi_off_golden.py", "golden", 3, args=("--check",), needs=NAPARI),
     # this machine only: a GPU with the model weights / speed against an older commit
-    Check("check_prompt_nni.py", "local", 28, needs=("nnInteractive",)),
+    Check("check_prompt_nni.py", "local", 28, needs=("nnInteractive",), paths=("nni_weights",)),
     Check("check_core_speed.py", "local", 11),
 ]
 
 
 def missing(check):
     return [m for m in check.needs if importlib.util.find_spec(m) is None]
+
+
+def unset(check):
+    return [key for key in check.paths if local_path(key) is None]
 
 
 def git_status():
@@ -138,6 +145,8 @@ def run_once(check, args, tmp):
 def test_check(check, tmp_path, request):
     if missing(check):
         pytest.skip(f"needs {', '.join(missing(check))}")
+    if unset(check):
+        pytest.skip(f"needs {', '.join(unset(check))} in tests/local_paths.yaml")
     args = list(check.args)
     if not request.config.getoption("--full"):
         args += check.quick

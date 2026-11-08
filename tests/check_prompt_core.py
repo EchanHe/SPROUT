@@ -83,6 +83,7 @@ from sprout_core import prompt_points as PP  # noqa: E402
 from sprout_core import prompt_seg as PS  # noqa: E402
 from sprout_core import prompt_engine as PE  # noqa: E402
 from sprout_core import nni_engine as NE  # noqa: E402
+from local_paths import local_path  # noqa: E402
 from sprout_core.boundary import Cancelled  # noqa: E402
 from _prompt_check_utils import (Roi, ROI_IS_STUB, WALL_MARGIN, FakeSession11, FakeSession26,  # noqa: E402
                                  normalize_calls, BALL_R, _ball_into)
@@ -161,8 +162,16 @@ else:
 new_src = (ROOT / "sprout_core" / "sprout_prompt_core.py").read_text(encoding="utf-8")
 new_tree = ast.parse(new_src)
 EVOLVED = "seed_to_point_prompts_nninteractive"      # gained neg_regions since; section 3 compares it
+
+
+def is_main_block(n):
+    """if __name__ == "__main__": (a local debug run, removed since)"""
+    return isinstance(n, ast.If) and ast.unparse(n.test) == "__name__ == '__main__'"
+
+
 old_rest = [ast.dump(n) for n in old_tree.body
-            if not (isinstance(n, ast.FunctionDef) and n.name in ("_grid_sampling", "sample_points_3d", EVOLVED))]
+            if not (isinstance(n, ast.FunctionDef) and n.name in ("_grid_sampling", "sample_points_3d", EVOLVED))
+            and not is_main_block(n)]
 reexp = [n for n in new_tree.body if isinstance(n, ast.ImportFrom) and n.module == "sprout_core.prompt_points"]
 new_rest = [ast.dump(n) for n in new_tree.body
             if n not in reexp and not (isinstance(n, ast.FunctionDef) and n.name == EVOLVED)]
@@ -319,11 +328,28 @@ def kwonly(**kw):
 
 
 ok(NE.filter_kwargs(kwonly, want, log=None) == want, "**kwargs function gets everything")
-SRC = {"1.1.3": Path(r"C:/Users/yichen/work/nnInteractive/nnInteractive/inference/inference_session.py"),
-       "2.6.0": Path(r"C:/Users/yichen/miniforge3/envs/sprout-nni/Lib/site-packages/nnInteractive/inference/inference_session.py")}
+def installed_nni_source():
+    """(version, inference_session.py) of the nnInteractive in this env, found without importing it."""
+    import importlib.metadata
+    import importlib.util
+    spec = importlib.util.find_spec("nnInteractive")
+    if spec is None or not spec.submodule_search_locations:
+        return None, None
+    try:
+        ver = importlib.metadata.version("nnInteractive")
+    except importlib.metadata.PackageNotFoundError:
+        return None, None
+    return ver, Path(list(spec.submodule_search_locations)[0]) / "inference" / "inference_session.py"
+
+
+# the installed version is found by itself, the other one comes from tests/local_paths.yaml
+SRC = {"1.1.3": local_path("nni_113_source"), "2.6.0": local_path("nni_26_source")}
+_ver, _src = installed_nni_source()
+if _ver in SRC:
+    SRC[_ver] = _src
 for ver, fake in (("1.1.3", FakeSession11), ("2.6.0", FakeSession26)):
     p = SRC[ver]
-    if not p.exists():
+    if p is None or not p.exists():
         print(f"     ({ver} source not found: signature not compared)")
         continue
     t = ast.parse(p.read_text(encoding="utf-8"))

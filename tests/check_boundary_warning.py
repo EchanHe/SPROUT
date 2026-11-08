@@ -23,6 +23,7 @@ from qtpy.QtWidgets import QApplication, QMessageBox  # noqa: E402
 
 from napari_sprout._widget import SPROUTWidget  # noqa: E402
 from napari_sprout.utils.boundary_check import boundary_problem  # noqa: E402
+from local_paths import local_path, not_set  # noqa: E402
 
 FAILED = []
 
@@ -145,8 +146,11 @@ ok(not dialogs and "three_values" in red(gw), "Start Growth -> red line")
 ok({l.name for l in viewer.layers} == before and gw.grow_btn.isEnabled(), "growth not started, button still usable")
 
 # ---- speed of the click-time check on a real 0/1/2 skull boundary (~935M voxels)
-path = Path(r"C:/Users/yichen/Desktop/skull/boundary/Orycteropus_afer_boundary.tif")
-if path.exists():
+skull = local_path("skull_dir")
+path = skull / "boundary" / "Orycteropus_afer_boundary.tif" if skull else None
+if path is None:
+    print(f"SKIP real skull boundary: {not_set('skull_dir')}")
+elif path.exists():
     b = tifffile.imread(path)
     t = time.perf_counter()
     problem = boundary_problem(b)
