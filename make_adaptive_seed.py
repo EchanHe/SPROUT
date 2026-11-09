@@ -909,10 +909,10 @@ def run_make_adaptive_seed(file_path):
             
 
     # Checking if it's merged from erosion of threhsolds
-    if isinstance(config['thresholds'], int):
+    if isinstance(config['thresholds'], (int, float)):
         seed_merging_mode = "ERO"
     elif isinstance(config['thresholds'], list):
-        if all(isinstance(t, int) for t in config['thresholds']):
+        if all(isinstance(t, (int, float)) for t in config['thresholds']):
             if len(config['thresholds']) == 1:
                 seed_merging_mode = "ERO"
                 config['thresholds'] = config['thresholds'][0]
@@ -922,7 +922,7 @@ def run_make_adaptive_seed(file_path):
             elif len(config['thresholds']) > 1:
                 seed_merging_mode = "THRE"
         else:
-            raise ValueError("'thresholds' must be an int or a list of int(s).")
+            raise ValueError("'thresholds' must be a number or a list of numbers.")
     
     
     # Track the overall start time

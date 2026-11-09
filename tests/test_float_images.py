@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import pytest
 import tifffile
 import yaml
@@ -16,6 +17,7 @@ from scipy import ndimage
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+import batch_seeds  # noqa: E402
 import make_adaptive_seed  # noqa: E402
 import make_grow  # noqa: E402
 import make_seeds  # noqa: E402
@@ -70,6 +72,33 @@ def test_adaptive_seed(tmp_path):
     final = tifffile.imread(next(tmp_path.rglob("FINAL_adaptive_seed.tif")))
     assert len(np.unique(final)) == 3
     assert np.array_equal(final > 0, img >= 0.8)      # a region over two seeds locks them
+
+
+def adaptive_yaml(tmp_path, thresholds, **changes):
+    path = tmp_path / "p.tif"
+    tifffile.imwrite(path, probability_map())
+    config = yaml.safe_load(open(ROOT / "template" / "make_adaptive_seed.yaml", encoding="utf-8"))
+    config.update(img_path=str(path), output_folder=str(tmp_path / "out"), thresholds=thresholds, erosion_steps=1,
+                  segments=5, num_threads=1, min_size=1, save_every_iter=False, **changes)
+    yaml.safe_dump(config, open(tmp_path / "config.yaml", "w"))
+    return tmp_path / "config.yaml"
+
+
+@pytest.mark.parametrize("thresholds", [[0.4, 0.8], 0.4, [0.4]], ids=["list", "one", "list_of_one"])
+def test_adaptive_seed_from_a_yaml(tmp_path, thresholds):
+    make_adaptive_seed.run_make_adaptive_seed(str(adaptive_yaml(tmp_path, thresholds)))
+    final = tifffile.imread(next(tmp_path.rglob("FINAL_adaptive_seed.tif")))
+    assert final.any() and not final[probability_map() < 0.4].any()
+
+
+def test_batch_adaptive_seed(tmp_path):
+    config_path = adaptive_yaml(tmp_path, [0.4, 0.8])
+    config = yaml.safe_load(open(config_path, encoding="utf-8"))
+    pd.DataFrame({"img_path": [config.pop("img_path")]}).to_csv(tmp_path / "input.csv", index=False)
+    config["csv_path"] = str(tmp_path / "input.csv")
+    yaml.safe_dump(config, open(config_path, "w"))
+    batch_seeds.run_batch_adaptive_seed(str(config_path))
+    assert len(np.unique(tifffile.imread(next(tmp_path.rglob("FINAL_adaptive_seed.tif"))))) == 3
 
 
 def test_grow(tmp_path):
