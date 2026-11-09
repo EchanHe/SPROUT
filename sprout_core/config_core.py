@@ -1260,7 +1260,8 @@ input_val_sweep_adaptive_seed = {
         "choices": ["s2l", "l2s"],
         "description": (
             "Order of pre-existing seeds_folder TIFFs: 's2l' (step_000 strictest) "
-            "or 'l2s' (step_000 loosest). Ignored when running a fresh sweep "
+            "or 'l2s' (step_000 loosest). Read from the file names when not set; "
+            "needed for files with other names. Ignored when running a fresh sweep "
             "(direction is auto-detected there)."
         ),
     },

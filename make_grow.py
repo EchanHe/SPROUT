@@ -157,7 +157,7 @@ def dilation_one_iter_mp(input_mask, threshold_binary,
         label_id_list = present
 
     result = input_mask.copy()
-    non_bg_mask = (result != 0) if touch_rule == 'stop' else None
+    non_bg_mask = result != 0
 
     if touch_rule == 'stop':
         # Labels are computed in parallel from the start-of-iteration state and written in

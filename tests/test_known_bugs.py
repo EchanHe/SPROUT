@@ -62,7 +62,6 @@ def small_grow_files(folder):
 
 
 @pytest.mark.core
-@bug(1, "touch_rule='overwrite' grows into voxels below the threshold")
 def test_1_overwrite_stays_in_the_threshold(tmp_path):
     img = np.zeros((20, 20, 20), np.uint8)
     img[:, :, :10] = 200
@@ -97,7 +96,6 @@ def test_4_wrong_footprint_erodes_or_is_refused(make, footprint):
 
 
 @pytest.mark.core
-@bug(5, "a negative id wraps around: -1 becomes 255")
 def test_5_negative_ids_do_not_wrap():
     try:
         out = sprout_core.cast_labels(np.array([-1, 0, 1], np.int32))
@@ -210,14 +208,17 @@ def test_15_more_threads_than_cores(tmp_path):
 
 
 PLUGIN_PROBES = [
-    pytest.param("edit_keeps_scale", marks=bug(2, "Edit results drop the scale and translate of their layer")),
-    pytest.param("mapping_keeps_scale", marks=bug(2, "Label Mapping results drop the scale and translate")),
+    "edit_keeps_scale",                # 2
+    "mapping_keeps_scale",             # 2
     pytest.param("float_image_threshold_row", marks=bug(13, "a float image crashes the threshold tables")),
     "import_adaptive_template",        # 16
     "import_single_values_into_grow",  # 16
     "load_scheme_checks_the_file",     # 17
     "load_scheme_reads_good_files",    # 17
-    pytest.param("export_writes_the_image_path", marks=bug(18, "Export writes the layer name as img_path")),
+    "export_writes_the_image_path",    # 18
+    "grow_export_writes_the_paths",    # 18
+    "export_then_import_finds_the_layer",   # 18
+    "export_of_an_unsaved_layer_warns",     # 18
 ]
 
 

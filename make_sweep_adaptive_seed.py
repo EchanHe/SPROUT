@@ -35,7 +35,12 @@ from sprout_core.adaptive_seed_combine import (
     adaptive_seed_l2s_from_seeds,
     adaptive_seed_s2l_from_seeds,
 )
-from sprout_core.seed_sweep import seed_sweep_erosion, seed_sweep_threshold
+from sprout_core.seed_sweep import (
+    _single_upper,
+    detect_direction_from_files,
+    seed_sweep_erosion,
+    seed_sweep_threshold,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -89,8 +94,8 @@ def _save_result(combine_seed, seed_metadata, output_folder, output_name):
     metadata_path = output_folder / f"{output_name}_metadata.json"
     tifffile.imwrite(str(label_path), combine_seed, compression="zlib")
     metadata_path.write_text(json.dumps(seed_metadata, indent=2), encoding="utf-8")
-    print(f"  label  → {label_path}")
-    print(f"  meta   → {metadata_path}")
+    print(f"  label: {label_path}")
+    print(f"  meta:  {metadata_path}")
     print(f"  seeds  : {len(seed_metadata)}")
 
 
@@ -125,23 +130,29 @@ def run_sweep_adaptive_seed_from_dict(config):
     # ------------------------------------------------------------------ #
     # Phase 1: sweep (or load existing)                                   #
     # ------------------------------------------------------------------ #
-    if seeds_folder and Path(seeds_folder).exists():
+    if seeds_folder:
+        if workspace:
+            seeds_folder = os.path.join(workspace, seeds_folder)
+        if not Path(seeds_folder).is_dir():
+            raise FileNotFoundError(f"seeds_folder does not exist: {seeds_folder}")
         if verbose:
-            print(f"[sweep_adaptive] skipping sweep — loading from {seeds_folder}")
+            print(f"[sweep_adaptive] skipping sweep, loading from {seeds_folder}")
         tif_paths = sorted(Path(seeds_folder).glob("step_*.tif"))
         if not tif_paths:
             raise ValueError(f"No step_*.tif files found in seeds_folder: {seeds_folder}")
         seeds = [tifffile.imread(str(p)) for p in tif_paths]
-        # When loading pre-existing files the sweep direction cannot be inferred
-        # from the data; specify `seeds_sweep_direction` in YAML if the files
-        # were produced by an l2s sweep (default: "s2l" for backward compat).
-        sweep_direction = optional.get("seeds_sweep_direction", "s2l")
+        # The direction comes from the file names unless the YAML sets it
+        sweep_direction = config.get("seeds_sweep_direction") or detect_direction_from_files(tif_paths)
     else:
         sweep_folder = os.path.join(output_folder_root, "sweep")
+        seeds = []
 
         img = config_core.check_and_load_data(None, img_path, "img")
+        boundary_path = optional["boundary_path"]
+        if boundary_path and workspace:
+            boundary_path = os.path.join(workspace, boundary_path)
         boundary = config_core.check_and_load_data(
-            None, optional["boundary_path"], "boundary", must_exist=False
+            None, boundary_path, "boundary", must_exist=False
         )
         if boundary is not None:
             boundary = config_core.check_and_cast_boundary(boundary)
@@ -154,15 +165,11 @@ def run_sweep_adaptive_seed_from_dict(config):
         footprints = optional["footprints"]
 
         if verbose:
-            print(f"[sweep_adaptive] Phase 1: sweep → {sweep_folder}")
+            print(f"[sweep_adaptive] Phase 1: sweep into {sweep_folder}")
 
         if isinstance(thresholds, int) or (isinstance(thresholds, list) and len(thresholds) == 1):
             single_threshold = thresholds if isinstance(thresholds, int) else thresholds[0]
-            single_upper = (
-                upper_thresholds
-                if (upper_thresholds is None or isinstance(upper_thresholds, int))
-                else (upper_thresholds[0] if len(upper_thresholds) == 1 else None)
-            )
+            single_upper = _single_upper(upper_thresholds)
             ordered_paths, sweep_direction = seed_sweep_erosion(
                 img=img,
                 output_folder=sweep_folder,
@@ -173,6 +180,7 @@ def run_sweep_adaptive_seed_from_dict(config):
                 boundary=boundary,
                 footprints=footprints,
                 verbose=verbose,
+                seeds_out=seeds,
             )
         else:
             ordered_paths, sweep_direction = seed_sweep_threshold(
@@ -186,9 +194,8 @@ def run_sweep_adaptive_seed_from_dict(config):
                 footprints=footprints,
                 num_threads=num_threads,
                 verbose=verbose,
+                seeds_out=seeds,
             )
-
-        seeds = [tifffile.imread(str(p)) for p in ordered_paths]
 
     if verbose:
         print(f"[sweep_adaptive] loaded {len(seeds)} sweep steps (sweep_direction={sweep_direction})")
@@ -247,7 +254,7 @@ def run_sweep_adaptive_seed_from_dict(config):
 
 
 def run_sweep_adaptive_seed(config_path):
-    with open(config_path, "r") as f:
+    with open(config_path, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
     run_sweep_adaptive_seed_from_dict(config)
 

@@ -22,7 +22,7 @@ if str(sprout_path) not in sys.path:
 from sprout_core.sprout_core import get_sub_binary_image_by_pos
 
 from ..utils.status import LAYER_HEADER, NO_LAYER, StatusLine, style
-from ..utils.layer_lock import lock_layers, lock_note, unlock_layers
+from ..utils.layer_lock import lock_layers, lock_note, placement, unlock_layers
 from . import click_owner
 
 # One style for every run button, the same as the main panel's run buttons. Only the enabled
@@ -664,7 +664,7 @@ class QtLabelSelector(QWidget):
         if self.duplicate_checkbox.isChecked():
             duplicated_data = label_layer.data.copy()
             new_name = f"{label_layer.name}_set"
-            target_layer = self.viewer.add_labels(duplicated_data, name=new_name)
+            target_layer = self.viewer.add_labels(duplicated_data, name=new_name, **placement(label_layer))
             if self.on_click not in target_layer.mouse_drag_callbacks:
                 target_layer.mouse_drag_callbacks.append(self.on_click)
             self.last_bound_layer = target_layer
@@ -788,7 +788,7 @@ class QtLabelSelector(QWidget):
                 return
             target_layer = label_layer
             if duplicate:
-                target_layer = self.viewer.add_labels(new_data, name=f"{label_layer.name}_split")
+                target_layer = self.viewer.add_labels(new_data, name=f"{label_layer.name}_split", **placement(label_layer))
                 if self.on_click not in target_layer.mouse_drag_callbacks:
                     target_layer.mouse_drag_callbacks.append(self.on_click)
                 self.last_bound_layer = target_layer
@@ -1030,7 +1030,7 @@ class QtLabelSelector(QWidget):
         if self.duplicate_checkbox.isChecked():
             duplicated_data = label_layer.data.copy()
             new_name = f"{label_layer.name}_filtered"
-            target_layer = self.viewer.add_labels(duplicated_data, name=new_name)
+            target_layer = self.viewer.add_labels(duplicated_data, name=new_name, **placement(label_layer))
             if self.on_click not in target_layer.mouse_drag_callbacks:
                 target_layer.mouse_drag_callbacks.append(self.on_click)
             self.last_bound_layer = target_layer
@@ -1091,7 +1091,7 @@ class QtLabelSelector(QWidget):
         target_layer = label_layer
         if self.duplicate_checkbox.isChecked():
             new_name = f"{label_layer.name}_fill"
-            target_layer = self.viewer.add_labels(data.copy(), name=new_name)
+            target_layer = self.viewer.add_labels(data.copy(), name=new_name, **placement(label_layer))
             if self.on_click not in target_layer.mouse_drag_callbacks:
                 target_layer.mouse_drag_callbacks.append(self.on_click)
             self.last_bound_layer = target_layer
@@ -1152,7 +1152,7 @@ class QtLabelSelector(QWidget):
         # Duplicate if needed
         if self.duplicate_checkbox.isChecked():
             new_name = f"{label_layer.name}_merged"
-            new_layer = self.viewer.add_labels(target_data.copy(), name=new_name)
+            new_layer = self.viewer.add_labels(target_data.copy(), name=new_name, **placement(label_layer))
             if self.on_click not in new_layer.mouse_drag_callbacks:
                 new_layer.mouse_drag_callbacks.append(self.on_click)
             self.last_bound_layer = new_layer
@@ -1381,7 +1381,7 @@ class QtLabelSelector(QWidget):
         def on_done(result):
             if self.duplicate_checkbox.isChecked():
                 new_name = f"{label_layer.name}_morph"
-                new_layer = self.viewer.add_labels(result, name=new_name)
+                new_layer = self.viewer.add_labels(result, name=new_name, **placement(label_layer))
                 if self.on_click not in new_layer.mouse_drag_callbacks:
                     new_layer.mouse_drag_callbacks.append(self.on_click)
                 self.last_bound_layer = new_layer
@@ -1523,7 +1523,7 @@ class QtLabelSelector(QWidget):
         target_layer = label_layer
         if self.duplicate_checkbox.isChecked():
             new_name = f"{label_layer.name}_filtered"
-            target_layer = self.viewer.add_labels(data.copy(), name=new_name)
+            target_layer = self.viewer.add_labels(data.copy(), name=new_name, **placement(label_layer))
             if self.on_click not in target_layer.mouse_drag_callbacks:
                 target_layer.mouse_drag_callbacks.append(self.on_click)
             self.last_bound_layer = target_layer
@@ -1598,7 +1598,7 @@ class QtLabelSelector(QWidget):
         target_layer = label_layer
         if self.duplicate_checkbox.isChecked():
             new_name = f"{label_layer.name}_keeplabels"
-            target_layer = self.viewer.add_labels(data.copy(), name=new_name)
+            target_layer = self.viewer.add_labels(data.copy(), name=new_name, **placement(label_layer))
             if self.on_click not in target_layer.mouse_drag_callbacks:
                 target_layer.mouse_drag_callbacks.append(self.on_click)
             self.last_bound_layer = target_layer

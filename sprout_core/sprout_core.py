@@ -1277,6 +1277,8 @@ def label_dtype(max_id, min_dtype=np.uint8):
 
 def cast_labels(labels, min_dtype=np.uint8, copy=True):
     """Cast a label image to label_dtype(labels.max(), min_dtype) without losing any id."""
+    if labels.size and labels.min() < 0:
+        raise ValueError(f"Label ids cannot be negative, found {labels.min()}.")
     max_id = int(labels.max()) if labels.size else 0
     return labels.astype(label_dtype(max_id, min_dtype), copy=copy)
 

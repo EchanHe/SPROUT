@@ -11,7 +11,7 @@ from napari.layers import Labels
 from napari.utils.notifications import show_info
 
 from ..utils.status import LAYER_HEADER, NO_LAYER, StatusLine, style
-from ..utils.layer_lock import lock_layers, lock_note, unlock_layers
+from ..utils.layer_lock import lock_layers, lock_note, placement, unlock_layers
 from . import click_owner
 
 # the run button style of the main panel (as in the Edit dock)
@@ -435,12 +435,13 @@ class LabelMapperWidget(QWidget):
 
         old_data = self.label_layer.data
         layer_name = self.label_layer.name
+        layer_placement = placement(self.label_layer)
 
         def on_done(new_data):
             # napari selects the new layer, so this dock now shows its (empty) mapping
             # at least uint16 (as the seeds): a brushed id above 255 would wrap in uint8
             new = self.viewer.add_labels(new_data.astype(np.promote_types(new_data.dtype, np.uint16), copy=False),
-                                         name=f"{layer_name}_mapped")
+                                         name=f"{layer_name}_mapped", **layer_placement)
             show_info(f"New mapped segmentation layer created from '{layer_name}'.")
             self.status.set(f"Created {new.name}. The mapping of {layer_name} is kept: select "
                             f"{layer_name} to see or change it.", "ok")

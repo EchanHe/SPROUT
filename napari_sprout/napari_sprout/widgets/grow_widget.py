@@ -17,6 +17,7 @@ from ..utils.util_widget import (as_list, create_output_folder_row, GrowOptional
                                  MainGrowParamWidget,apply_threshold_preview,ThresholdWidget)
 from ..utils.histogram_threshold_widget import PREVIEW_NAME, HistogramThresholdWidget, append_threshold_row
 from ..utils.boundary_check import boundary_ok
+from ..utils.layer_files import layer_name, saved_note, yaml_path
 from ..utils.roi_layers import is_roi_layer
 from ..utils.roi_widget import RoiSelect, range_text
 from ..utils.status import RUN_BUTTON, STOP_BUTTON, StatusLine, follow_theme, style
@@ -639,7 +640,7 @@ class SeedGrowthWidget(QWidget):
                 ### For inputs
                 # Input image layer
                 if 'img_path' in params:
-                    input_image_name = params['img_path']
+                    input_image_name = layer_name(self.viewer, params['img_path'])
                     if input_image_name in [self.image_combo.itemText(i) for i in range(self.image_combo.count())]:
                         self.image_combo.setCurrentText(input_image_name)
                     else:
@@ -647,7 +648,7 @@ class SeedGrowthWidget(QWidget):
                 
                 # Seeds layer
                 if 'seg_path' in params:
-                    seeds_name = params['seg_path']
+                    seeds_name = layer_name(self.viewer, params['seg_path'])
                     if seeds_name in [self.seeds_combo.itemText(i) for i in range(self.seeds_combo.count())]:
                         self.seeds_combo.setCurrentText(seeds_name)
                     else:
@@ -655,7 +656,7 @@ class SeedGrowthWidget(QWidget):
                 
                 # Boundary layer
                 if 'boundary_path' in params and params['boundary_path'] is not None:
-                    boundary_name = params['boundary_path']
+                    boundary_name = layer_name(self.viewer, params['boundary_path'])
                     if boundary_name in [self.boundary_combo.itemText(i) for i in range(self.boundary_combo.count())]:
                         self.boundary_combo.setCurrentText(boundary_name)
                     else:
@@ -732,21 +733,20 @@ class SeedGrowthWidget(QWidget):
                 all_params.update(main_params)
                 all_params.update(advanced_params)
 
-                # Get input image name - use as img_path
+                # The files of the input layers
+                unsaved = []
                 if self.image_combo.currentText():
-                    all_params["img_path"] = self.image_combo.currentText()
+                    all_params["img_path"] = yaml_path(self.viewer, self.image_combo.currentText(), unsaved)
                 else:
                     all_params["img_path"] = None
-                
-                # Get seeds layer name - use as seg_path
+
                 if self.seeds_combo.currentText():
-                    all_params["seg_path"] = self.seeds_combo.currentText()
+                    all_params["seg_path"] = yaml_path(self.viewer, self.seeds_combo.currentText(), unsaved)
                 else:
                     all_params["seg_path"] = None
-                
-                # Get the boundary image name - use as boundary_path
+
                 if self.boundary_combo.currentText() != "None":
-                    all_params["boundary_path"] = self.boundary_combo.currentText()
+                    all_params["boundary_path"] = yaml_path(self.viewer, self.boundary_combo.currentText(), unsaved)
                 else:
                     all_params["boundary_path"] = None
 
@@ -784,7 +784,7 @@ class SeedGrowthWidget(QWidget):
                 with open(file_path, "w") as f:
                     yaml.dump(ordered_params, f, sort_keys=False, default_flow_style=False)
                 
-                self.params_status.set(f"Parameters successfully saved to {os.path.basename(file_path)}.", "ok")
+                self.params_status.set(*saved_note(os.path.basename(file_path), unsaved))
 
             except Exception as e:
                 self.params_status.set(f"Failed to save parameters: {e}", "error")

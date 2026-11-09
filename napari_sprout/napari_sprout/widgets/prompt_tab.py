@@ -26,7 +26,6 @@ layers, seed as initial mask, other overlap rules, ROI margin (32), Update / Rev
 class, CSV import / export.
 """
 import functools
-import os
 import threading
 import time
 import weakref
@@ -56,6 +55,7 @@ from sprout_core.sprout_core import label_dtype
 
 from ..utils import jobs
 from ..utils.fit_table import FitTable
+from ..utils.layer_files import same_path, source_path
 from ..utils.status import RUN_BUTTON, STOP_BUTTON, StatusLine, follow_theme, style, tab_hidden
 from ..utils.roi_layers import get_roi_hub
 from ..utils.roi_widget import RoiSelect
@@ -109,18 +109,6 @@ def capabilities_text(caps):
     """'points · scribbles · initial mask' in a fixed order."""
     order = [c for c in CAPABILITY_TEXT if c in caps] + sorted(c for c in caps if c not in CAPABILITY_TEXT)
     return " · ".join(CAPABILITY_TEXT.get(c, c) for c in order)
-
-
-def _source_path(layer):
-    p = getattr(getattr(layer, "source", None), "path", None) if layer is not None else None
-    return str(p) if p else None
-
-
-def _same_path(a, b):
-    try:
-        return os.path.normcase(os.path.abspath(str(a))) == os.path.normcase(os.path.abspath(str(b)))
-    except Exception:
-        return False
 
 
 class _FitTable(FitTable):
@@ -1194,7 +1182,7 @@ class PromptTab(QWidget):
         missing = []
 
         def path_of(layer, key, what):
-            p = _source_path(layer)
+            p = source_path(layer)
             if p:
                 return p
             missing.append(key)
@@ -1299,14 +1287,14 @@ class PromptTab(QWidget):
             p = cfg.get(key)
             if not p:
                 continue
-            lay = next((l for l in self.viewer.layers if isinstance(l, kind) and _same_path(_source_path(l), p)), None)
+            lay = next((l for l in self.viewer.layers if isinstance(l, kind) and same_path(source_path(l), p)), None)
             if lay is not None:
                 combo.setCurrentText(lay.name)
             else:
                 notes.append(f"{key} {Path(str(p)).name} is not open: open it and pick it in 1. Input")
         p = cfg.get("init_seg_path")
         if p:
-            lay = next((l for l in self.viewer.layers if isinstance(l, Labels) and _same_path(_source_path(l), p)), None)
+            lay = next((l for l in self.viewer.layers if isinstance(l, Labels) and same_path(source_path(l), p)), None)
             if lay is not None and self.init_combo.isEnabled():
                 self.init_combo.setCurrentIndex(self.init_combo.findData(lay.name))
             else:
@@ -1478,7 +1466,7 @@ class PromptTab(QWidget):
         out_name = self.current_output_name()
         store = self._stores.setdefault(self._store_key(out_name), PS.ResultStore())
         image_key = (id(img), img.name, id(img.data))
-        stem = Path(_source_path(img)).stem if _source_path(img) else img.name
+        stem = Path(source_path(img)).stem if source_path(img) else img.name
         if roi is not None:
             stem = R.roi_name(stem, roi.name or "roi")
         ctx = dict(out=out_name, store=store, seeds=seeds_snap, shape=shape, roi=roi, ptype=ptype, input=key,

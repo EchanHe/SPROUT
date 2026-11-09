@@ -45,6 +45,6 @@ def test_session_comes_from_make_session():
 def test_sweep_keeps_ids_above_uint16(tmp_path):
     img = np.zeros((84, 84, 84), np.uint8)
     img[::2, ::2, ::2] = 200                  # 42 ** 3 = 74088 single voxels
-    _, path = seed_sweep._generate_one_threshold_step(img, 100, 255, [], 0, None, 0, tmp_path)
+    _, path, _ = seed_sweep._generate_one_threshold_step(img, 100, 255, [], 0, None, 0, tmp_path)
     seed = tifffile.imread(path)
     assert seed.max() == 42 ** 3 and np.unique(seed).size == 42 ** 3 + 1
