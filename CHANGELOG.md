@@ -8,6 +8,7 @@
 - napari: Threshold Preview; progress and Stop for Seeds, Grow and Boundary.
 - YAML: `seed` (nnInteractive pipeline, default 0); `prune_every_iter` (adaptive seed).
 - **Sweep adaptive seed** (`--sweep_adaptive`, napari Seeds tab `Sweep (Erosion)` / `Sweep (Thresholds)`): one seed per threshold or erosion step, combined into `FINAL_sweep_seed.tif`, with `sweep_regions.csv` and `sweep_steps.csv`. See `docs/config_sweep_adaptive_seed.md`.
+- Adaptive seed: `adaptive_seed_regions.csv` and `adaptive_seed_steps.csv` say how each seed began and what each step did (same seeds).
 - Float images: decimal thresholds in seeds, adaptive seed, sweep and grow, in the YAML and in napari, for example on probability maps.
 - Sweep: `memory_limit_gb` caps the memory of large scans (steps on disk, fewer threads; same result).
 
