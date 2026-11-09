@@ -25,11 +25,11 @@ num_threads: 4
 direction: strict_to_loose
 
 # Shared combine parameters
-min_area: 20
+min_size: 20
 connectivity: 3
 input_mode: label        # label: each nonzero value is one region; binary: run connected-components
 top_n: 100               # keep only the top-N seeds by final area (null to keep all)
-save_intermediate: false # save combine_seed after every step (useful for debugging)
+save_every_iter: false # save the combined seed after every step (useful for debugging)
 memory_limit_gb: ~       # GB for the steps (null: all in memory); over it: steps from disk, fewer threads
 verbose: true
 

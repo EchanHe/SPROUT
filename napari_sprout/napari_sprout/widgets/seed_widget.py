@@ -180,7 +180,7 @@ class SeedWorker:
                     num_threads=self.num_threads,
                     footprints=self.footprints,
                     base_name=self.base_name,
-                    min_area=self.min_size,
+                    min_size=self.min_size,
                     cancel=cancel, progress=progress
                 )
             jobs.check_cancel(cancel)         # Stop after the last step: no layers either

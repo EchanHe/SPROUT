@@ -30,7 +30,7 @@ Use sweep adaptive seed when you want many seeds or a long list of thresholds. U
 
 ### In napari
 
-In the Seeds tab, set Method to `Sweep (Thresholds)`. The rows of the threshold table are the steps, in descending or ascending order; with one row, each erosion step is a step. Threads, Segments and the footprints work as here, and `Min segment size` under the advanced parameters is `min_area`.
+In the Seeds tab, set Method to `Sweep (Thresholds)`. The rows of the threshold table are the steps, in descending or ascending order; with one row, each erosion step is a step. Threads, Segments and the footprints work as here, and `Min segment size` under the advanced parameters is `min_size`.
 
 napari runs `strict_to_loose` and adds one layer, `<image>_FINAL_sweep_seed`, which the Grow tab picks up. The files below are written to the output folder. The other parameters of this page are for YAML runs.
 
@@ -54,7 +54,7 @@ By default all steps stay in memory: about 2 bytes per voxel per step, plus 7 by
 | Parameter | Default | Description |
 |---|---|---|
 | `direction` | `strict_to_loose` | `strict_to_loose`, `loose_to_strict`, or `both` to write both results. |
-| `min_area` | `1` | Regions smaller than this are ignored. This has a large effect on the number of seeds. |
+| `min_size` | `1` | Regions smaller than this are ignored. This has a large effect on the number of seeds. |
 | `top_n` | none | Keep only the N largest seeds of the result. |
 | `connectivity` | `1` | Connectivity of connected components. |
 | `input_mode` | `auto` | `label`: each id of a step is one region. `binary`: find the connected components of a step. |
@@ -63,7 +63,7 @@ By default all steps stay in memory: about 2 bytes per voxel per step, plus 7 by
 | `footprints` | `ball` | Erosion footprint, see [seed generation](./config_seed.md). |
 | `base_name` | image name | Name of the result folder. |
 | `workspace` | none | Prepended to all relative paths. |
-| `save_intermediate` | `false` | Save the combined seed after every step. |
+| `save_every_iter` | `false` | Save the combined seed after every step. |
 | `memory_limit_gb` | none: all in memory | Memory for the steps, in GB; see [Large images](#large-images). The run prints what it chose. |
 | `verbose` | `true` | Print progress. |
 | `seeds_folder` | none | Skip the sweep and use the `step_*.tif` files of this folder (the `steps` folder of an earlier run). A folder that does not exist is an error. |

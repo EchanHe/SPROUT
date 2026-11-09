@@ -10,8 +10,8 @@ output using the fast combine logic from adaptive_seed_combine.py.
 YAML parameter naming:
   - Sweep params: img_path, thresholds, erosion_steps, segments, num_threads,
     upper_thresholds, boundary_path, footprints, base_name, workspace
-  - Shared combine params: direction, min_area, connectivity, input_mode,
-    top_n, save_intermediate, verbose
+  - Shared combine params: direction, min_size, connectivity, input_mode,
+    top_n, save_every_iter, verbose
   - s2l-specific: s2l_min_current_coverage, s2l_max_emerge_coverage
   - l2s-specific: l2s_min_new_coverage, l2s_max_new_coverage,
     l2s_keep_disappeared
@@ -64,11 +64,11 @@ from sprout_core.seed_sweep import (
 def _map_yaml_to_combine_kwargs(optional, direction):
     """Translate prefixed YAML params to internal function parameter names."""
     shared = {
-        "min_area": optional.get("min_area", 1),
+        "min_area": optional.get("min_size", 1),
         "connectivity": optional.get("connectivity", 1),
         "input_mode": optional.get("input_mode", "auto"),
         "top_n": optional.get("top_n", None),
-        "save_intermediate": optional.get("save_intermediate", False),
+        "save_intermediate": optional.get("save_every_iter", False),
         "verbose": optional.get("verbose", True),
     }
 
@@ -233,7 +233,7 @@ def _run_sweep(img, folder, thresholds, upper_thresholds, erosion_steps, segment
 
 
 def make_sweep_adaptive_seed(img, thresholds, erosion_steps, segments, output_folder, base_name="sweep",
-                             upper_thresholds=None, boundary=None, footprints=None, num_threads=1, min_area=1,
+                             upper_thresholds=None, boundary=None, footprints=None, num_threads=1, min_size=1,
                              cancel=None, progress=None, memory_limit_gb=None):
     """Sweep and strict-to-loose combine of an array, for napari. Returns {layer name: seeds}.
 
@@ -254,7 +254,7 @@ def make_sweep_adaptive_seed(img, thresholds, erosion_steps, segments, output_fo
             seeds = StepFiles(paths)
         if sweep_direction == "l2s":
             seeds, paths = seeds[::-1], paths[::-1]
-        result, metadata = adaptive_seed_s2l_from_seeds(seeds, min_area=min_area, input_mode="label",
+        result, metadata = adaptive_seed_s2l_from_seeds(seeds, min_area=min_size, input_mode="label",
                                                         verbose=False, cancel=cancel)
     except MemoryError as e:
         raise MemoryError(f"{e}\n{OUT_OF_MEMORY_HINT}") from e
@@ -262,7 +262,7 @@ def make_sweep_adaptive_seed(img, thresholds, erosion_steps, segments, output_fo
     _save_result(result, metadata, seeds, paths, folder)
     config_core.save_config_with_output({"params": {
         "thresholds": thresholds, "upper_thresholds": upper_thresholds, "erosion_steps": erosion_steps,
-        "segments": segments, "footprints": footprints, "num_threads": num_threads, "min_area": min_area,
+        "segments": segments, "footprints": footprints, "num_threads": num_threads, "min_size": min_size,
         "direction": "strict_to_loose", "input_mode": "label",
     }}, folder)
     steps.step("combine")

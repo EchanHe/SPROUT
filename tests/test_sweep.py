@@ -55,7 +55,7 @@ def config(tmp_path, **changes):
         tifffile.imwrite(path, image())
     values = template()
     values.update(img_path=str(path), output_folder=str(tmp_path / "out"), thresholds=list(THRESHOLDS), segments=10,
-                  num_threads=1, min_area=1, top_n=None, verbose=False)
+                  num_threads=1, min_size=1, top_n=None, verbose=False)
     values.update(changes)
     return values
 
@@ -67,6 +67,20 @@ def run(values):
 
 def result(folder, suffix=""):
     return tifffile.imread(folder / f"FINAL_sweep_seed{suffix}.tif")
+
+
+def test_min_size_drops_small_regions(tmp_path):
+    every = result(run(config(tmp_path, output_folder=str(tmp_path / "a"))))
+    large = result(run(config(tmp_path, output_folder=str(tmp_path / "b"), min_size=400)))  # each core: 288 voxels
+    assert len(np.unique(large)) < len(np.unique(every))
+
+
+@pytest.mark.parametrize("old, new", [("min_area", "min_size"), ("save_intermediate", "save_every_iter")])
+def test_an_old_key_name_gives_the_new_one(tmp_path, old, new):
+    values = config(tmp_path)
+    values[old] = values.pop(new)
+    with pytest.raises(ValueError, match=f"'{old}' is now '{new}'"):
+        run(values)
 
 
 def boundary_file(folder):
@@ -446,7 +460,7 @@ def batch_files(tmp_path, csv, **changes):
     (tmp_path / "input.csv").write_text(csv.format(folder=tmp_path), encoding="utf-8")
     values = template("batch_sweep_adaptive_seed.yaml")
     values.update(csv_path=str(tmp_path / "input.csv"), output_folder=str(tmp_path / "out"), thresholds=list(THRESHOLDS),
-                  segments=10, num_threads=1, min_area=1, top_n=None, verbose=False)
+                  segments=10, num_threads=1, min_size=1, top_n=None, verbose=False)
     values.update(changes)
     path = tmp_path / "batch.yaml"
     path.write_text(yaml.safe_dump(values), encoding="utf-8")

@@ -519,12 +519,17 @@ def check_file_extension(file_path):
 ###############
 
 
+RENAMED = {"min_area": "min_size", "save_intermediate": "save_every_iter"}    # sweep keys before 1.1.0
+
+
 def validate_input_yaml(config, rules):
     errors = []
     optional_values = {}
     
     for key in config:
-        if key not in rules:
+        if key in RENAMED and key not in rules:
+            errors.append(f"'{key}' is now '{RENAMED[key]}'.")
+        elif key not in rules:
             errors.append(f"Unsupported parameter '{key}' in input config.")
 
     for param, rule in rules.items():
@@ -1286,12 +1291,12 @@ input_val_sweep_adaptive_seed = {
         "choices": ["strict_to_loose", "loose_to_strict", "both"],
         "description": "Combine direction.",
     },
-    "min_area": {
+    "min_size": {
         "type": int,
         "min": 1,
         "required": False,
         "default": 1,
-        "description": "Minimum region area for combine.",
+        "description": "Regions smaller than this (in voxels) are dropped at every step.",
     },
     "connectivity": {
         "type": int,
@@ -1314,11 +1319,11 @@ input_val_sweep_adaptive_seed = {
         "default": None,
         "description": "Keep only the top-N seeds in the final result.",
     },
-    "save_intermediate": {
+    "save_every_iter": {
         "type": bool,
         "required": False,
         "default": False,
-        "description": "Save combine_seed after each combine step.",
+        "description": "Save the combined seed after every step.",
     },
     "memory_limit_gb": {
         "type": (int, float),

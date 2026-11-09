@@ -117,7 +117,7 @@ def test_sweep(tmp_path, thresholds):
     tifffile.imwrite(path, probability_map())
     config = yaml.safe_load(open(ROOT / "template" / "sweep_adaptive_seed.yaml", encoding="utf-8"))
     config.update(img_path=str(path), output_folder=str(tmp_path / "out"), thresholds=thresholds, segments=5,
-                  num_threads=1, min_area=1, top_n=None, verbose=False)
+                  num_threads=1, min_size=1, top_n=None, verbose=False)
     sweep.run_sweep_adaptive_seed_from_dict(config)
     final = tifffile.imread(tmp_path / "out" / "p" / "FINAL_sweep_seed.tif")
     assert len(np.unique(final)) == 3
@@ -129,7 +129,7 @@ def test_seeds_folder_with_decimal_names(tmp_path):
     tifffile.imwrite(path, probability_map())
     config = yaml.safe_load(open(ROOT / "template" / "sweep_adaptive_seed.yaml", encoding="utf-8"))
     config.update(img_path=str(path), output_folder=str(tmp_path / "a"), thresholds=[0.4, 0.8], segments=5,
-                  num_threads=1, min_area=1, top_n=None, verbose=False)
+                  num_threads=1, min_size=1, top_n=None, verbose=False)
     sweep.run_sweep_adaptive_seed_from_dict(config)
     fresh = tifffile.imread(tmp_path / "a" / "p" / "FINAL_sweep_seed.tif")
     sweep.run_sweep_adaptive_seed_from_dict({**config, "output_folder": str(tmp_path / "b"),
