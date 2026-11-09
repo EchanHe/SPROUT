@@ -52,7 +52,7 @@ def two_cubes_bridged():
     return img
 
 
-def sweep_tab(viewer, img, thresholds, erosion_steps=0):
+def sweep_tab(viewer, img, thresholds, erosion_steps=0, method="Sweep (Thresholds)"):
     _, sprout = viewer.window.add_plugin_dock_widget("napari-sprout", "SPROUT")
     C.pump(10)
     tab = next(w for w in sprout.findChildren(object) if type(w).__name__ == "SeedGenerationWidget")
@@ -60,7 +60,7 @@ def sweep_tab(viewer, img, thresholds, erosion_steps=0):
     C.pump(10)
     tab.image_combo.setCurrentText("I")
     params = tab.main_param_widget
-    params.seed_method_combo.setCurrentText("Sweep (Thresholds)")
+    params.seed_method_combo.setCurrentText(method)
     params.populate_thresholds_from_list(thresholds, [255] * len(thresholds))
     params.erosion_spin.setValue(erosion_steps)
     params.thread_spin.setValue(1)
@@ -104,8 +104,16 @@ def loose_to_strict_thresholds(viewer):
            f"ids {None if seeds is None else np.unique(seeds)}, {tab.results_label.text()!r}")
 
 
-def erosion_sweep_from_one_row(viewer):
-    tab = sweep_tab(viewer, two_cubes_bridged(), [100], erosion_steps=2)
+def refused(tab, viewer, *words):
+    run(tab)
+    text, level = tab.results_label.text(), S.level_of(tab.results_label)
+    result(level == "error" and all(w in text for w in words) and LAYER not in viewer.layers and not FINAL.is_file()
+           and not (TMP / "I").exists() and not DIALOGS.take(),
+           f"{level}: {text!r}, layers {[l.name for l in viewer.layers]}, output {(TMP / 'I').exists()}")
+
+
+def erosion_sweep(viewer):
+    tab = sweep_tab(viewer, two_cubes_bridged(), [100], erosion_steps=2, method="Sweep (Erosion)")
     run(tab)
     seeds = viewer.layers[LAYER].data if LAYER in viewer.layers else None
     steps = sorted(p.name for p in (TMP / "I" / "steps").glob("step_*.tif"))
@@ -150,14 +158,39 @@ def thresholds_out_of_order_are_refused(viewer):
            f"{level}: {text!r}, layers {[l.name for l in viewer.layers]}, final {FINAL.is_file()}")
 
 
-def other_methods_get_their_options_back(viewer):
+def one_row_is_refused_by_the_threshold_sweep(viewer):
+    refused(sweep_tab(viewer, two_slabs(), [180]), viewer, "at least 2 threshold rows", "Sweep (Erosion)")
+
+
+def two_rows_are_refused_by_the_erosion_sweep(viewer):
+    refused(sweep_tab(viewer, two_slabs(), [180, 100], erosion_steps=2, method="Sweep (Erosion)"), viewer,
+            "one threshold row", "Sweep (Thresholds)")
+
+
+def the_erosion_sweep_needs_an_erosion_step(viewer):
+    refused(sweep_tab(viewer, two_slabs(), [180], method="Sweep (Erosion)"), viewer, "at least 1 erosion step")
+
+
+def each_method_greys_what_it_does_not_use(viewer):
     tab = sweep_tab(viewer, two_slabs(), [180, 100])
-    box = tab.advanced_params_box
-    off = not box.no_split_spin.isEnabled()
-    tab.main_param_widget.seed_method_combo.setCurrentText("Adaptive (Thresholds)")
-    C.pump(5)
-    result(off and box.no_split_spin.isEnabled() and box.min_size_spin.isEnabled(),
-           f"sweep greys no_split {off}; back on Adaptive (Thresholds): {box.no_split_spin.isEnabled()}")
+    box, params, combo = tab.advanced_params_box, tab.main_param_widget, tab.main_param_widget.seed_method_combo
+
+    def on():
+        return dict(no_split=box.no_split_spin.isEnabled(), min_size=box.min_size_spin.isEnabled(),
+                    mid_results=tab.save_every_iter_checkbox.isEnabled(), threads=params.thread_spin.isEnabled())
+
+    seen = {}
+    for method in ("Sweep (Thresholds)", "Sweep (Erosion)", "Adaptive (Thresholds)", "Adaptive (Erosion)", "Original"):
+        combo.setCurrentText(method)
+        C.pump(5)
+        seen[method] = on()
+    every = dict(no_split=True, min_size=True, mid_results=True, threads=True)
+    expected = {"Sweep (Thresholds)": dict(every, no_split=False, mid_results=False),
+                "Sweep (Erosion)": dict(every, no_split=False, mid_results=False, threads=False),
+                "Adaptive (Thresholds)": every, "Adaptive (Erosion)": every, "Original": every}
+    items = [combo.itemText(i) for i in range(combo.count())]
+    result(seen == expected and items == ["Original", "Adaptive (Erosion)", "Adaptive (Thresholds)", "Sweep (Erosion)",
+                                          "Sweep (Thresholds)"], f"{items}: {seen}")
 
 
 if __name__ == "__main__":

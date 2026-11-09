@@ -480,13 +480,14 @@ class MainSeedParamWidget(_ParamGroup):
         grid = QGridLayout()
         grid.setHorizontalSpacing(8)
         self.seed_method_combo = QComboBox()
-        self.seed_method_combo.addItems(["Original", "Adaptive (Erosion)", "Adaptive (Thresholds)", SWEEP_METHOD])
+        self.seed_method_combo.addItems(["Original", "Adaptive (Erosion)", "Adaptive (Thresholds)", *SWEEP_METHODS])
         self.seed_method_combo.setToolTip(
             "Original: one seed layer per threshold row and erosion step.\n"
-            "Adaptive (Erosion) / Adaptive (Thresholds): combine the seeds across the erosion\n"
-            "steps / the threshold rows into one final seed.\n"
-            "Sweep (Thresholds): one seed per threshold row, in order, combined from strict to\n"
-            "loose. Stays fast with many seeds. One row: one seed per erosion step.")
+            "(Erosion): one threshold row, a seed per erosion step. (Thresholds): a seed per threshold row.\n"
+            "Adaptive: checks every split before it keeps it: fewer, cleaner seeds; slower when there\n"
+            "are many seeds.\n"
+            "Sweep: runs all steps at once and keeps every split: fast with many seeds, may keep small\n"
+            "pieces (raise Min segment size).")
         self.thread_spin = _param_spin(1, os.cpu_count(), min(4, os.cpu_count() - 1), 60)
         self.erosion_spin = _param_spin(0, 1000, 0)
         self.segments_spin = _param_spin(1, 100000, 10)
@@ -1044,7 +1045,8 @@ def set_compact(widget, minw=None, maxw=None):
         widget.setMaximumWidth(maxw)
 
 
-SWEEP_METHOD = "Sweep (Thresholds)"
+SWEEP_EROSION, SWEEP_THRESHOLDS = "Sweep (Erosion)", "Sweep (Thresholds)"
+SWEEP_METHODS = (SWEEP_EROSION, SWEEP_THRESHOLDS)
 
 
 class SeedOptionalParamGroupBox(QGroupBox):
@@ -1223,7 +1225,7 @@ class SeedOptionalParamGroupBox(QGroupBox):
         for widget in (self.sort_checkbox, self.no_split_spin, self.min_split_ratio_spin,
                        self.min_split_total_ratio_spin, self.size_lower_spin, self.size_upper_spin,
                        self.hull_lower_spin, self.hull_upper_spin):
-            widget.setEnabled(method != SWEEP_METHOD)
+            widget.setEnabled(method not in SWEEP_METHODS)
 
     def get_params(self):
         def parse_optional_spin(spinbox):

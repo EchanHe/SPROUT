@@ -15,10 +15,13 @@ TESTS = Path(__file__).resolve().parent
 PROBES = [
     "strict_to_loose_thresholds",
     "loose_to_strict_thresholds",
-    "erosion_sweep_from_one_row",
+    "erosion_sweep",
     "stop_leaves_no_final",
     "thresholds_out_of_order_are_refused",
-    "other_methods_get_their_options_back",
+    "one_row_is_refused_by_the_threshold_sweep",
+    "two_rows_are_refused_by_the_erosion_sweep",
+    "the_erosion_sweep_needs_an_erosion_step",
+    "each_method_greys_what_it_does_not_use",
 ]
 
 

@@ -21,16 +21,17 @@ With `direction: loose_to_strict`, the steps are combined the other way: seeds s
 | | Sweep adaptive seed | Adaptive seed (`--adaptive_seed`) |
 |---|---|---|
 | Method | Every step is used | The method of the paper: follows splits, stops after `no_split_max_iter` steps without a split |
+| Splits | Every split is kept, small pieces too (raise `min_size`) | Each split is checked (`min_split_ratio` and the split limits) |
 | Many seeds | Run time hardly changes | Run time grows with the number of seeds |
 | A long list of close thresholds | Every threshold is used | Set `no_split_max_iter` above the number of thresholds, or it may stop early |
 | Memory | All steps at once, see [Large images](#large-images) | One step at a time |
-| napari | Seeds tab, Method `Sweep (Thresholds)` | Seeds tab, Method `Adaptive` |
+| napari | Seeds tab, Method `Sweep (Erosion)` or `Sweep (Thresholds)` | Seeds tab, Method `Adaptive (Erosion)` or `Adaptive (Thresholds)` |
 
-Use sweep adaptive seed when you want many seeds or a long list of thresholds. Use adaptive seed to reproduce results of the paper. The two give different seeds, so compare them on your own data.
+Use sweep adaptive seed when you want many seeds fast. More thresholds give more seeds. Use adaptive seed for fewer, cleaner seeds, or to reproduce results of the paper. The two give different seeds, so compare them on your own data.
 
 ### In napari
 
-In the Seeds tab, set Method to `Sweep (Thresholds)`. The rows of the threshold table are the steps, in descending or ascending order; with one row, each erosion step is a step. Threads, Segments and the footprints work as here, and `Min segment size` under the advanced parameters is `min_size`.
+In the Seeds tab, set Method to `Sweep (Thresholds)` (two or more threshold rows, in descending or ascending order; one step per row) or `Sweep (Erosion)` (one row; one step per erosion step). Segments and the footprints work as here, Threads too for `Sweep (Thresholds)`, and `Min segment size` under the advanced parameters is `min_size`.
 
 napari runs `strict_to_loose` and adds one layer, `<image>_FINAL_sweep_seed`, which the Grow tab picks up. The files below are written to the output folder. The other parameters of this page are for YAML runs.
 
