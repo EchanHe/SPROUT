@@ -388,8 +388,8 @@ def test_out_of_memory_says_what_to_set(tmp_path, monkeypatch):
 
 
 def test_fewer_threads_are_said(tmp_path, capsys):
-    run(config(tmp_path, verbose=True, num_threads=4, memory_limit_gb=0))
-    assert "num_threads 4 -> 1" in capsys.readouterr().out
+    run(config(tmp_path, verbose=True, num_threads=2, memory_limit_gb=0))      # 2: every CI machine has the cores
+    assert "num_threads 2 -> 1" in capsys.readouterr().out
 
 
 # ---- configuration
