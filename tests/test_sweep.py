@@ -5,6 +5,7 @@ The expected values are computed here in the plainest way, not with the code und
 """
 import builtins
 import inspect
+import json
 import subprocess
 import sys
 import tracemalloc
@@ -133,8 +134,8 @@ def test_both_gives_what_each_direction_gives(tmp_path):
     both = run(config(tmp_path / "a", direction="both"))
     s2l = run(config(tmp_path / "b", direction="strict_to_loose"))
     l2s = run(config(tmp_path / "c", direction="loose_to_strict"))
-    assert np.array_equal(result(both, "_s2l"), result(s2l))
-    assert np.array_equal(result(both, "_l2s"), result(l2s))
+    assert np.array_equal(result(both, "_strict_to_loose"), result(s2l))
+    assert np.array_equal(result(both, "_loose_to_strict"), result(l2s))
 
 
 # ---- what a run leaves
@@ -153,23 +154,74 @@ def test_regions_say_what_the_image_holds(tmp_path):
     for _, row in regions.iterrows():
         assert row["area"] == np.count_nonzero(seeds == row["id"])
     core = regions[regions["id"] == seeds[10, 8, 8]].iloc[0]
-    assert core["first_threshold"] == 200 and "thre_200" in core["first_step"]
+    assert core["first_threshold"] == 200 and core["first_step"] == 0 and core["began"] == "first step"
     side = regions[regions["id"] == seeds[10, 30, 30]].iloc[0]
-    assert side["first_threshold"] == 150
+    assert side["first_threshold"] == 150 and side["first_step"] == 1 and side["began"] == "emerged"
+    assert set(regions["ended"]) <= {"locked", "never locked"}
+    assert regions["at_step"].notna().tolist() == (regions["ended"] == "locked").tolist()
+
+
+def test_ids_are_by_size(tmp_path):
+    regions = pd.read_csv(run(config(tmp_path)) / "sweep_regions.csv")
+    assert regions["id"].tolist() == list(range(1, len(regions) + 1))
+    assert regions["area"].is_monotonic_decreasing
+
+
+def test_regions_show_the_setting_that_changes(tmp_path):
+    erosion = pd.read_csv(run(config(tmp_path, thresholds=[100], erosion_steps=2)) / "sweep_regions.csv")
+    assert {"first_erosion", "last_erosion"} <= set(erosion.columns)
+    assert not {"first_threshold", "first_upper"} & set(erosion.columns)
+
+
+def test_loose_to_strict_says_which_seed_a_seed_split_from(tmp_path):
+    regions = pd.read_csv(run(config(tmp_path, direction="loose_to_strict")) / "sweep_regions.csv")
+    split = regions[regions["began"].str.startswith("split from")]
+    assert len(split) > 0
+    for _, row in split.iterrows():
+        parent = int(row["began"].split()[-1])
+        assert parent in set(regions["id"]) and parent != row["id"]
+    assert set(regions["ended"]) <= {"disappeared", "reached the end"}
+
+
+def test_the_metadata_says_how_it_was_made(tmp_path):
+    folder = run(config(tmp_path))
+    metadata = json.loads((folder / "sweep_metadata.json").read_text(encoding="utf-8"))
+    assert metadata["direction"] == "strict_to_loose"
+    assert metadata["steps"] == sorted(path.name for path in (folder / "steps").iterdir())
+    assert [item["seed_id"] for item in metadata["seeds"]] == list(range(1, len(metadata["seeds"]) + 1))
+
+
+@pytest.mark.parametrize("direction", ["strict_to_loose", "loose_to_strict"])
+def test_save_every_iter_writes_the_seeds_after_each_step(tmp_path, direction):
+    folder = run(config(tmp_path, direction=direction, save_every_iter=True))
+    names = sorted(path.name for path in (folder / "intermediate" / direction).iterdir())
+    assert names == ["after_step_000.tif", "after_step_001.tif", "after_step_002.tif"]
+    last = 2 if direction == "strict_to_loose" else 0              # the last step of the combine
+    assert np.array_equal(tifffile.imread(folder / "intermediate" / direction / f"after_step_00{last}.tif") > 0,
+                          result(folder) > 0)
 
 
 @pytest.mark.parametrize("direction, order", [("strict_to_loose", [200, 150, 100]), ("loose_to_strict", [100, 150, 200])])
 def test_steps_are_in_the_order_of_the_combine(tmp_path, direction, order):
     steps = pd.read_csv(run(config(tmp_path, direction=direction)) / "sweep_steps.csv")
     assert steps["lower"].tolist() == order
-    assert steps["order"].tolist() == [0, 1, 2]
-    by_threshold = dict(zip(steps["lower"], steps["labels"]))
+    assert steps["step"].tolist() == [THRESHOLDS.index(t) for t in order]       # the number of its file
+    by_threshold = dict(zip(steps["lower"], steps["regions"]))
     assert by_threshold == {t: ndimage.label(image() >= t)[0].max() for t in THRESHOLDS}
+
+
+@pytest.mark.parametrize("direction", ["strict_to_loose", "loose_to_strict"])
+def test_steps_count_the_seeds(tmp_path, direction):
+    folder = run(config(tmp_path, direction=direction, top_n=2))
+    steps, regions = pd.read_csv(folder / "sweep_steps.csv"), pd.read_csv(folder / "sweep_regions.csv")
+    assert steps["new_seeds"].iloc[0] == steps["regions"].iloc[0] == steps["seeds_after"].iloc[0]
+    assert steps["seeds_after"].iloc[-1] >= len(regions) == 2 == steps["in_final"].sum()    # top_n comes after
+    assert (steps["in_final"] <= steps["new_seeds"]).all()
 
 
 def test_regions_of_each_direction(tmp_path):
     folder = run(config(tmp_path, direction="both"))
-    for suffix in ("_s2l", "_l2s"):
+    for suffix in ("_strict_to_loose", "_loose_to_strict"):
         for name in (f"FINAL_sweep_seed{suffix}.tif", f"sweep_regions{suffix}.csv", f"sweep_steps{suffix}.csv"):
             assert (folder / name).is_file()
 

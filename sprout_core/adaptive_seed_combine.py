@@ -50,7 +50,7 @@ from sprout_core.sprout_core import _apply_lut, _bincount, check_cancel
 
 COMBINE_SHARED_KEYS = frozenset({
     "min_area", "connectivity", "input_mode", "top_n",
-    "save_intermediate", "intermediate_folder", "verbose", "log_every",
+    "save_intermediate", "intermediate_folder", "intermediate_numbers", "verbose", "log_every", "step_log",
 })
 COMBINE_S2L_KEYS = frozenset({
     "min_current_coverage", "max_emerge_coverage",
@@ -210,8 +210,11 @@ def _metadata_list(metadata_by_seed_id):
 
 
 def _apply_top_n(combine_seed, metadata_by_seed_id, top_n):
-    if top_n is None:
-        return combine_seed, metadata_by_seed_id
+    """Number the seeds by size, largest first, and keep the top_n largest (all if None).
+
+    Each seed keeps its id of the combine as original_seed_id; ids inside the metadata
+    (parent_seed_id, merged_with, ...) are original ids.
+    """
     seed_ids = sorted(metadata_by_seed_id)
     length = max([int(combine_seed.max())] + seed_ids) + 1
     counts = _bincount(combine_seed, length)
@@ -227,10 +230,12 @@ def _apply_top_n(combine_seed, metadata_by_seed_id, top_n):
     return _apply_lut(lut, combine_seed), new_metadata
 
 
-def _save_intermediate_seed(combine_seed, intermediate_folder, prefix, step_index):
+def _save_intermediate_seed(combine_seed, intermediate_folder, prefix, step_index, numbers=None):
+    """<prefix>_<number>.tif; numbers maps the combine order to a step number (default: the order)."""
     intermediate_folder = Path(intermediate_folder)
     intermediate_folder.mkdir(parents=True, exist_ok=True)
-    output_path = intermediate_folder / f"{prefix}_step_{step_index:03d}.tif"
+    number = numbers[step_index] if numbers is not None else step_index
+    output_path = intermediate_folder / f"{prefix}_{number:03d}.tif"
     tifffile.imwrite(output_path, combine_seed, compression="zlib")
     return output_path
 
@@ -430,12 +435,14 @@ def adaptive_seed_s2l_from_seeds(
     max_emerge_coverage=None,
     save_intermediate=False,
     intermediate_folder=None,
-    intermediate_prefix="adaptive_seed_s2l",
+    intermediate_prefix="adaptive_seed_s2l_step",
+    intermediate_numbers=None,
     verbose=False,
     log_every=1,
     vectorize_overlap=False,
     cancel=None,
     mask_by_last_seed=False,
+    step_log=None,
 ):
     """Strict-to-loose adaptive seed: emerge / grow / lock events.
 
@@ -443,6 +450,8 @@ def adaptive_seed_s2l_from_seeds(
     the loosest seed (the last input seed). Regions outside it (e.g. artefacts
     that emerged at stricter steps) are removed. Assumes the loosest seed
     cleanly captures the whole target.
+    step_log: a list that gets one dict per step, in the order of the combine: regions of the
+    step, new_seeds started there, seeds_after the step (before top_n).
     """
     if min_area < 1:
         raise ValueError("min_area must be >= 1.")
@@ -492,8 +501,11 @@ def adaptive_seed_s2l_from_seeds(
             f"initial_regions={len(initial_regions)}"
         )
 
+    if step_log is not None:
+        step_log.append({"regions": len(initial_regions), "new_seeds": len(initial_regions),
+                         "seeds_after": next_seed_id - 1})
     if save_intermediate:
-        _save_intermediate_seed(combine_seed, intermediate_folder, intermediate_prefix, 0)
+        _save_intermediate_seed(combine_seed, intermediate_folder, intermediate_prefix, 0, intermediate_numbers)
 
     del first_seed
     for seed_index, seed in enumerate(array_seeds[1:], start=1):
@@ -590,8 +602,11 @@ def adaptive_seed_s2l_from_seeds(
                             int(item) for item in significant_seed_ids
                         ]
 
+        if step_log is not None:
+            step_log.append({"regions": len(regions), "new_seeds": emerged_count, "seeds_after": next_seed_id - 1})
         if save_intermediate:
-            _save_intermediate_seed(combine_seed, intermediate_folder, intermediate_prefix, seed_index)
+            _save_intermediate_seed(combine_seed, intermediate_folder, intermediate_prefix, seed_index,
+                                    intermediate_numbers)
 
         if verbose and (seed_index % log_every == 0 or seed_index == len(array_seeds) - 1):
             print(
@@ -655,7 +670,9 @@ def adaptive_seed_l2s_from_seeds(
     top_n=None,
     save_intermediate=False,
     intermediate_folder=None,
-    intermediate_prefix="adaptive_seed_l2s",
+    intermediate_prefix="adaptive_seed_l2s_step",
+    intermediate_numbers=None,
+    step_log=None,
     verbose=False,
     log_every=1,
 ):
@@ -708,10 +725,14 @@ def adaptive_seed_l2s_from_seeds(
             f"initial_regions={len(initial_regions)}"
         )
 
+    if step_log is not None:
+        step_log.append({"regions": len(initial_regions), "new_seeds": len(initial_regions),
+                         "seeds_after": next_seed_id - 1})
     if save_intermediate:
-        _save_intermediate_seed(combine_seed, intermediate_folder, intermediate_prefix, 0)
+        _save_intermediate_seed(combine_seed, intermediate_folder, intermediate_prefix, 0, intermediate_numbers)
 
     del first_seed
+    removed_count = 0                            # disappeared seeds that are not kept
     for seed_index, seed in enumerate(array_seeds[1:], start=1):
         step_start = time.perf_counter()
         old_seed_ids = np.flatnonzero(_bincount(combine_seed, next_seed_id))
@@ -737,7 +758,7 @@ def adaptive_seed_l2s_from_seeds(
             elif chosen in old_to_regions:
                 old_to_regions[chosen].append(region_id)
 
-        shrink_count = split_count = disappeared_count = new_count = 0
+        shrink_count = split_count = disappeared_count = new_count = children_count = 0
 
         for old_seed_id in old_seed_ids:
             if old_seed_id in locked_seed_ids:
@@ -754,6 +775,7 @@ def adaptive_seed_l2s_from_seeds(
                 locked_seed_ids.add(old_seed_id)
                 if not keep_disappeared:
                     _clear_seed(flat_seed, seed_voxels, old_seed_id)
+                    removed_count += 1
                 continue
 
             assigned = sorted(assigned, key=lambda rid: regions[rid]["area"], reverse=True)
@@ -787,6 +809,7 @@ def adaptive_seed_l2s_from_seeds(
                 flat_seed[region["voxels"]] = next_seed_id
                 seed_voxels[next_seed_id] = region["voxels"].copy()
                 child_seed_ids.append(next_seed_id)
+                children_count += 1
                 metadata_by_seed_id[next_seed_id] = {
                     "area": int(region["area"]),
                     "source_label": int(region["source_label"]),
@@ -819,8 +842,12 @@ def adaptive_seed_l2s_from_seeds(
             next_seed_id += 1
             new_count += 1
 
+        if step_log is not None:
+            step_log.append({"regions": len(regions), "new_seeds": new_count + children_count,
+                             "seeds_after": next_seed_id - 1 - removed_count})
         if save_intermediate:
-            _save_intermediate_seed(combine_seed, intermediate_folder, intermediate_prefix, seed_index)
+            _save_intermediate_seed(combine_seed, intermediate_folder, intermediate_prefix, seed_index,
+                                    intermediate_numbers)
 
         if verbose and (seed_index % log_every == 0 or seed_index == len(array_seeds) - 1):
             print(

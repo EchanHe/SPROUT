@@ -18,16 +18,19 @@ YAML parameter naming:
   - Skip sweep: seeds_folder (path to existing folder of step_*.tif files)
 
 Output, in <output_folder>/<base_name>/:
-  - FINAL_sweep_seed.tif: the seeds, the input of Grow
-  - sweep_regions.csv: one row per seed: area, where it started and ended, why
+  - FINAL_sweep_seed.tif: the seeds, the input of Grow, numbered by size (1 = largest)
+  - sweep_regions.csv: one row per seed: area, the steps where it began and ended, and how
   - sweep_steps.csv: one row per step, in the order of the combine
-  - sweep_metadata.json: everything the combine knows about each seed
+  - sweep_metadata.json: the direction, the steps, and everything the combine knows about each seed
   - steps/: the mask of each step
-With direction `both` the first four are written twice, with _s2l and _l2s in the name.
+  - intermediate/<direction>/after_step_NNN.tif: the seeds after each step, with save_every_iter
+With direction `both` the first four are written twice, with _strict_to_loose and _loose_to_strict
+in the name.
 """
 
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -102,44 +105,91 @@ def _map_yaml_to_combine_kwargs(optional, direction):
 # ---------------------------------------------------------------------------
 
 def _step_settings(path):
-    """Lower, upper and erosion of a step, from its file name. Empty for files of other names."""
+    """Lower, upper and erosion of a step, from its file name. Empty for files of other names, and
+    for an upper threshold of None."""
     match = STEP_NAME.search(Path(path).name)
-    return match.groups() if match else ("", "", "")
+    if not match:
+        return "", "", ""
+    lower, upper, erosion = match.groups()
+    return lower, "" if upper == "None" else upper, erosion
 
 
-def _save_result(combine_seed, seed_metadata, steps, step_paths, output_folder, suffix=""):
-    """Write the result of one direction; `steps` and `step_paths` are in the order of its combine."""
+STEP_NUMBER = re.compile(r"^step_(\d+)_")
+SETTINGS = ("threshold", "upper", "erosion")      # the columns of _step_settings, as sweep_regions.csv names them
+SUFFIXES = {"strict_to_loose": "_strict_to_loose", "loose_to_strict": "_loose_to_strict"}
+
+
+def _step_numbers(step_paths):
+    """The number in the file name of each step (step_003_... -> 3), or its place in the combine."""
+    numbers = [STEP_NUMBER.match(Path(path).name) for path in step_paths]
+    return [int(m.group(1)) if m else index for index, m in enumerate(numbers)]
+
+
+def _began(item, final_ids):
+    if item["start_index"] == 0:
+        return "first step"
+    parent = item.get("parent_seed_id")
+    if parent is None:
+        return "emerged"
+    return f"split from {final_ids[parent]}" if parent in final_ids else "split from a seed not kept"
+
+
+def _ended(item, numbers):
+    """How the seed ended and at which step: locked / never locked (strict to loose),
+    disappeared / reached the end (loose to strict)."""
+    if item["status"] == "locked_pre_merge":
+        return "locked", numbers[item["merge_index"]]
+    if item["status"] == "disappeared":
+        return "disappeared", numbers[item["disappear_index"]]
+    return ("never locked" if item["finalization_reason"] == "never_merged" else "reached the end"), ""
+
+
+def _regions_table(seed_metadata, step_paths):
+    """One row per seed. Of the step settings, only those that change from step to step get columns."""
+    numbers = _step_numbers(step_paths)
+    settings = [_step_settings(path) for path in step_paths]
+    varying = [i for i in range(3) if len({s[i] for s in settings}) > 1] or [0]
+    final_ids = {item["original_seed_id"]: item["seed_id"] for item in seed_metadata}
+    columns = ["id", "area", "first_step", "last_step"] + \
+        [f"{end}_{SETTINGS[i]}" for i in varying for end in ("first", "last")] + ["began", "ended", "at_step"]
+    rows = []
+    for item in seed_metadata:
+        first, last = item["start_index"], item["last_index"]
+        row = {"id": item["seed_id"], "area": item["area"], "first_step": numbers[first], "last_step": numbers[last]}
+        for i in varying:
+            row[f"first_{SETTINGS[i]}"], row[f"last_{SETTINGS[i]}"] = settings[first][i], settings[last][i]
+        row["began"] = _began(item, final_ids)
+        row["ended"], row["at_step"] = _ended(item, numbers)
+        rows.append(row)
+    return pd.DataFrame(rows, columns=columns)
+
+
+def _steps_table(seed_metadata, step_paths, step_log):
+    """One row per step, in the order of the combine."""
+    numbers = _step_numbers(step_paths)
+    started = [item["start_index"] for item in seed_metadata]
+    rows = []
+    for index, path in enumerate(step_paths):
+        lower, upper, erosion = _step_settings(path)
+        log = step_log[index] if step_log else {}
+        rows.append({"step": numbers[index], "lower": lower, "upper": upper, "erosion": erosion,
+                     "regions": log.get("regions", ""), "new_seeds": log.get("new_seeds", ""),
+                     "seeds_after": log.get("seeds_after", ""), "in_final": started.count(index),
+                     "file": Path(path).name})
+    return pd.DataFrame(rows, columns=["step", "lower", "upper", "erosion", "regions", "new_seeds", "seeds_after",
+                                       "in_final", "file"])
+
+
+def _save_result(combine_seed, seed_metadata, step_paths, output_folder, direction, step_log=None, suffix=""):
+    """Write the result of one direction; `step_paths` and `step_log` are in the order of its combine."""
     output_folder = Path(output_folder)
     output_folder.mkdir(parents=True, exist_ok=True)
     label_path = output_folder / f"FINAL_sweep_seed{suffix}.tif"
     tifffile.imwrite(str(label_path), combine_seed, compression="zlib")
-    (output_folder / f"sweep_metadata{suffix}.json").write_text(json.dumps(seed_metadata, indent=2), encoding="utf-8")
-
-    names = [Path(path).name for path in step_paths]
-    settings = [_step_settings(path) for path in step_paths]
-    pd.DataFrame([{
-        "id": item["seed_id"],
-        "area": item["area"],
-        "first_step": names[item["start_index"]],
-        "last_step": names[item["last_index"]],
-        "first_threshold": settings[item["start_index"]][0],
-        "last_threshold": settings[item["last_index"]][0],
-        "status": item["status"],
-        "reason": item["finalization_reason"],
-    } for item in seed_metadata], columns=["id", "area", "first_step", "last_step", "first_threshold",
-                                           "last_threshold", "status", "reason"]
-    ).to_csv(output_folder / f"sweep_regions{suffix}.csv", index=False)
-
-    started = [item["start_index"] for item in seed_metadata]
-    pd.DataFrame([{
-        "order": index,
-        "file": names[index],
-        "lower": settings[index][0],
-        "upper": settings[index][1],
-        "erosion": settings[index][2],
-        "labels": len(sprout_core.unique_labels(step)) - 1,
-        "seeds_started": started.count(index),
-    } for index, step in enumerate(steps)]).to_csv(output_folder / f"sweep_steps{suffix}.csv", index=False)
+    metadata = {"direction": direction, "steps": [Path(path).name for path in step_paths], "seeds": seed_metadata}
+    (output_folder / f"sweep_metadata{suffix}.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+    _regions_table(seed_metadata, step_paths).to_csv(output_folder / f"sweep_regions{suffix}.csv", index=False)
+    _steps_table(seed_metadata, step_paths, step_log).to_csv(output_folder / f"sweep_steps{suffix}.csv", index=False)
 
     print(f"  seeds: {len(seed_metadata)}")
     print(f"  final: {label_path}")
@@ -254,12 +304,13 @@ def make_sweep_adaptive_seed(img, thresholds, erosion_steps, segments, output_fo
             seeds = StepFiles(paths)
         if sweep_direction == "l2s":
             seeds, paths = seeds[::-1], paths[::-1]
+        step_log = []
         result, metadata = adaptive_seed_s2l_from_seeds(seeds, min_area=min_size, input_mode="label",
-                                                        verbose=False, cancel=cancel)
+                                                        verbose=False, cancel=cancel, step_log=step_log)
     except MemoryError as e:
         raise MemoryError(f"{e}\n{OUT_OF_MEMORY_HINT}") from e
     sprout_core.check_cancel(cancel)
-    _save_result(result, metadata, seeds, paths, folder)
+    _save_result(result, metadata, paths, folder, "strict_to_loose", step_log)
     config_core.save_config_with_output({"params": {
         "thresholds": thresholds, "upper_thresholds": upper_thresholds, "erosion_steps": erosion_steps,
         "segments": segments, "footprints": footprints, "num_threads": num_threads, "min_size": min_size,
@@ -361,10 +412,7 @@ def _run_from_dict(config):
 
     combine_kwargs = _map_yaml_to_combine_kwargs(optional, direction)
 
-    if combine_kwargs.get("save_intermediate"):
-        combine_kwargs["intermediate_folder"] = os.path.join(
-            output_folder_root, "combine_intermediate"
-        )
+    combine_kwargs.pop("intermediate_folder", None)
 
     # Align seeds to each combine direction.
     # s2l expects seeds[0] = strictest mask (smallest range).
@@ -379,26 +427,29 @@ def _run_from_dict(config):
         seeds_l2s, paths_l2s = seeds, ordered_paths
         seeds_s2l, paths_s2l = seeds[::-1], ordered_paths[::-1]
 
+    def combine(name, kwargs):
+        """One direction: its seeds and files in the order of its combine, and the result written."""
+        combine_fn, seeds_in, paths_in = {
+            "strict_to_loose": (adaptive_seed_s2l_from_seeds, seeds_s2l, paths_s2l),
+            "loose_to_strict": (adaptive_seed_l2s_from_seeds, seeds_l2s, paths_l2s),
+        }[name]
+        step_log = []
+        if kwargs.get("save_intermediate"):
+            kwargs = {**kwargs, "intermediate_folder": os.path.join(output_folder_root, "intermediate", name),
+                      "intermediate_prefix": "after_step", "intermediate_numbers": _step_numbers(paths_in)}
+        combine_seed, seed_metadata = combine_fn(seeds_in, step_log=step_log, **kwargs)
+        print(f"[sweep_adaptive] {name} result:")
+        return _save_result(combine_seed, seed_metadata, paths_in, output_folder_root, name, step_log,
+                            SUFFIXES[name] if direction == "both" else "")
+
     if direction == "both":
         shared = {k: v for k, v in combine_kwargs.items() if k in COMBINE_SHARED_KEYS}
-        s2l_kw = {**shared, **{k: v for k, v in combine_kwargs.items() if k in COMBINE_S2L_KEYS},
-                  "intermediate_prefix": "s2l"}
-        l2s_kw = {**shared, **{k: v for k, v in combine_kwargs.items() if k in COMBINE_L2S_KEYS},
-                  "intermediate_prefix": "l2s"}
-        s2l_seed, s2l_meta = adaptive_seed_s2l_from_seeds(seeds_s2l, **s2l_kw)
-        l2s_seed, l2s_meta = adaptive_seed_l2s_from_seeds(seeds_l2s, **l2s_kw)
-        print("[sweep_adaptive] strict_to_loose result:")
-        finals = [_save_result(s2l_seed, s2l_meta, seeds_s2l, paths_s2l, output_folder_root, "_s2l")]
-        print("[sweep_adaptive] loose_to_strict result:")
-        finals.append(_save_result(l2s_seed, l2s_meta, seeds_l2s, paths_l2s, output_folder_root, "_l2s"))
-    elif direction == "loose_to_strict":
-        combine_seed, seed_metadata = adaptive_seed_l2s_from_seeds(seeds_l2s, **combine_kwargs)
-        print(f"[sweep_adaptive] {direction} result:")
-        finals = [_save_result(combine_seed, seed_metadata, seeds_l2s, paths_l2s, output_folder_root)]
+        finals = [combine("strict_to_loose", {**shared, **{k: v for k, v in combine_kwargs.items()
+                                                            if k in COMBINE_S2L_KEYS}}),
+                  combine("loose_to_strict", {**shared, **{k: v for k, v in combine_kwargs.items()
+                                                            if k in COMBINE_L2S_KEYS}})]
     else:
-        combine_seed, seed_metadata = adaptive_seed_s2l_from_seeds(seeds_s2l, **combine_kwargs)
-        print(f"[sweep_adaptive] {direction} result:")
-        finals = [_save_result(combine_seed, seed_metadata, seeds_s2l, paths_s2l, output_folder_root)]
+        finals = [combine(direction, combine_kwargs)]
 
     config_core.save_config_with_output({"params": config}, output_folder_root)
     print(f"[sweep_adaptive] done in {time.time() - start:.2f}s")

@@ -92,16 +92,27 @@ In `<output_folder>/<base_name>/`:
 
 | File | Content |
 |---|---|
-| `FINAL_sweep_seed.tif` | The seeds. Use it as `seg_path` of [growth](./config_grow.md). |
-| `sweep_regions.csv` | One row per seed: `id`, `area`, first and last step, and why it ended (`status`, `reason`). |
-| `sweep_steps.csv` | One row per step, in the order of the combine: file, thresholds, erosion, labels, and the seeds that started there. |
-| `sweep_metadata.json` | All that is known about each seed. |
+| `FINAL_sweep_seed.tif` | The seeds, numbered by size (1 is the largest). Use it as `seg_path` of [growth](./config_grow.md). |
+| `sweep_regions.csv` | One row per seed: `id`, `area`, `first_step` and `last_step` (the numbers of the step files), the settings that change between steps at those steps (for example `first_threshold`, `last_threshold`), and `began`, `ended`, `at_step` (below). |
+| `sweep_steps.csv` | One row per step, in the order of the combine: `step`, its settings, `regions` in it, `new_seeds` that started there, `seeds_after` it (before `top_n`), and how many of its new seeds are `in_final`. |
+| `sweep_metadata.json` | The direction, the steps, and all that is known about each seed. Ids inside a seed's entry, such as `parent_seed_id`, are `original_seed_id` values. |
 | `config_<time>.yaml` | The config of this run. |
 | `steps/` | The mask of each step, for example `step_000_thre_230_None_ero_0.tif`. |
+| `intermediate/<direction>/after_step_NNN.tif` | With `save_every_iter: true`: the seeds after each step. |
 
-With `direction: both`, the seeds, the two CSV files and the metadata are written once per direction, for example `FINAL_sweep_seed_s2l.tif` and `FINAL_sweep_seed_l2s.tif`.
+With `direction: both`, the seeds, the two CSV files and the metadata are written once per direction, for example `FINAL_sweep_seed_strict_to_loose.tif` and `FINAL_sweep_seed_loose_to_strict.tif`.
 
-In `sweep_regions.csv`, `locked_pre_merge` means the seed stopped growing at the step where it met another seed.
+In `sweep_regions.csv`:
+
+| Column | Value | Meaning |
+|---|---|---|
+| `began` | `first step` | The seed is a region of the first step of the combine. |
+| | `emerged` | A region that touched no seed. |
+| | `split from N` | Split off seed N (loose to strict); `split from a seed not kept` if N was dropped by `top_n`. |
+| `ended` | `locked` | At step `at_step` the seed was in one region with another seed, so both keep their shape of the step before. |
+| | `never locked` | Grew until the last step (strict to loose). |
+| | `disappeared` | At step `at_step` no region was left of it; its last shape is kept (`l2s_keep_disappeared`). |
+| | `reached the end` | Still there at the last step (loose to strict). |
 
 ## Batch (`--sweep_adaptive --batch`)
 
