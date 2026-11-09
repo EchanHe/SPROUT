@@ -2,7 +2,7 @@
 Headless end-to-end check of the Boundary tab.
 
 Drives a real napari viewer (offscreen) and the real SPROUT main widget.
-Uses demo_data plus two skull scans from C:/Users/yichen/Desktop/skull/input
+Uses demo_data plus two skull scans from <skull_dir>/input, skull_dir from tests/local_paths.yaml
 (Arctictis_binturong, uint16; Orycteropus_afer, uint8, ~935M voxels). Without them a synthetic
 uint16 volume stands in for the first and the speed run on the second is skipped.
 Run in the `sprout` env:
@@ -27,8 +27,11 @@ from qtpy.QtWidgets import QApplication  # noqa: E402
 
 from napari_sprout._widget import SPROUTWidget  # noqa: E402
 from sprout_core import boundary as B  # noqa: E402
+from local_paths import local_path, not_set  # noqa: E402
 
-SKULL = Path(r"C:/Users/yichen/Desktop/skull/input")
+SKULL = local_path("skull_dir") / "input" if local_path("skull_dir") else None
+if SKULL is None:
+    print(f"SKIP skull scans: {not_set('skull_dir')}")
 FAILED = []
 
 
@@ -136,7 +139,7 @@ ok(not (bw._preview_buf[z].astype(bool) & (dog[z] < 150)).any(),
    "preview excludes voxels outside the intensity range")
 
 # ---- 5. Stop on a bigger uint16 image
-if SKULL.is_dir():
+if SKULL is not None and SKULL.is_dir():
     big = tifffile.imread(SKULL / "Arctictis_binturong.tif")
 else:
     zz, yy, xx = np.mgrid[:192, :192, :192]
@@ -199,7 +202,7 @@ QApplication.processEvents()
 ok(bw._preview_buf is not None and bw._preview_buf.sum() > 0, "2D preview drawn")
 
 # ---- 8. speed on the big skull through the widget
-if SKULL.is_dir():
+if SKULL is not None and SKULL.is_dir():
     oryc = tifffile.imread(SKULL / "Orycteropus_afer.tif")
     viewer.add_image(oryc, name="orycteropus")
     QApplication.processEvents()

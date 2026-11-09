@@ -1,0 +1,14 @@
+# Copy this file to tests/local_paths.yaml (not in git) and fill in what this machine has.
+# Leave a value empty when the machine does not have it: the checks that need it skip that part.
+
+# Folder with the skull scans: input/Arctictis_binturong.tif, input/Orycteropus_afer.tif and
+# boundary/Orycteropus_afer_boundary.tif (check_boundary_tab, check_boundary_warning)
+skull_dir:
+
+# nnInteractive model folder, e.g. .../nnInteractive_v1.0 (check_prompt_nni, check_prob_session.py)
+nni_weights:
+
+# inference_session.py of an nnInteractive version that is not installed where the checks run
+# (check_prompt_core compares its fake sessions with them; the installed version is found by itself)
+nni_113_source:
+nni_26_source:

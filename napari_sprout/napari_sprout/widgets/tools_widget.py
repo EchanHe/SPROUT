@@ -5,7 +5,14 @@ import numpy as np
 import os
 import pandas as pd
 
-from skimage.filters import threshold_otsu
+from skimage.filters import (
+    threshold_otsu,
+    threshold_yen,
+    threshold_triangle,
+    threshold_minimum,
+    threshold_isodata,
+    threshold_li,
+)
 from tifffile import imread
 
 
@@ -705,6 +712,19 @@ class CSVAlignerGroupBox(QGroupBox):
 
 
 
+# Base-threshold functions usable as a single value multiplied by a factor range.
+# "mean_factor" mirrors skimage's threshold_mean (which is just image.mean()).
+_FACTOR_THRESHOLD_FUNCS = {
+    "otsu_factor": threshold_otsu,
+    "mean_factor": lambda image: float(np.mean(image)),
+    "yen_factor": threshold_yen,
+    "triangle_factor": threshold_triangle,
+    "minimum_factor": threshold_minimum,
+    "isodata_factor": threshold_isodata,
+    "li_factor": threshold_li,
+}
+
+
 def generate_threshold_pairs(image: np.ndarray,
                              mode: str = "otsu_factor",
                              factor_range: tuple = (0.8, 1.2),
@@ -715,7 +735,7 @@ def generate_threshold_pairs(image: np.ndarray,
 
     Parameters:
         image (np.ndarray): Grayscale image.
-        mode (str): "otsu_factor", "mean_factor", or "actual_values".
+        mode (str): One of _FACTOR_THRESHOLD_FUNCS keys (e.g. "otsu_factor", "yen_factor", ...), or "actual_values".
         factor_range (tuple): (min_factor, max_factor) for thresholds or (min_value, max_value) for actual_values.
         upper_factor_range (tuple or None): Same as above for upper thresholds. If None, upper_thresholds = None.
         num_steps (int): Number of thresholds to generate (>= 1). If 1, use left bound only.
@@ -750,8 +770,8 @@ def generate_threshold_pairs(image: np.ndarray,
         # raise ValueError("upper_factor_range[0] cannot be None if upper_factor_range is specified.")
 
 
-    if mode in {"otsu_factor", "mean_factor"}:
-        base_val = threshold_otsu(image) if mode == "otsu_factor" else float(np.mean(image))
+    if mode in _FACTOR_THRESHOLD_FUNCS:
+        base_val = _FACTOR_THRESHOLD_FUNCS[mode](image)
 
         min_factor = factor_range[0]
         max_factor = factor_range[0] if num_steps == 1 else factor_range[1]
@@ -785,7 +805,8 @@ def generate_threshold_pairs(image: np.ndarray,
         else:
             upper_thresholds = None
     else:
-        raise ValueError("Unsupported mode. Use 'otsu_factor', 'mean_factor', or 'actual_values'.")
+        supported = sorted(_FACTOR_THRESHOLD_FUNCS) + ["actual_values"]
+        raise ValueError(f"Unsupported mode {mode!r}. Use one of {supported}.")
 
     # Clip and convert
     thresholds = np.clip(thresholds, min_val, max_val).astype(int).tolist()
@@ -824,11 +845,16 @@ class ThresholdParamWidget(QWidget):
         mode_layout = QHBoxLayout()
         mode_label = QLabel("Threshold mode")
         self.mode_combo = QComboBox()
-        self.mode_combo.addItems(["otsu_factor", "mean_factor", "actual_values"])
+        self.mode_combo.addItems(sorted(_FACTOR_THRESHOLD_FUNCS) + ["actual_values"])
         self.mode_combo.setToolTip(
             "Choose method to compute thresholds:\n"
             "- otsu_factor: Otsu value × factor range\n"
             "- mean_factor: Mean image value × factor range\n"
+            "- yen_factor: Yen value × factor range\n"
+            "- triangle_factor: Triangle value × factor range\n"
+            "- minimum_factor: Minimum-method value × factor range\n"
+            "- isodata_factor: Isodata value × factor range\n"
+            "- li_factor: Li's minimum cross entropy value × factor range\n"
             "- actual_values: Directly sweep a range of values"
         )
 
@@ -919,10 +945,15 @@ class ThresholdParamWidget(QWidget):
             "<b>Threshold Mode:</b><br>"
             "<b>・otsu_factor</b>: Use Otsu’s method to get a base threshold, then multiply it by start/stop factors.<br>"
             "<b>・mean_factor</b>: Use the image mean intensity as the base threshold, then multiply by factor range.<br>"
+            "<b>・yen_factor</b>: Use Yen’s method as the base threshold, then multiply by factor range.<br>"
+            "<b>・triangle_factor</b>: Use the triangle method as the base threshold, then multiply by factor range.<br>"
+            "<b>・minimum_factor</b>: Use the minimum method (valley between two histogram peaks) as the base threshold, then multiply by factor range.<br>"
+            "<b>・isodata_factor</b>: Use the isodata method as the base threshold, then multiply by factor range.<br>"
+            "<b>・li_factor</b>: Use Li’s minimum cross entropy method as the base threshold, then multiply by factor range.<br>"
             "<b>・actual_values</b>: Use absolute intensity values (e.g. 0–255 for 8-bit images) directly as thresholds.<br><br>"
             "<b>Threshold Range (start, stop):</b><br>"
             "Defines the range to generate threshold values from.<br>"
-            "• For <b>otsu_factor</b> or <b>mean_factor</b>: values are multipliers on the base threshold.<br>"
+            "• For the <i>_factor</i> modes: values are multipliers on the base threshold.<br>"
             "• For <b>actual_values</b>: values are direct pixel intensities.<br>"
             "<b>Upper Threshold Range (optional):</b><br>"
             "Used to generate a corresponding upper threshold list.<br>"

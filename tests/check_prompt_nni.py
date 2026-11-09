@@ -4,9 +4,9 @@ Checks of the Prompt (AI) core with the REAL nnInteractive model on the dog demo
     env sprout-nni (nnInteractive 2.6, CUDA):   python tests/check_prompt_nni.py
     env nnInteractive (1.1.3, no napari):        python tests/check_prompt_nni.py --core-only
 
-Weights: C:/Users/yichen/work/weights/nnInteractive_v1.0 (or --weights).
-Prompts: the scratchpad prompts.csv of the nnInteractive comparison (or --prompts);
-falls back to sampling 5 positive + 3 + 3 negative points per class from the seeds.
+Weights: --weights, or nni_weights in tests/local_paths.yaml.
+Prompts: a prompts.csv given with --prompts; without it, 5 positive + 3 + 3 negative points
+per class are sampled from the seeds.
 Deterministic cuDNN flags are set (make_session(deterministic=True)) before the
 weights load; np.random is reseeded per class (base_seed + class id).
 --core-only: no napari / Qt is imported (nothing here needs it) and any nnInteractive
@@ -30,11 +30,17 @@ os.chdir(ROOT)
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--core-only", action="store_true")
-ap.add_argument("--weights", default=r"C:/Users/yichen/work/weights/nnInteractive_v1.0")
-ap.add_argument("--prompts", default=r"C:/Users/yichen/AppData/Local/Temp/claude/c--Users-yichen-work-SPROUT/"
-                                     r"96cacaa1-c67f-461d-8b7d-9cf87a400006/scratchpad/nni_test/prompts.csv")
+ap.add_argument("--weights", default=None, help="model folder (default: nni_weights in tests/local_paths.yaml)")
+ap.add_argument("--prompts", default=None, help="prompts.csv (default: sampled from the seeds)")
 ap.add_argument("--device", default="cuda")
 args = ap.parse_args()
+
+from local_paths import local_path, not_set  # noqa: E402
+
+args.weights = args.weights or local_path("nni_weights")
+if args.weights is None:
+    sys.exit(f"No weights: pass --weights, or {not_set('nni_weights')}")
+args.weights = str(args.weights)
 
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
@@ -84,7 +90,7 @@ MAJOR = int(st[1].split(".")[0]) if st[0] else 0
 if args.core_only:
     ok("napari" not in sys.modules and "qtpy" not in sys.modules, "--core-only: napari / Qt not imported")
 
-if Path(args.prompts).exists():
+if args.prompts is not None:
     df = pd.read_csv(args.prompts)
     info(f"prompts {args.prompts}: {len(df)} points, classes {sorted(df.class_id.unique().tolist())}")
 else:
@@ -391,7 +397,7 @@ if not args.core_only:
                                        init_seg_path=kw.get("init"), prompt_type=kw["prompt_type"],
                                        point_config=point_config, return_per_class_masks=True,
                                        scribble_config={"use_negative_scribble": kw.get("neg", False)}, seed=seed)
-        per = {c: tifffile.imread(outd / f"dog_img_class_{c}.tif") > 0 for c in CLASSES}
+        per = {c: tifffile.imread(outd / "segs" / f"dog_img_class_{c}.tif") > 0 for c in CLASSES}
         return total, per
 
     def run_tab(*, prompt_type, neg=False, init=False):

@@ -62,6 +62,11 @@ def run_batch_nninteractive(file_path):
                 scribble_config=scribble_config,
                 output_folder=per_file_output_folder,
                 return_per_class_masks=optional_params['return_per_class_masks'],
+                save_prob_maps=optional_params.get('save_prob_maps', False),
+                do_autozoom=optional_params.get('do_autozoom', True),
+                seed_roi=optional_params.get('seed_roi', "off"),
+                seed_roi_margin=optional_params.get('seed_roi_margin', 32),
+                seed_roi_margin_unit=optional_params.get('seed_roi_margin_unit', "voxel"),
                 seed=optional_params['seed']
             )
             if len(nn_output) == 3:
