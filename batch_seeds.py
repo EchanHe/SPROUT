@@ -65,6 +65,7 @@ def run_batch_seeds(file_path):
             
         df.loc[index,'output_folder'] = config['output_folder']
 
+    os.makedirs(config['output_folder'], exist_ok=True)
     df.to_csv(os.path.join(config['output_folder'],
                            os.path.basename(csv_path) + f"_running_results_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"), index = False)    
 
@@ -187,6 +188,7 @@ def run_batch_adaptive_seed(file_path):
             
         df.loc[index,'output_folder'] = config['output_folder']
 
+    os.makedirs(config['output_folder'], exist_ok=True)
     df.to_csv(os.path.join(config['output_folder'],
                            os.path.basename(csv_path) + f"_running_results_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"), index = False)    
 

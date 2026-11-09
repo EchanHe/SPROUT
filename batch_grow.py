@@ -49,7 +49,7 @@ def run_batch_grow(file_path):
                 upper_thresholds = optional_params["upper_thresholds"],
                 num_threads = config['num_threads'],
                 
-                save_every_n_iters = config['save_every_n_iters'],  
+                save_every_n_iters = optional_params['save_every_n_iters'],  
                 touch_rule = config['touch_rule'],             
     
                 grow_to_end = optional_params["grow_to_end"],
@@ -79,6 +79,7 @@ def run_batch_grow(file_path):
             print(f"Error occurs when growing on {config['img_path']}")
             df.loc[index,'error'] = str(e)
 
+    os.makedirs(config['output_folder'], exist_ok=True)
     df.to_csv(os.path.join(config['output_folder'],
                            os.path.basename(csv_path) + f"_running_results_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"), index = False)
 
