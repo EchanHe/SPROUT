@@ -37,6 +37,7 @@
 - `make_*.py` and `batch_*.py` moved into `sprout_core/` (`from sprout_core import make_seeds`); `python make_seeds.py` no longer runs, use `sprout` or `python sprout.py`.
 - The plugin folder is `napari-sprout/` (was `napari_sprout/`); the plugin no longer edits `sys.path`.
 - open3d is no longer listed (no code used it).
+- Works with numpy 2, pandas 3, scikit-image 0.26 and napari 0.10 (Qt6). Erosion and dilation use scipy (scikit-image removes `binary_erosion`, `cube` and others), with the same results.
 
 ## 1.0.0 (2026-10-15)
 First release.
