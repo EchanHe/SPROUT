@@ -311,7 +311,11 @@ for name, b in (("Boundary", bw.stop_btn), ("Prompt", pt.stop_btn)):
 
 # ======================================================================
 print("\n== Seeds tab width: no horizontal scrollbar")
-segoe = "Segoe UI" in QFontDatabase().families()
+try:
+    families = QFontDatabase.families()          # Qt6: static
+except TypeError:
+    families = QFontDatabase().families()        # Qt5
+segoe = "Segoe UI" in families
 if segoe:
     QApplication.setFont(QFont("Segoe UI", 9))        # Windows' UI font (offscreen defaults to Helvetica)
 main.setStyleSheet(get_stylesheet("dark", extra_variables={"font_size": "9pt"}))

@@ -14,11 +14,6 @@ from skimage.morphology import remove_small_holes
 from skimage.morphology import erosion, dilation, opening, closing, disk, ball
 from scipy import ndimage as ndi
 
-from pathlib import Path
-sprout_path = Path(__file__).parent.parent.parent.parent
-if str(sprout_path) not in sys.path:
-    sys.path.insert(0, str(sprout_path))
-
 from sprout_core.sprout_core import get_sub_binary_image_by_pos
 
 from ..utils.status import LAYER_HEADER, NO_LAYER, StatusLine, style

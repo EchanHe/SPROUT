@@ -36,7 +36,7 @@ if os.path.isdir(r"C:/Windows/Fonts"):
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
 ROOT = Path(os.environ.get("SPROUT_ROOT") or REPO)
-sys.path[:0] = [str(ROOT), str(ROOT / "napari_sprout"), str(HERE)]
+sys.path[:0] = [str(ROOT), str(ROOT / "napari-sprout"), str(HERE)]
 
 import napari  # noqa: E402
 import _headless_gl  # noqa: E402,F401

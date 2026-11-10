@@ -1,6 +1,6 @@
-import make_seeds
-import make_adaptive_seed
-import make_sweep_adaptive_seed
+from sprout_core import make_seeds
+from sprout_core import make_adaptive_seed
+from sprout_core import make_sweep_adaptive_seed
 
 import yaml
 import os,sys

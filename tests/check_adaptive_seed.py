@@ -30,7 +30,7 @@ os.chdir(ROOT)
 
 import yaml  # noqa: E402
 
-from make_adaptive_seed import make_adaptive_seed_ero, make_adaptive_seed_thre  # noqa: E402
+from sprout_core.make_adaptive_seed import make_adaptive_seed_ero, make_adaptive_seed_thre  # noqa: E402
 from sprout_core import config_core  # noqa: E402
 
 FAILED = []

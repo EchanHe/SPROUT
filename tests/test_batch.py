@@ -13,11 +13,11 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-import batch_grow  # noqa: E402
-import batch_seeds  # noqa: E402
-import make_adaptive_seed  # noqa: E402
-import make_grow  # noqa: E402
-import make_seeds  # noqa: E402
+from sprout_core import batch_grow  # noqa: E402
+from sprout_core import batch_seeds  # noqa: E402
+from sprout_core import make_adaptive_seed  # noqa: E402
+from sprout_core import make_grow  # noqa: E402
+from sprout_core import make_seeds  # noqa: E402
 
 pytestmark = pytest.mark.core
 

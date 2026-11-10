@@ -4,8 +4,6 @@ import numpy as np
 import os, sys
 import logging
 from pathlib import Path
-from monai.visualize.utils import blend_images
-import torch
 # logging.basicConfig(stream=sys.stdout, level=logging.INFO)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -162,6 +160,7 @@ def blend_images_masks(image_stack, mask_stack):
     Returns:
     numpy.ndarray: blend image array.
     """
+    from monai.visualize.utils import blend_images   # optional: only this function needs monai
     
     logging.info(f"shape: {image_stack.shape}")
     if image_stack.ndim < 3:
@@ -193,6 +192,7 @@ def blend_images_masks(image_stack, mask_stack):
 
 
 def stack_to_monai_format(img_stack):
+    import torch   # optional: only this function needs torch
     # input is DHW
     #adding one as the channel, DCHW
     img_stack_t = np.expand_dims(img_stack,axis=1)

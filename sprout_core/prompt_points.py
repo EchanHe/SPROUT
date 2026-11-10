@@ -160,14 +160,14 @@ def sample_points_3d(mask_3d: np.ndarray, n: int = 5, method: str = 'random', rn
 def empty_points_df():
     """An empty prompt table with the standard columns and dtypes."""
     return pd.DataFrame({
-        'image_name': pd.Series([], dtype=object),
+        'image_name': pd.Series([], dtype=str),
         'class_id': pd.Series([], dtype=np.int64),
         'x': pd.Series([], dtype=np.int64),
         'y': pd.Series([], dtype=np.int64),
         'z': pd.Series([], dtype=np.int64),
         'label': pd.Series([], dtype=bool),
-        'point_type': pd.Series([], dtype=object),
-        'sample_method': pd.Series([], dtype=object),
+        'point_type': pd.Series([], dtype=str),
+        'sample_method': pd.Series([], dtype=str),
     })
 
 
@@ -514,14 +514,14 @@ def points_to_df(data, features=None, image_name=''):
     else:
         meth = ['manual'] * n
     return pd.DataFrame({
-        'image_name': pd.Series([image_name] * n, dtype=object),
+        'image_name': pd.Series([image_name] * n, dtype=str),
         'class_id': cls,
         'x': x,
         'y': y,
         'z': z,
         'label': label,
-        'point_type': pd.Series(ptype, dtype=object),
-        'sample_method': pd.Series(meth, dtype=object),
+        'point_type': pd.Series(ptype, dtype=str),
+        'sample_method': pd.Series(meth, dtype=str),
     })[POINT_COLUMNS]
 
 
@@ -543,9 +543,9 @@ def df_to_points(df, ndim=3):
         'class_id': (df['class_id'].to_numpy().astype(np.int64) if 'class_id' in df else np.ones(n, np.int64)),
         'label': label,
         'point_type': pd.Series([str(v) for v in df['point_type']] if 'point_type' in df
-                                else [_point_type(lb) for lb in label], dtype=object),
+                                else [_point_type(lb) for lb in label], dtype=str),
         'sample_method': pd.Series([str(v) for v in df['sample_method']] if 'sample_method' in df
-                                   else ['manual'] * n, dtype=object),
+                                   else ['manual'] * n, dtype=str),
     })
     return data, feats
 

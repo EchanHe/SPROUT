@@ -3,6 +3,8 @@
 ## 1.1.0 (unreleased)
 
 ### New
+- **pip install**: `pip install "napari-sprout[all]"` (plugin, napari and Qt) or `pip install sprout-seg` (command line only). Extras: `sprout-seg[ai]` (nnInteractive), `sprout-seg[mesh]`.
+- The `sprout` command works in any folder (`python sprout.py` still works in a clone).
 - napari: **Prompt (AI)** tab: seeds → nnInteractive (2.6, or 1.1.3), as scribbles or points.
 - napari: **ROI & Boundary** tab: run any tab inside a region of interest; make boundary masks (top-hat).
 - napari: Threshold Preview; progress and Stop for Seeds, Grow and Boundary.
@@ -32,6 +34,10 @@
 - Adaptive seed is about 2x faster on large scans with small seeds, with the same results.
 - A footprint for the other dimension is an error (it did nothing). A negative label id is an error (it wrapped around).
 - `num_threads` above the CPU cores falls back to the cores, with a warning (it was an error).
+- `make_*.py` and `batch_*.py` moved into `sprout_core/` (`from sprout_core import make_seeds`); `python make_seeds.py` no longer runs, use `sprout` or `python sprout.py`.
+- The plugin folder is `napari-sprout/` (was `napari_sprout/`); the plugin no longer edits `sys.path`.
+- open3d is no longer listed (no code used it).
+- Works with numpy 2, pandas 3, scikit-image 0.26 and napari 0.10 (Qt6). Erosion and dilation use scipy (scikit-image removes `binary_erosion`, `cube` and others), with the same results.
 
 ## 1.0.0 (2026-10-15)
 First release.

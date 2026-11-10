@@ -1,5 +1,6 @@
 import numpy as np
-from skimage.morphology import binary_dilation, binary_erosion, cube,square, binary_closing, ball, disk
+from skimage.morphology import ball, disk
+from scipy import ndimage as ndi
 from skimage import measure
 from datetime import datetime
 import os
@@ -266,12 +267,29 @@ def get_sub_binary_image_by_pos(image_3d, margin):
 # ---------------------------------------------------------------------------
 def cube_fp(radius):
     """3D cube footprint of the given radius: edge 2*radius + 1."""
-    return cube(2 * int(radius) + 1)
+    return np.ones((2 * int(radius) + 1,) * 3, np.uint8)
 
 
 def square_fp(radius):
     """2D square footprint of the given radius: edge 2*radius + 1."""
-    return square(2 * int(radius) + 1)
+    return np.ones((2 * int(radius) + 1,) * 2, np.uint8)
+
+
+# skimage's binary_erosion / binary_dilation / binary_closing are deprecated (removed in 0.28).
+# They call these scipy functions, so the results are the same.
+def binary_erosion(image, footprint):
+    """Binary erosion; voxels outside the image count as foreground (as in skimage)."""
+    return ndi.binary_erosion(image, structure=footprint, border_value=True)
+
+
+def binary_dilation(image, footprint):
+    """Binary dilation (as in skimage)."""
+    return ndi.binary_dilation(image, structure=footprint)
+
+
+def binary_closing(image, footprint):
+    """Binary closing: dilation, then erosion (as in skimage)."""
+    return binary_erosion(binary_dilation(image, footprint), footprint)
 
 
 def dilation_binary_img_on_sub(input, margin, kernal_size, is_round=True):

@@ -30,7 +30,7 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 ROOT = Path(__file__).resolve().parents[1]
-sys.path[:0] = [str(ROOT), str(ROOT / "napari_sprout"), str(Path(__file__).resolve().parent)]
+sys.path[:0] = [str(ROOT), str(ROOT / "napari-sprout"), str(Path(__file__).resolve().parent)]
 
 import numpy as np  # noqa: E402
 import tifffile  # noqa: E402
@@ -56,9 +56,9 @@ print("== D1 matplotlib is not imported with the panel (fresh interpreter)")
 probe = ("import sys; sys.path[:0] = [r'%s', r'%s']\n"
          "import napari_sprout\n"
          "from napari_sprout._widget import SPROUTWidget\n"
-         "import make_seeds, make_grow, make_adaptive_seed\n"
+         "from sprout_core import make_seeds, make_grow, make_adaptive_seed\n"
          "print(sorted(m for m in sys.modules if m == 'matplotlib' or m.startswith('matplotlib.')))\n"
-         % (ROOT, ROOT / "napari_sprout"))
+         % (ROOT, ROOT / "napari-sprout"))
 r = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, cwd=str(Path.home()),
                    env={**os.environ, "QT_QPA_PLATFORM": "offscreen"})
 mods = r.stdout.strip().splitlines()[-1] if r.stdout.strip() else f"(no output) {r.stderr[-500:]}"
@@ -109,8 +109,8 @@ ok(r.returncode == 0 and not res["errs"]
    f"plots written from a worker thread (exit {r.returncode}) {res['errs'][-1][-300:] if res['errs'] else ''}")
 ok(res["pyplot"] is False and not warn, f"pyplot imported: {res['pyplot']}, Qt timer warnings: {warn}")
 
-import make_adaptive_seed  # noqa: E402
-import make_seeds as ms  # noqa: E402
+from sprout_core import make_adaptive_seed  # noqa: E402
+from sprout_core import make_seeds as ms  # noqa: E402
 import sprout_core.sprout_core as sc  # noqa: E402
 
 # ======================================================================

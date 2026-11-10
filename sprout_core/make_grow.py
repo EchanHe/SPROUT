@@ -4,7 +4,7 @@ import itertools
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from scipy import ndimage as ndi
-from skimage.morphology import ball, disk, binary_dilation
+from skimage.morphology import ball, disk
 import tifffile
 from datetime import datetime
 import yaml
@@ -15,6 +15,7 @@ import glob
 import threading
 
 import sprout_core.sprout_core as sprout_core 
+from sprout_core.sprout_core import binary_dilation
 import sprout_core.config_core as config_core 
 import sprout_core.vis_lib as vis_lib
 

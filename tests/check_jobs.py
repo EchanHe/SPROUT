@@ -44,9 +44,9 @@ if SHOTS:
 import numpy as np  # noqa: E402
 import tifffile  # noqa: E402
 
-import make_adaptive_seed  # noqa: E402
-import make_grow  # noqa: E402
-import make_seeds  # noqa: E402
+from sprout_core import make_adaptive_seed  # noqa: E402
+from sprout_core import make_grow  # noqa: E402
+from sprout_core import make_seeds  # noqa: E402
 import sprout_core.sprout_core as sc  # noqa: E402
 from sprout_core.boundary import Cancelled  # noqa: E402
 
@@ -526,10 +526,10 @@ ok(not UNCAUGHT, f"no uncaught errors ({len(UNCAUGHT)})" + (f": {UNCAUGHT[0][-40
 
 # ======================================================================
 print("\n== texts (C7)")
-files = ["napari_sprout/napari_sprout/widgets/seed_widget.py", "napari_sprout/napari_sprout/widgets/grow_widget.py",
-         "napari_sprout/napari_sprout/widgets/boundary_widget.py", "napari_sprout/napari_sprout/widgets/prompt_tab.py",
-         "napari_sprout/napari_sprout/utils/histogram_threshold_widget.py",
-         "napari_sprout/napari_sprout/utils/util_widget.py"]
+files = ["napari-sprout/napari_sprout/widgets/seed_widget.py", "napari-sprout/napari_sprout/widgets/grow_widget.py",
+         "napari-sprout/napari_sprout/widgets/boundary_widget.py", "napari-sprout/napari_sprout/widgets/prompt_tab.py",
+         "napari-sprout/napari_sprout/utils/histogram_threshold_widget.py",
+         "napari-sprout/napari_sprout/utils/util_widget.py"]
 bad = []
 for f in files:
     for i, line in enumerate((ROOT / f).read_text(encoding="utf-8").splitlines(), 1):

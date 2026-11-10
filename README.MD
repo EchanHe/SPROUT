@@ -15,7 +15,7 @@ Click [here](https://www.youtube.com/watch?v=4DHI1gs1lzc&list=PL8tsvVKJ9n6FjYYpl
 ---
 
 - [Introduction](#introduction)
-- [Prerequisites](#prerequisites)
+- [Install](#install)
 - [Usage](#️-usage)
    - [Terms](#terms)
    - [Input Data Format](#input-data-format)
@@ -38,119 +38,30 @@ SPROUT is an interpretable workflow for semi-automated, multi-class segmentation
 [*SPROUT: A User-friendly, Scalable Toolkit for Multi-class Segmentation of Volumetric Images*](https://www.biorxiv.org/content/10.1101/2024.11.22.624847v2.abstract)  
 
 
-## Prerequisites
+## Install
 
-### Clone the Code
-```bash
-git clone https://github.com/EchanHe/SPROUT.git
-cd SPROUT
-```
-
-### Python and Environment Setup
-
-    **Install Python and environment manager**: To manage Python environments, we recommend using a lightweight and open alternative to Anaconda, such as:
-
-    - **Miniforge**: minimal `conda` installer with `conda-forge` as default  
-    https://conda-forge.org/download/
-
-    After installing your preferred environment manager, you can create the environment using the prompt/terminal 
-
-### Create and Configure Python Environment
-   - SPROUT supports **Python 3.10**. Required libraries and versions are:
-     ```
-     NumPy: 1.26.4
-     Pandas: 2.2.1
-     Scikit-image: 0.22.0
-     Tifffile: 2024.2.12
-     imagecodecs: 2025.3.30
-     Pyyaml: 6.0.1
-     Trimesh: 4.3.1
-     Matplotlib: 3.8.3
-     open3d: 0.18.0
-     ```
-   - Steps to create the environment:
-     1. **Create the environment**:
-        ```bash
-        conda create -n sprout python=3.10
-        ```
-     2. **Activate the environment**:
-        ```bash
-        conda activate sprout
-        ```
-     3. **Install dependencies**:
-        ```bash
-        pip install numpy==1.26.4 pandas==2.2.1 scikit-image==0.22.0 tifffile==2024.2.12 pyyaml==6.0.1 trimesh==4.3.1 matplotlib==3.8.3 open3d==0.18.0 imagecodecs==2025.3.30
-        ```
-        This shows pip installation; alternatively, you can use conda.
-
-### Optional: Installation for External Models Prediction:**
-- For SAM integration, see [Here](docs/external_model_installation.md#sam-segment-anything-model)
-- For nnInteractive integration, see [Here](docs/external_model_installation.md#nninteractive)
-
-
-### Install napari & napari-sprout (Visualization and Editing)
-
-**[Napari](https://napari.org/)** is an open-source image viewer designed for 2D and 3D visualisation and interactive manipulation.
-
-We developed `napari-sprout`, the SPROUT plugin for Napari, which enables users to interactively visualise, edit, and refine seeds, segmentation results, and other image-derived layers.
-
-`napari-sprout` has been tested with **`napari==0.6.1`**.
-
-To install Napari, you can use either **pip** or **conda**:
+SPROUT needs Python 3.10 or newer. We recommend a conda environment ([Miniforge](https://conda-forge.org/download/)):
 
 ```bash
-pip install napari==0.6.1
-```
-or
-```bash
-conda install -c conda-forge napari=0.6.1 pyqt
+conda create -n sprout python=3.12
+conda activate sprout
+pip install "napari-sprout[all]"     # SPROUT, the napari plugin, napari and Qt
 ```
 
-After installation, you can launch Napari from the command line:
+Then start napari (`napari`) and open **Plugins → SPROUT**. The `sprout` command is installed too.
 
-```bash
-napari
-```
+Other ways:
 
-If you encounter the following error message:
+| You want | Run |
+|---|---|
+| Only the command line (e.g. on a cluster, no napari) | `pip install sprout-seg` |
+| The plugin, napari already installed | `pip install napari-sprout` |
+| nnInteractive (Prompt (AI) tab, `sprout --prompt --nninteractive`) | `pip install "sprout-seg[ai]"`. With an NVIDIA GPU, first install PyTorch for your CUDA version ([pytorch.org](https://pytorch.org/get-started/locally/)). |
+| Meshes (`make_mesh`) | `pip install "sprout-seg[mesh]"` |
+| SAM | see [External Models](docs/external_model_installation.md#sam-segment-anything-model) |
+| To change the code | `git clone https://github.com/EchanHe/SPROUT.git`, `cd SPROUT`, `pip install -e . -e ./napari-sprout` |
 
-```
-napari requires either PyQt5 (default), PyQt6 or PySide2 to be installed in the environment.
-```
-
-it means a **Qt GUI** is missing.  
-You can fix this by installing one of the following:
-
--   With **pip**:
-    
-    ```bash
-    pip install "napari[all]"
-    # or a specific Qt backend:
-    pip install "napari[pyqt5]"
-    pip install "napari[pyqt6]"
-    pip install "napari[pyside2]"
-    ```
-    
--   With **conda**:
-    
-    ```bash
-    conda install -c conda-forge pyqt
-    # or
-    conda install -c conda-forge pyside2
-    ```
-
-
-#### Install The SPROUT plugin (`napari-sprout`):
-After installing napari, you can proceed to install the SPROUT plugin.
-```bash
-cd ./napari_sprout
-pip install -e .
-```
-
-- More on using napari-sprout: see [View & Edit (napari)](#view--edit-napari)
-- Full napari docs: [https://napari.org/](https://napari.org/)
-
-
+The paper's results were made with Python 3.10, numpy 1.26.4, pandas 2.2.1, scikit-image 0.22.0, scipy 1.15.3, tifffile 2024.2.12, napari 0.6.1. The tests run on these versions and on the newest ones.
 
 
 ## ⚙️ Usage
@@ -175,6 +86,8 @@ SPROUT follows a **two-step workflow** for multi-class segmentation:
 In practice, both seed and grow results often require **visualisation, quality checking, or manual editing**, depending on your segmentation goals.
 
 To support this, SPROUT is fully integrated into the **Napari** ecosystem as a plugin, please see [napari-sprout](#view--edit-napari). 
+
+**Command line:** the examples below use `python sprout.py` in a clone of this repository. After `pip install`, `sprout` does the same from any folder, e.g. `sprout --seeds --config my_seeds.yaml`.
 
 ### Terms
 

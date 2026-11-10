@@ -20,14 +20,14 @@ if os.path.isdir(r"C:/Windows/Fonts"):
     os.environ.setdefault("QT_QPA_FONTDIR", r"C:/Windows/Fonts")  # real font metrics for the width check
 ROOT = Path(__file__).resolve().parents[1]
 sys.stdout.reconfigure(encoding="utf-8")         # status texts contain '✓'
-sys.path[:0] = [str(ROOT), str(ROOT / "napari_sprout"), str(Path(__file__).resolve().parent)]
+sys.path[:0] = [str(ROOT), str(ROOT / "napari-sprout"), str(Path(__file__).resolve().parent)]
 
 import napari  # noqa: E402
 import _headless_gl  # noqa: E402,F401  (napari >= 0.7 offscreen: no GL context)
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 import tifffile  # noqa: E402
-from qtpy.QtCore import Qt  # noqa: E402
+from qtpy.QtCore import QEventLoop, Qt, QTimer  # noqa: E402
 from qtpy.QtWidgets import QApplication  # noqa: E402
 
 from napari_sprout._widget import SPROUTWidget  # noqa: E402
@@ -64,6 +64,12 @@ def wait(cond, timeout=300, what=""):
         if time.time() - t > timeout:
             raise TimeoutError(what)
 
+
+def run_event_loop(sec):
+    """A real Qt event loop for `sec` seconds: Qt6 runs deleteLater only inside one, not in processEvents."""
+    loop = QEventLoop()
+    QTimer.singleShot(int(sec * 1000), loop.quit)
+    loop.exec()
 
 def pump(n=30):
     for _ in range(n):
@@ -708,7 +714,7 @@ ok(not ft.engine.loaded, "engines released (weakref.finalize)")
 print("== 8. plugin manifest")
 from npe2 import PluginManifest, PluginManager  # noqa: E402
 
-mf = PluginManifest.from_file(ROOT / "napari_sprout" / "napari_sprout" / "napari.yaml")
+mf = PluginManifest.from_file(ROOT / "napari-sprout" / "napari_sprout" / "napari.yaml")
 wnames = [w.display_name for w in mf.contributions.widgets]
 cmds = [c.id for c in mf.contributions.commands]
 ok(wnames == ["SPROUT", "Edit", "Label Mapping", "Batch Builder", "Data Info"]
@@ -732,7 +738,7 @@ def menu_texts(menu, out=None):
 plug = [a for a in viewer.window._qt_window.menuBar().actions() if "Plugin" in a.text()]
 mtexts = menu_texts(plug[0].menu()) if plug else []
 sub = [t for t in mtexts if t and t not in ("Install/Uninstall Plugins...", "Plugin Errors...")
-       and "napari-animation" not in t
+       and "napari-animation" not in t and "napari-metadata" not in t   # other plugins (napari[all] 0.7)
        and not t.endswith("(napari builtins)")]      # napari 0.7 lists its own widgets here too
 ok(sub == ["SPROUT", "SPROUT", "Edit", "Label Mapping", "Batch Builder", "Data Info"],
    f"Plugins -> SPROUT lists SPROUT, Edit, Label Mapping, Batch Builder, Data Info (no Prompts, no Load): {sub}")
@@ -848,7 +854,8 @@ dw = [d for d in v.window._dock_widgets.values() if d.widget() is mw][0]
 v.window.remove_dock_widget(dw)
 del mw, dw, pt
 gc.collect()
-pump_for(1.0)
+run_event_loop(1.0)
+gc.collect()                    # Qt deleted the dock in the loop; this frees its Python objects
 m7 = RL.get_roi_hub(v)
 
 

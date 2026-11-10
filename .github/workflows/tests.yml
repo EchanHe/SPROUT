@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:                   # 1 Jan, Apr, Jul, Oct: only "package" and "latest", do new versions of the libraries break it?
+    - cron: "0 6 1 1,4,7,10 *"
   workflow_dispatch:          # the "Run workflow" button on the Actions page
     inputs:
       full:
@@ -20,6 +22,7 @@ env:
 
 jobs:
   core:
+    if: github.event_name != 'schedule'
     name: core / ${{ matrix.os }} / Python ${{ matrix.python }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
@@ -44,6 +47,7 @@ jobs:
           path: test-logs/
 
   napari:
+    if: github.event_name != 'schedule'
     name: napari ${{ matrix.napari }} / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
@@ -51,14 +55,14 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        napari: ["0.6.1", "0.7.1"]
+        napari: ["0.6.1", "0.7.1", "0.10.0"]     # the paper's, the last with Qt5, the newest (Qt6 only, Python >= 3.11)
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0      # check_prompt_core reads an older version of a file
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: ${{ matrix.napari == '0.10.0' && '3.12' || '3.10' }}
           cache: pip
           cache-dependency-path: requirements-ci.txt
       - name: Libraries Qt needs on Linux
@@ -66,8 +70,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libdbus-1-3 libfontconfig1 libglib2.0-0
-      - run: pip install -r requirements-ci.txt "napari[pyqt5]==${{ matrix.napari }}"
-      - run: pip install -e ./napari_sprout
+      - run: pip install -r requirements-ci.txt "napari[${{ matrix.napari == '0.10.0' && 'pyqt6' || 'pyqt5' }}]==${{ matrix.napari }}"
+      - run: pip install -e . -e ./napari-sprout
       - run: pytest -m napari ${{ env.PYTEST_ARGS }}
       - uses: actions/upload-artifact@v4
         if: always()
@@ -76,6 +80,7 @@ jobs:
           path: test-logs/
 
   golden:
+    if: github.event_name != 'schedule'
     name: golden outputs
     runs-on: windows-latest   # where the golden files were recorded
     timeout-minutes: 30
@@ -87,10 +92,63 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-ci.txt
       - run: pip install -r requirements-ci.txt "napari[pyqt5]==0.6.1"
-      - run: pip install -e ./napari_sprout
+      - run: pip install -e . -e ./napari-sprout
       - run: pytest -m golden
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: logs-golden
+          path: test-logs/
+
+  package:
+    name: package / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Libraries Qt needs on Linux
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libdbus-1-3 libfontconfig1 libglib2.0-0
+      - run: pip install build numpy tifffile
+      - run: python -m build --outdir dist .
+      - run: python -m build --outdir dist napari-sprout
+      - run: python tests/clean_install.py dist    # the wheels in a new venv, newest libraries
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wheels-${{ matrix.os }}
+          path: dist/
+
+  latest:
+    name: latest libraries
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0      # check_prompt_core reads an older version of a file
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Libraries Qt needs on Linux
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libdbus-1-3 libfontconfig1 libglib2.0-0
+      # no pins: the newest numpy, pandas, scikit-image, napari and PyQt6
+      - run: pip install -e ".[test,mesh]" -e ./napari-sprout "napari[pyqt6]"
+      - run: pip list
+      - run: pytest -m "core or napari" ${{ env.PYTEST_ARGS }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: logs-latest
           path: test-logs/

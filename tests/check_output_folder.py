@@ -15,7 +15,7 @@ from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 ROOT = Path(__file__).resolve().parents[1]
-sys.path[:0] = [str(ROOT), str(ROOT / "napari_sprout"), str(Path(__file__).resolve().parent)]
+sys.path[:0] = [str(ROOT), str(ROOT / "napari-sprout"), str(Path(__file__).resolve().parent)]
 sys.stdout.reconfigure(encoding="utf-8")
 
 import napari  # noqa: E402

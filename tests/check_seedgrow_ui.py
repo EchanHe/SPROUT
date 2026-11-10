@@ -30,7 +30,7 @@ WINDOWS_FONTS = os.path.isdir(r"C:/Windows/Fonts")   # widths only mean somethin
 if WINDOWS_FONTS:
     os.environ.setdefault("QT_QPA_FONTDIR", r"C:/Windows/Fonts")
 ROOT = Path(__file__).resolve().parents[1]
-sys.path[:0] = [str(ROOT), str(ROOT / "napari_sprout"), str(Path(__file__).resolve().parent)]
+sys.path[:0] = [str(ROOT), str(ROOT / "napari-sprout"), str(Path(__file__).resolve().parent)]
 
 import napari  # noqa: E402
 import _headless_gl  # noqa: E402,F401  (napari >= 0.7 offscreen: no GL context)
