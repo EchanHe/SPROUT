@@ -1,7 +1,17 @@
 # SPROUT
 
+[![PyPI](https://img.shields.io/pypi/v/napari-sprout.svg)](https://pypi.org/project/napari-sprout/)
+[![tests](https://github.com/EchanHe/SPROUT/actions/workflows/tests.yml/badge.svg)](https://github.com/EchanHe/SPROUT/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 ## TL;DR 
 SPROUT is a lightweight segmentation toolkit for fine-grained and multi-part segmentation of grayscale 2D/3D images.
+
+```bash
+pip install "napari-sprout[all]"     # then start napari: Plugins → SPROUT
+```
+
+More ways to install: [Install](#install).
 
 👉 Quickstart: [Quickstart with Demo Data](./docs/demo_data_tutorial.md)
 
@@ -27,6 +37,7 @@ Click [here](https://www.youtube.com/watch?v=4DHI1gs1lzc&list=PL8tsvVKJ9n6FjYYpl
    - [External Model Prediction](#-external-model-prediction)
 - [View & Edit (napari)](#view--edit-napari)
 - [Demo Results](#demo-results)
+- [Related tools](#related-tools)
 - [Extras](#extra-features)
 
 ## Introduction
@@ -79,7 +90,7 @@ SPROUT follows a **two-step workflow** for multi-class segmentation:
    - [**Sweep adaptive seed**](#-run-sweep-adaptive-seed): make one seed per threshold, then combine them all. It has no early stop and stays fast with many seeds.
 2. **Seed Growth**  
    - [**Threshold-based growth**](#-run-growth): grows a seed by expanding the reduced components back toward their full target shapes. Growth is guided by image intensity and connectivity.
-   - [**Sprout+External**](#-external-model-prediction): seeds are converted into prompts for a segmentation foundation model such as SAM & nnInteractive, which then predicts the segmentation. These slice-wise predictions are then fused into a final 3D output.
+   - [**Sprout+External**](#-external-model-prediction): seeds are converted into prompts for a segmentation foundation model such as SAM & nnInteractive, which then predicts the segmentation. nnInteractive works in 3D; SAM predicts slice by slice, and the slices are fused into a 3D output.
 
 **🧪 Interactive Inspection & Editing**
 
@@ -265,7 +276,7 @@ From here, you can use a set of tools to load, view, and edit your data.
 In addition to `napari-sprout`, **napari** also provides powerful editing options (e.g. **Brush** to add regions, **Erase** to remove).
 
 
-You can also visualize, inspect, and edit seeds or results using 3D image processing tools such as **3D Slicer**, **DragonFly**, and **AVIZO**. Alternatively, you can generate meshes and view or edit them in mesh-based tools like **MeshLab**. See [Extra section](#extra-features)
+You can also visualize, inspect, and edit seeds or results using 3D image processing tools such as **3D Slicer**, **Dragonfly**, and **AVIZO**. Alternatively, you can generate meshes and view or edit them in mesh-based tools like **MeshLab**. See [Extra section](#extra-features)
 
 
 
@@ -286,6 +297,14 @@ Gallery of other results
 _Note: All results underwent manual post-processing primarily to verify and correct segmentation errors._
 
 
+## Related tools
+
+- [nnInteractive](https://github.com/MIC-DKFZ/nnInteractive): 3D interactive segmentation from points, scribbles, boxes and lassos. SPROUT seeds can be its prompts (Prompt (AI) tab).
+- [SAM](https://github.com/facebookresearch/segment-anything) / [SAM 2](https://github.com/facebookresearch/sam2): promptable segmentation of 2D images. SPROUT seeds can be its prompts.
+- [Biomedisa](https://biomedisa.info): fills in a 3D segmentation from a few labelled slices.
+- [nnU-Net](https://github.com/MIC-DKFZ/nnUNet): accurate supervised segmentation when training labels exist; corrected SPROUT results can be its training labels.
+- [BounTI](https://pubmed.ncbi.nlm.nih.gov/38760955/): boundary-preserving threshold iteration, which inspired SPROUT (M. Didziokas, E. Pauws, L. Kölby, R. H. Khonsari, M. Moazen. 2024. *Journal of Anatomy* 245, 829–841).
+
 ----------
 ## Extra Features
 
@@ -297,11 +316,7 @@ In napari-sprout and plugins, we provided GUI version of editing results. You ca
 
 ### BounTI Multithreaded Implementation
 
-SPROUT was inspired by **BounTI**, a boundary-preserving threshold iteration approach:  
-**M. Didziokas, E. Pauws, L. Kölby, R. H. Khonsari, M. Moazen. 2024.**  
-[*BounTI: A user-friendly tool for automatic hard tissue segmentation.*](https://pubmed.ncbi.nlm.nih.gov/38760955/) *Journal of Anatomy 245, 829–841*.
-
-The script `./BounTI/run_bounti_mp.py` is designed to run **BounTI** and **BounTI Flood** using a multithreaded approach. It efficiently processes a list of initial thresholds in parallel, leveraging multiple threads for improved performance.
+The script `./BounTI/run_bounti_mp.py` is designed to run **BounTI** ([Related tools](#related-tools)) and **BounTI Flood** using a multithreaded approach. It efficiently processes a list of initial thresholds in parallel, leveraging multiple threads for improved performance.
 
 
 
