@@ -27,7 +27,7 @@ import _headless_gl  # noqa: E402,F401  (napari >= 0.7 offscreen: no GL context)
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 import tifffile  # noqa: E402
-from qtpy.QtCore import Qt  # noqa: E402
+from qtpy.QtCore import QEventLoop, Qt, QTimer  # noqa: E402
 from qtpy.QtWidgets import QApplication  # noqa: E402
 
 from napari_sprout._widget import SPROUTWidget  # noqa: E402
@@ -64,6 +64,12 @@ def wait(cond, timeout=300, what=""):
         if time.time() - t > timeout:
             raise TimeoutError(what)
 
+
+def run_event_loop(sec):
+    """A real Qt event loop for `sec` seconds: Qt6 runs deleteLater only inside one, not in processEvents."""
+    loop = QEventLoop()
+    QTimer.singleShot(int(sec * 1000), loop.quit)
+    loop.exec()
 
 def pump(n=30):
     for _ in range(n):
@@ -848,7 +854,8 @@ dw = [d for d in v.window._dock_widgets.values() if d.widget() is mw][0]
 v.window.remove_dock_widget(dw)
 del mw, dw, pt
 gc.collect()
-pump_for(1.0)
+run_event_loop(1.0)
+gc.collect()                    # Qt deleted the dock in the loop; this frees its Python objects
 m7 = RL.get_roi_hub(v)
 
 

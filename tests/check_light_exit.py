@@ -42,7 +42,7 @@ lab = Labels(np.zeros((5, 5), np.uint8))
 try:
     lab.paint((2, 2), 300)
     in_uint8 = int(lab.data[2, 2])
-except OverflowError:                # numpy 2 refuses where numpy 1 wraps it to 44
+except (OverflowError, ValueError):  # refused: numpy 2 (OverflowError), napari 0.10 (WrongSelectedLabelError); numpy 1 wraps it to 44
     in_uint8 = "refused"
 lab16 = Labels(np.zeros((5, 5), np.uint16))
 lab16.paint((2, 2), 300)

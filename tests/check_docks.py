@@ -286,6 +286,7 @@ def check_map():
     viewer.layers.remove(A)
     del A
     C.pump(5)
+    C.run_event_loop(0.3)
     gc.collect()
     ok(len(mw._mappings) == 2 if hasattr(mw, "_mappings") else False,
        f"A3: mappings are held weakly (removed layer dropped; {len(getattr(mw, '_mappings', {}))} left)")

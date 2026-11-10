@@ -1,5 +1,5 @@
 # What the CI tests run on: the paper's versions (README), also the lower bounds in pyproject.toml.
-# The napari jobs add "napari[pyqt5]==<version>" to this list; the "latest" job uses no pins.
+# The napari jobs add "napari[pyqt5]==<version>" (PyQt6 for napari 0.10) to this list; the "latest" job uses no pins.
 numpy==1.26.4
 pandas==2.2.1
 scikit-image==0.22.0

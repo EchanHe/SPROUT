@@ -26,9 +26,9 @@ PANELS = r"""
 import os, sys
 import _headless_gl
 import napari, npe2, sprout_core, napari_sprout
-venv = sys.argv[1]
+venv = os.path.realpath(sys.argv[1])            # macOS: /var is a link to /private/var
 for m in (sprout_core, napari_sprout):
-    assert os.path.commonpath([venv, m.__file__]) == venv, m.__file__      # the installed copy
+    assert os.path.commonpath([venv, os.path.realpath(m.__file__)]) == venv, m.__file__   # the installed copy
 pm = npe2.PluginManager.instance()
 pm.discover()
 names = [w.display_name for w in pm.get_manifest("napari-sprout").contributions.widgets]

@@ -50,6 +50,13 @@ def pump(n=20):
         time.sleep(0.002)
 
 
+def run_event_loop(sec):
+    """A real Qt event loop for `sec` seconds: Qt6 runs deleteLater only inside one, not in processEvents."""
+    from qtpy.QtCore import QEventLoop, QTimer
+    loop = QEventLoop()
+    QTimer.singleShot(int(sec * 1000), loop.quit)
+    loop.exec()
+
 def wait(cond, timeout=300, what=""):
     from qtpy.QtWidgets import QApplication
     t = time.time()
