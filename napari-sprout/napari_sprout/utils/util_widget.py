@@ -10,15 +10,6 @@ from qtpy.QtGui import QPainter, QPalette
 from napari.utils.notifications import show_error, show_info
 import numpy as np
 
-# current_dir = os.path.dirname(os.path.abspath(__file__))
-# root_dir = os.path.abspath(os.path.join(current_dir, "../../"))
-# if root_dir not in sys.path:
-#     sys.path.insert(0, root_dir)
-from pathlib import Path
-sprout_path = Path(__file__).parent.parent.parent.parent
-if str(sprout_path) not in sys.path:
-    sys.path.insert(0, str(sprout_path))
-
 from sprout_core.config_core import support_footprints, support_footprints_2d
 from sprout_core.roi import parse_ids
 from .fit_table import FitTable

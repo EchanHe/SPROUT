@@ -35,7 +35,10 @@ from pathlib import Path
 tree, out, demo = sys.argv[1], Path(sys.argv[2]), Path(sys.argv[3])
 sys.path.insert(0, tree)
 import numpy as np, tifffile
-import make_seeds, make_grow, make_adaptive_seed
+try:
+    from sprout_core import make_seeds, make_grow, make_adaptive_seed
+except ImportError:                # trees before 1.1.0 keep them at the root
+    import make_seeds, make_grow, make_adaptive_seed
 import sprout_core.sprout_core as sc
 assert Path(sc.__file__).resolve().is_relative_to(Path(tree).resolve()), sc.__file__
 
@@ -176,8 +179,11 @@ def main():
             failed.append(msg)
 
     if args.base:
-        tar = subprocess.run(["git", "-C", str(ROOT), "archive", args.base, "sprout_core", "make_seeds.py",
-                              "make_grow.py", "make_adaptive_seed.py"], capture_output=True, check=True).stdout
+        listed = subprocess.run(["git", "-C", str(ROOT), "ls-tree", "--name-only", args.base], capture_output=True,
+                                text=True, check=True).stdout.split()
+        paths = ["sprout_core"] + [p for p in ("make_seeds.py", "make_grow.py", "make_adaptive_seed.py") if p in listed]
+        tar = subprocess.run(["git", "-C", str(ROOT), "archive", args.base, *paths], capture_output=True,
+                             check=True).stdout
         with tarfile.open(fileobj=io.BytesIO(tar)) as t:
             t.extractall(tmp / "base_tree")
         compare_base(new, run(tmp / "base_tree", tmp / "out_base"), ok)

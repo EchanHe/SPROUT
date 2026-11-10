@@ -22,7 +22,7 @@ from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path[:0] = [str(ROOT), str(ROOT / "napari_sprout"), str(Path(__file__).resolve().parent)]
+sys.path[:0] = [str(ROOT), str(ROOT / "napari-sprout"), str(Path(__file__).resolve().parent)]
 os.chdir(ROOT)
 
 import numpy as np  # noqa: E402
@@ -66,7 +66,7 @@ probe = textwrap.dedent(r"""
     print("RESULT" + json.dumps({"after_core": after_core, "bad": bad, "status": list(st),
                                  "hint_ok": st == (False, INSTALL_HINT)}))
     v.close()
-""" % (str(ROOT), str(ROOT / "napari_sprout"), str(Path(__file__).resolve().parent)))
+""" % (str(ROOT), str(ROOT / "napari-sprout"), str(Path(__file__).resolve().parent)))
 res = subprocess.run([sys.executable, "-B", "-c", probe], capture_output=True, text=True, timeout=600)
 line = [ln for ln in res.stdout.splitlines() if ln.startswith("RESULT")]
 if not line:

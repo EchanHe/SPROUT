@@ -28,7 +28,8 @@ def pick_root(argv):
     root = REPO
     if "--root" in argv:
         root = Path(argv[argv.index("--root") + 1]).resolve()
-    sys.path[:0] = [str(root), str(root / "napari_sprout"), str(HERE)]
+    plugin = root / "napari-sprout" if (root / "napari-sprout").is_dir() else root / "napari_sprout"   # before 1.1.0
+    sys.path[:0] = [str(root), str(plugin), str(HERE)]
     try:
         import _headless_gl  # noqa: F401  (napari 0.7 offscreen GL shim, if present)
     except ImportError:

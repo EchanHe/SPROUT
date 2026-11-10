@@ -20,7 +20,7 @@ if os.path.isdir(r"C:/Windows/Fonts"):
     os.environ.setdefault("QT_QPA_FONTDIR", r"C:/Windows/Fonts")  # real font metrics for the width check
 ROOT = Path(__file__).resolve().parents[1]
 sys.stdout.reconfigure(encoding="utf-8")         # status texts contain '✓'
-sys.path[:0] = [str(ROOT), str(ROOT / "napari_sprout"), str(Path(__file__).resolve().parent)]
+sys.path[:0] = [str(ROOT), str(ROOT / "napari-sprout"), str(Path(__file__).resolve().parent)]
 
 import napari  # noqa: E402
 import _headless_gl  # noqa: E402,F401  (napari >= 0.7 offscreen: no GL context)
@@ -708,7 +708,7 @@ ok(not ft.engine.loaded, "engines released (weakref.finalize)")
 print("== 8. plugin manifest")
 from npe2 import PluginManifest, PluginManager  # noqa: E402
 
-mf = PluginManifest.from_file(ROOT / "napari_sprout" / "napari_sprout" / "napari.yaml")
+mf = PluginManifest.from_file(ROOT / "napari-sprout" / "napari_sprout" / "napari.yaml")
 wnames = [w.display_name for w in mf.contributions.widgets]
 cmds = [c.id for c in mf.contributions.commands]
 ok(wnames == ["SPROUT", "Edit", "Label Mapping", "Batch Builder", "Data Info"]

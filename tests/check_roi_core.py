@@ -30,7 +30,7 @@ from pathlib import Path
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path[:0] = [str(ROOT), str(ROOT / "napari_sprout")]
+sys.path[:0] = [str(ROOT), str(ROOT / "napari-sprout")]
 os.chdir(ROOT)
 
 from sprout_core import roi as R  # noqa: E402
@@ -432,9 +432,9 @@ if "--local" in sys.argv:
 
 # ======================================================================
 print("\n== 3. Seeds in an ROI == whole image with boundary | outside-ROI")
-import make_adaptive_seed as MA  # noqa: E402
-import make_grow as MG  # noqa: E402
-import make_seeds as MS  # noqa: E402
+from sprout_core import make_adaptive_seed as MA  # noqa: E402
+from sprout_core import make_grow as MG  # noqa: E402
+from sprout_core import make_seeds as MS  # noqa: E402
 import tifffile  # noqa: E402
 from sprout_core.sprout_core import cast_labels  # noqa: E402
 

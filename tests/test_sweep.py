@@ -25,8 +25,8 @@ TESTS = Path(__file__).resolve().parent
 ROOT = TESTS.parent
 sys.path.insert(0, str(ROOT))
 
-import batch_seeds  # noqa: E402
-import make_sweep_adaptive_seed as sweep  # noqa: E402
+from sprout_core import batch_seeds  # noqa: E402
+from sprout_core import make_sweep_adaptive_seed as sweep  # noqa: E402
 import sprout_core.config_core as config_core  # noqa: E402
 import sprout_core.sprout_core as sprout_core  # noqa: E402
 from sprout_core import adaptive_seed_combine as combine  # noqa: E402

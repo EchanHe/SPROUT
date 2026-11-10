@@ -325,7 +325,7 @@ except Cancelled:
 # ---------------------------------------------------------------- the Qt tab with the real model
 if not args.core_only:
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    sys.path.insert(0, str(ROOT / "napari_sprout"))
+    sys.path.insert(0, str(ROOT / "napari-sprout"))
     import napari  # noqa: E402
     import _headless_gl  # noqa: E402,F401  (napari >= 0.7 offscreen: no GL context)
     from qtpy.QtWidgets import QApplication  # noqa: E402

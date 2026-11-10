@@ -28,13 +28,8 @@ import yaml
 import sys
 import os
 import time
-# get the current file's absolute path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-root_dir = os.path.abspath(os.path.join(current_dir, "../../"))
-if root_dir not in sys.path:
-    sys.path.insert(0, root_dir)
 
-from make_grow import grow_mp
+from sprout_core.make_grow import grow_mp
 from sprout_core import roi as R
 from sprout_core.sprout_core import cast_labels
 from sprout_core.roi import RoiError

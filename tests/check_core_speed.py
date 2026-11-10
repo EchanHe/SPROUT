@@ -35,7 +35,7 @@ from scipy import ndimage as ndi
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-import make_grow  # noqa: E402
+from sprout_core import make_grow  # noqa: E402
 import sprout_core.config_core as cc  # noqa: E402
 import sprout_core.sprout_core as sc  # noqa: E402
 
@@ -68,7 +68,10 @@ def base_module(rel, name):
 
 base_sc = base_module("sprout_core/sprout_core.py", "base_sprout_core")
 base_cc = base_module("sprout_core/config_core.py", "base_config_core")
-base_grow = base_module("make_grow.py", "base_make_grow")
+try:
+    base_grow = base_module("sprout_core/make_grow.py", "base_make_grow")
+except subprocess.CalledProcessError:   # bases before 1.1.0 keep it at the root
+    base_grow = base_module("make_grow.py", "base_make_grow")
 
 
 def best(fn, n=3):

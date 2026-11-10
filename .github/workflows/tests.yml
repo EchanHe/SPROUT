@@ -67,7 +67,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libdbus-1-3 libfontconfig1 libglib2.0-0
       - run: pip install -r requirements-ci.txt "napari[pyqt5]==${{ matrix.napari }}"
-      - run: pip install -e ./napari_sprout
+      - run: pip install -e . -e ./napari-sprout
       - run: pytest -m napari ${{ env.PYTEST_ARGS }}
       - uses: actions/upload-artifact@v4
         if: always()
@@ -87,10 +87,61 @@ jobs:
           cache: pip
           cache-dependency-path: requirements-ci.txt
       - run: pip install -r requirements-ci.txt "napari[pyqt5]==0.6.1"
-      - run: pip install -e ./napari_sprout
+      - run: pip install -e . -e ./napari-sprout
       - run: pytest -m golden
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: logs-golden
+          path: test-logs/
+
+  package:
+    name: package / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Libraries Qt needs on Linux
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libdbus-1-3 libfontconfig1 libglib2.0-0
+      - run: pip install build numpy tifffile
+      - run: python -m build --outdir dist .
+      - run: python -m build --outdir dist napari-sprout
+      - run: python tests/clean_install.py dist    # the wheels in a new venv, newest libraries
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wheels-${{ matrix.os }}
+          path: dist/
+
+  latest:
+    name: latest libraries
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Libraries Qt needs on Linux
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libdbus-1-3 libfontconfig1 libglib2.0-0
+      # no pins: numpy 2, newest napari. PyQt5: under PyQt6 a closed panel is not freed (napari keeps it), to do
+      - run: pip install -e ".[test,mesh]" -e ./napari-sprout "napari[pyqt5]"
+      - run: pip list
+      - run: pytest -m "core or napari" ${{ env.PYTEST_ARGS }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: logs-latest
           path: test-logs/

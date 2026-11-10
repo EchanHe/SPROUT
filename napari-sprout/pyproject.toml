@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "napari-sprout"
+dynamic = ["version"]
+description = "napari plugin for SPROUT: seeds, growing, editing and AI prompts for 2D and 3D segmentation"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Yichen He" }]
+requires-python = ">=3.10"
+dependencies = [
+    "sprout-seg~=1.1.0",            # the plugin calls the core directly: both are released together
+    "napari>=0.6.1",
+    "qtpy",
+    "magicgui",
+    "superqt",
+]
+classifiers = [
+    "Framework :: napari",
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Image Processing",
+]
+
+[project.optional-dependencies]
+all = ["napari[all]"]               # napari with a Qt backend, for an environment without napari
+ai = ["sprout-seg[ai]~=1.1.0"]
+
+[project.entry-points."napari.manifest"]
+napari-sprout = "napari_sprout:napari.yaml"
+
+[project.urls]
+Homepage = "https://github.com/EchanHe/SPROUT"
+Issues = "https://github.com/EchanHe/SPROUT/issues"
+
+[tool.setuptools.packages.find]
+include = ["napari_sprout*"]
+
+[tool.setuptools.package-data]
+napari_sprout = ["napari.yaml"]
+
+[tool.setuptools.dynamic]
+version = { attr = "napari_sprout.__version__" }

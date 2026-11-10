@@ -26,7 +26,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 if os.path.isdir(r"C:/Windows/Fonts"):
     os.environ.setdefault("QT_QPA_FONTDIR", r"C:/Windows/Fonts")
 ROOT = Path(__file__).resolve().parents[1]
-sys.path[:0] = [str(ROOT), str(ROOT / "napari_sprout")]
+sys.path[:0] = [str(ROOT), str(ROOT / "napari-sprout")]
 
 import napari  # noqa: E402
 import _headless_gl  # noqa: E402,F401  (napari >= 0.7 offscreen: no GL context)
@@ -34,9 +34,9 @@ import numpy as np  # noqa: E402
 import tifffile  # noqa: E402
 from qtpy.QtWidgets import QApplication  # noqa: E402
 
-import make_adaptive_seed as MA  # noqa: E402
-import make_grow as MG  # noqa: E402
-import make_seeds as MS  # noqa: E402
+from sprout_core import make_adaptive_seed as MA  # noqa: E402
+from sprout_core import make_grow as MG  # noqa: E402
+from sprout_core import make_seeds as MS  # noqa: E402
 import napari_sprout.utils.histogram_threshold_widget as HTM  # noqa: E402
 import napari_sprout.widgets.boundary_widget as BWM  # noqa: E402
 import napari_sprout.widgets.grow_widget as GWM  # noqa: E402

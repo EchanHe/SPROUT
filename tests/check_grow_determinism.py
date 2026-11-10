@@ -24,7 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 os.chdir(ROOT)
 
-import make_grow  # noqa: E402
+from sprout_core import make_grow  # noqa: E402
 
 FAILED = []
 

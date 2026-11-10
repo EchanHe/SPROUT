@@ -12,7 +12,7 @@ import tifffile
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-import make_adaptive_seed  # noqa: E402
+from sprout_core import make_adaptive_seed  # noqa: E402
 
 pytestmark = pytest.mark.core
 

@@ -1,0 +1,145 @@
+import argparse
+import yaml
+from sprout_core.make_seeds import run_make_seeds
+from sprout_core.make_grow import run_make_grow
+from sprout_core.make_adaptive_seed import run_make_adaptive_seed
+from sprout_core.make_sweep_adaptive_seed import run_sweep_adaptive_seed
+
+from sprout_core.batch_grow import run_batch_grow
+from sprout_core.batch_seeds import run_batch_adaptive_seed, run_batch_seeds, run_batch_sweep_adaptive_seed
+
+import os
+
+from sprout_core import __version__
+
+def load_config(path):
+    try:
+        with open(path, 'r') as f:
+            return yaml.safe_load(f)
+    except Exception as e:
+        print(f"[ERROR] Failed to load config: {e}")
+        exit(1)
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="SPROUT CLI: generate seeds with a YAML config",
+        usage=
+        """
+        For seeds generation:
+            sprout --seeds --config path/to/config.yaml
+        
+        For adaptive seed generation (classic)
+            sprout --adaptive_seed --config path/to/config.yaml
+
+        For fast sweep + adaptive combine (recommended)
+            sprout --sweep_adaptive --config path/to/config.yaml
+        
+        For growing
+            sprout --grow --config path/to/config.yaml
+            
+        For Predictions using PROMPT extracted from seeds for SAM
+            sprout --prompt --sam --config path/to/config.yaml  
+        
+        For Predictions using PROMPT extracted from seeds for nnInteractive
+            sprout --prompt --nninteractive --config path/to/config.yaml
+            
+        To run in batch mode (pipeline version), add --batch:
+            sprout --seeds --batch --config path/to/config.yaml
+
+        In a clone of the repository, "python sprout.py" works the same as "sprout".
+        For more info, see README.md and ./template examples.
+        """
+    )
+    
+
+    # Mutually exclusive group
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('--seeds', action='store_true', help="Run the seed generation function")
+    group.add_argument('--adaptive_seed', action='store_true', help="Run the adaptive seed generation function (classic)")
+    group.add_argument('--sweep_adaptive', action='store_true', help="Run fast sweep + adaptive combine (recommended)")
+    group.add_argument('--grow', action='store_true', help="Run the grow function")
+    group.add_argument('--prompt', action='store_true', help="Run the PROMPT extraction function")
+    
+    # a group args only when --prompt is specified
+    # sam or nninteractive
+    prompt_group = parser.add_mutually_exclusive_group()
+    prompt_group.add_argument('--sam', action='store_true', help="Use SAM for prompt extraction")
+    prompt_group.add_argument('--nninteractive', '--nn', action='store_true', help="Use nnInteractive for prompt extraction")
+    
+    parser.add_argument('--batch', action='store_true', help="Run in batch mode using pipeline functions")
+    parser.add_argument('--config', type=str, required=True, help="Path to the YAML config file")
+    parser.add_argument('--version', action='version', version=f"%(prog)s {__version__}")
+
+    args = parser.parse_args()
+
+    assert args.config.endswith(".yaml"), f"Error: {args.config} does not end with '.yaml'"
+    assert os.path.isfile(args.config), f"Error: File not found - {args.config}"
+    
+    # check sam or interactive only when --prompt is specified
+    if not args.prompt:
+        if args.sam or args.nninteractive:
+            print("[WARNING] --sam or --nninteractive is only valid when using --prompt. Ignoring these flags.")
+        
+    
+    if args.seeds:
+        # config = load_config(args.config)
+        if args.batch:
+            run_batch_seeds(args.config)
+        else:
+            run_make_seeds(args.config)
+    elif args.grow:
+        # config = load_config(args.config)
+        if args.batch:
+            run_batch_grow(args.config)
+        else:
+            run_make_grow(args.config)
+    elif args.adaptive_seed:
+        
+        if args.batch:
+            run_batch_adaptive_seed(args.config)
+        else:
+            run_make_adaptive_seed(args.config)
+    elif args.sweep_adaptive:
+        if not args.config:
+            print("[ERROR] --config is required when using --sweep_adaptive")
+            parser.print_help()
+            exit(1)
+        if args.batch:
+            run_batch_sweep_adaptive_seed(args.config)
+        else:
+            run_sweep_adaptive_seed(args.config)
+    elif args.prompt:
+        # either sam or nninteractive must be specified
+        if not (args.sam or args.nninteractive):
+            print("[ERROR] Either --sam or --nninteractive must be specified when using --prompt")
+            parser.print_help()
+            exit(1)
+        if args.sam:
+            from sprout_core.sam_predict import run_sam_yaml
+            from sprout_core.batch_sam import run_batch_sam
+            # config = load_config(args.config)
+            if args.batch:
+                run_batch_sam(args.config)
+            else:
+                run_sam_yaml(args.config)
+        elif args.nninteractive:
+            try:
+                import sprout_core.nninteractive_predict as nninteractive_predict
+                import sprout_core.batch_nninteractive as batch_nninteractive
+            except ImportError as e:
+                print(f"[ERROR] nnInteractive needs extra packages ({e}). Install them with: "
+                      'pip install "sprout-seg[ai]"')
+                exit(1)
+            if args.batch:
+                batch_nninteractive.run_batch_nninteractive(args.config)
+            else:
+                
+                nninteractive_predict.run_nninteractive_yaml(args.config)
+
+    else:
+        print("[ERROR] No valid action specified.")
+        parser.print_help()
+        exit(1)
+
+if __name__ == "__main__":
+    main()

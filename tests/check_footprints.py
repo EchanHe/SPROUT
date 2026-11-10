@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 os.chdir(ROOT)
 
-from make_seeds import make_seeds  # noqa: E402
+from sprout_core.make_seeds import make_seeds  # noqa: E402
 from sprout_core import sprout_core as sc  # noqa: E402
 
 FAILED = []

@@ -8,12 +8,12 @@ from qtpy.QtWidgets import (
 import napari
 from napari.utils.notifications import show_info, show_error
 import numpy as np
+import tifffile
 
 from .widgets.seed_widget import SeedGenerationWidget
 from .widgets.grow_widget import SeedGrowthWidget
 from .widgets.boundary_widget import BoundaryWidget
 from .widgets.prompt_tab import PromptTab
-from .utils.sprout_bridge import SPROUTBridge
 from .utils.roi_widget import RoiTools
 
 from .widgets.info_widget import LayerInfoWidget
@@ -27,7 +27,6 @@ class SPROUTWidget(QWidget):
     def __init__(self, napari_viewer):
         super().__init__()
         self.viewer = napari_viewer
-        self.bridge = SPROUTBridge()
         
         self._init_ui()
         self._connect_signals()
@@ -111,7 +110,7 @@ class SPROUTWidget(QWidget):
         if filename:
             try:
                 # Load image
-                image = self.bridge.load_image(filename)
+                image = tifffile.imread(filename)
                 
                 # Add to viewer
                 self.viewer.add_image(

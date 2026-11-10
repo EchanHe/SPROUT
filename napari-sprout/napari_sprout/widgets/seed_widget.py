@@ -26,15 +26,9 @@ import sys
 import os
 import time
 import weakref
-# get the current file's absolute path
-current_dir = os.path.dirname(os.path.abspath(__file__))
-root_dir = os.path.abspath(os.path.join(current_dir, "../../"))
-if root_dir not in sys.path:
-    sys.path.insert(0, root_dir)
-    
-from make_seeds import make_seeds
-from make_adaptive_seed import make_adaptive_seed_thre, make_adaptive_seed_ero
-from make_sweep_adaptive_seed import make_sweep_adaptive_seed
+from sprout_core.make_seeds import make_seeds
+from sprout_core.make_adaptive_seed import make_adaptive_seed_thre, make_adaptive_seed_ero
+from sprout_core.make_sweep_adaptive_seed import make_sweep_adaptive_seed
 from sprout_core import roi as R
 from sprout_core.roi import RoiError
 
