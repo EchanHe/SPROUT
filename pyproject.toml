@@ -6,10 +6,11 @@ build-backend = "setuptools.build_meta"
 name = "sprout-seg"
 dynamic = ["version"]
 description = "SPROUT: semi-automated parcellation of 2D and 3D greyscale images into parts, by thresholds, erosion and growing"
-readme = { file = "README.MD", content-type = "text/markdown" }
+readme = { file = "docs/pypi_sprout_seg.md", content-type = "text/markdown" }   # the PyPI page (README.MD has relative links)
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Yichen He" }]
+keywords = ["segmentation", "image analysis", "micro-CT", "CT", "MRI", "3D", "multi-class", "seeds", "region growing"]
 requires-python = ">=3.10"
 # Lower bounds are the versions the CI tests (requirements-ci.txt); the "latest" CI job tests the newest.
 dependencies = [
@@ -40,7 +41,9 @@ sprout = "sprout_core.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/EchanHe/SPROUT"
+Documentation = "https://github.com/EchanHe/SPROUT#readme"
 Issues = "https://github.com/EchanHe/SPROUT/issues"
+Changelog = "https://github.com/EchanHe/SPROUT/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 include = ["sprout_core*"]

@@ -10,6 +10,7 @@ readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Yichen He" }]
+keywords = ["napari", "segmentation", "image analysis", "micro-CT", "CT", "MRI", "3D", "multi-class"]
 requires-python = ">=3.10"
 dependencies = [
     "sprout-seg~=1.1.0",            # the plugin calls the core directly: both are released together
@@ -35,7 +36,9 @@ napari-sprout = "napari_sprout:napari.yaml"
 
 [project.urls]
 Homepage = "https://github.com/EchanHe/SPROUT"
+Documentation = "https://github.com/EchanHe/SPROUT#readme"
 Issues = "https://github.com/EchanHe/SPROUT/issues"
+Changelog = "https://github.com/EchanHe/SPROUT/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 include = ["napari_sprout*"]
