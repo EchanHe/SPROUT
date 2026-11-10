@@ -38,6 +38,7 @@ from .roi_layers import get_roi_hub
 from .roi_widget import RoiReminder
 from .slice_preview import SlicePreview
 from .status import StatusLine, tab_hidden
+from .util_widget import is_float_image, threshold_limits
 
 PREVIEW_NAME = "Threshold Preview"     # + " (Seeds)" / " (Grow)": the live layer of each tab
 
@@ -88,17 +89,19 @@ def _key(roi):
     return None if roi is None else roi.key
 
 
+def _table_image(param_widget):
+    return np.asarray(param_widget.viewer.layers[param_widget.image_combo.currentText()].data)
+
+
 def _is_default_full_range_row(param_widget, params):
     """True if the table holds only the row clean_table() adds: [dtype min, dtype max]."""
     if len(params[0]) != 1:
         return False
     try:
-        name = param_widget.image_combo.currentText()
-        dtype = np.asarray(param_widget.viewer.layers[name].data).dtype
-        info = np.iinfo(dtype)
+        lower, upper = threshold_limits(_table_image(param_widget))
     except Exception:
         return False
-    return params[0][0] == info.min and params[1][0] == info.max
+    return params[0][0] == lower and params[1][0] == upper
 
 
 def append_threshold_row(param_widget, lower, upper, default_dilation=5):
@@ -110,7 +113,8 @@ def append_threshold_row(param_widget, lower, upper, default_dilation=5):
     params = param_widget._get_threshold_params()
     if _is_default_full_range_row(param_widget, params):
         params = tuple([] for _ in params)
-    lows, ups = list(params[0]) + [int(round(lower))], list(params[1]) + [int(round(upper))]
+    fit = float if is_float_image(_table_image(param_widget)) else (lambda value: int(round(value)))
+    lows, ups = list(params[0]) + [fit(lower)], list(params[1]) + [fit(upper)]
     if len(params) == 3:   # Grow table: lower, upper, dilation steps
         steps = list(params[2]) + [params[2][-1] if params[2] else default_dilation]
         param_widget.populate_thresholds_from_list(lows, ups, steps)

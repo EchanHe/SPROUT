@@ -102,6 +102,62 @@ def save_seed(seed, output_folder, output_name, return_for_napari=False, seeds_d
 
 
 
+class _History:
+    """What adaptive seed did, for adaptive_seed_regions.csv and adaptive_seed_steps.csv.
+
+    Only records: the seeds are the same with or without it. `setting` is the setting of a
+    step that changes from step to step: {"erosion": n}, or {"threshold": t, "upper": u}.
+    """
+
+    def __init__(self, ids, setting):
+        self.seeds = {int(i): dict(first_step=0, **setting, began="first step") for i in ids}
+        self.steps = [dict(step=0, **setting, regions=len(self.seeds), split=0, shrunk=0, dropped=0,
+                           new_seeds=len(self.seeds), pruned=0, seeds_after=len(self.seeds), note="")]
+        self.setting = setting
+
+    def start_step(self, step, setting, regions):
+        self._close()
+        self.setting = setting
+        self.steps.append(dict(step=step, **setting, regions=int(regions), split=0, shrunk=0, dropped=0,
+                               new_seeds=0, pruned=0, seeds_after=None, note=""))
+
+    def replaced(self, old_id, new_ids):
+        """A region of the running seed was replaced by its parts in this step (none: dropped)."""
+        row, n = self.steps[-1], len(new_ids)
+        self.seeds.pop(int(old_id), None)
+        row["split" if n > 1 else "shrunk" if n == 1 else "dropped"] += 1
+        row["new_seeds"] += n
+        for k, new_id in enumerate(new_ids, start=1):
+            self.seeds[int(new_id)] = dict(first_step=row["step"], **self.setting,
+                                           began=f"separated ({k} of {n})" if n > 1 else "shrank (rest disappeared)")
+
+    def renumbered(self, class_mapping):
+        """The running seed was pruned and renumbered (prune_every_iter)."""
+        before = len(self.seeds)
+        self.seeds = {int(new): self.seeds[int(old)] for old, new in class_mapping.items() if int(old) in self.seeds}
+        self.steps[-1]["pruned"] = before - len(self.seeds)
+
+    def stopped(self, steps_without_split):
+        self.steps[-1]["note"] = f"stopped: no split for {steps_without_split} steps"
+
+    def _close(self):
+        if self.steps[-1]["seeds_after"] is None:
+            self.steps[-1]["seeds_after"] = len(self.seeds)
+
+    def save(self, output_folder, final_seed, class_mapping):
+        """The two CSV files, for the final seed and its renumbering from the running seed."""
+        self._close()
+        areas = sprout_core._bincount(final_seed, int(final_seed.max()) + 1)
+        rows = [dict(id=int(new), area=int(areas[int(new)]), **self.seeds[int(old)])
+                for old, new in class_mapping.items() if int(old) in self.seeds]
+        columns = ["id", "area", "first_step", *self.setting, "began"]
+        pd.DataFrame(sorted(rows, key=lambda row: row["id"]), columns=columns).to_csv(
+            os.path.join(output_folder, "adaptive_seed_regions.csv"), index=False)
+        pd.DataFrame(self.steps, columns=["step", *self.setting, "regions", "split", "shrunk", "dropped", "new_seeds",
+                                          "pruned", "seeds_after", "note"]).to_csv(
+            os.path.join(output_folder, "adaptive_seed_steps.csv"), index=False)
+
+
 def make_adaptive_seed_ero(
                          
                         threshold,
@@ -279,11 +335,12 @@ def make_adaptive_seed_ero(
         save_seed(init_seed, output_folder, output_img_name, return_for_napari=return_for_napari, seeds_dict=seeds_dict)      
         
     
-    init_ids = [int(value) for value in np.unique(init_seed) if value != background]
+    init_ids = [int(value) for value in sprout_core.unique_labels(init_seed) if value != background]
     if not init_ids:
         raise RuntimeError("No components found from the initial seeds. Exiting.")
     
     max_seed_id = int(np.max(init_ids))
+    history = _History(init_ids, {"erosion": 0})
 
 
     combine_seed = init_seed.copy()
@@ -291,7 +348,7 @@ def make_adaptive_seed_ero(
     combine_seed = sprout_core.cast_labels(combine_seed, np.uint16)
 
 
-    output_dict = {"total_id": {0: len(np.unique(combine_seed))-1},
+    output_dict = {"total_id": {0: len(sprout_core.unique_labels(combine_seed))-1},
                    "split_id" : {0: {}},
                    "split_ori_id": {0: {}},
                    "split_ori_id_filtered":  {0: {}},
@@ -323,6 +380,7 @@ def make_adaptive_seed_ero(
         sprout_core.check_cancel(cancel)
         seed, _ = sprout_core.get_ccomps_with_size_order(img, segments_list[ero_iter])
         seed = sprout_core.cast_labels(seed, np.uint16)
+        history.start_step(ero_iter, {"erosion": ero_iter}, seed.max())
         
 
         
@@ -333,7 +391,7 @@ def make_adaptive_seed_ero(
 
 
 
-        combine_ids = [int(value) for value in np.unique(combine_seed) if value != background]
+        combine_ids = [int(value) for value in sprout_core.unique_labels(combine_seed) if value != background]
        
         has_split = False
         ## Comparing each ccomp from eroded seed
@@ -397,10 +455,11 @@ def make_adaptive_seed_ero(
                     output_dict["split_id"][ero_iter][combine_id] = new_ids
                     output_dict["split_ori_id"][ero_iter][combine_id] = inter_log["inter_ids"]
                     output_dict["split_ori_id_filtered"][ero_iter][combine_id] = filtered_inter_ids
-                    output_dict["split_prop"][ero_iter][combine_id] = inter_log["inter_props"]                    
+                    output_dict["split_prop"][ero_iter][combine_id] = inter_log["inter_props"]
+                    history.replaced(combine_id, new_ids)
         
         if combine_ids:
-            output_dict["total_id"][ero_iter] = len(np.unique(combine_seed))-1
+            output_dict["total_id"][ero_iter] = len(sprout_core.unique_labels(combine_seed))-1
     
         if has_split:
             no_consec_split_count=0
@@ -413,10 +472,11 @@ def make_adaptive_seed_ero(
         # Pruning (min_size / top-N / renumber) changes the running seed and therefore
         # the final result; saving alone must not, so it saves a pruned copy.
         if ero_iter != erosion_steps and (prune_every_iter or save_every_iter):
-            pruned_seed,_ = reorder_segmentation(combine_seed, min_size=min_size,
+            pruned_seed, pruned_ids = reorder_segmentation(combine_seed, min_size=min_size,
                               sort_ids=sort, top_n=segments_list[-1])
             if prune_every_iter:
                 combine_seed = pruned_seed
+                history.renumbered(pruned_ids)
             if save_every_iter:
                 output_img_name = f'INTER_adaptive_thre_{threshold}_{upper_threshold}_ero_{ero_iter}.tif'
                 save_seed(pruned_seed, output_folder, output_img_name, return_for_napari=return_for_napari, seeds_dict=seeds_dict)
@@ -425,6 +485,7 @@ def make_adaptive_seed_ero(
         if no_consec_split_count>=no_split_max_iter:
             print(f"detect non split for {no_consec_split_count}rounds")
             print(f"break loop at {ero_iter} iter")
+            history.stopped(no_consec_split_count)
             break
         
 
@@ -432,8 +493,8 @@ def make_adaptive_seed_ero(
     
     sprout_core.check_cancel(cancel)
     steps.jump(steps.total, "saving")    # an early stop counts as done
-    combine_seed,_ = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort,
-                                          top_n=segments_list[-1])
+    combine_seed, final_ids = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort,
+                                                   top_n=segments_list[-1])
     # if sort:
     #     output_path = os.path.join(output_folder,"FINAL_" + output_name+'_sorted.tif')
     # else:
@@ -452,6 +513,7 @@ def make_adaptive_seed_ero(
 
     
 
+    history.save(output_folder, combine_seed, final_ids)
     config_core.save_config_with_output({
         "params": values_to_print},output_folder)
         
@@ -689,17 +751,18 @@ def make_adaptive_seed_thre(
                   return_for_napari=return_for_napari, seeds_dict=seeds_dict)
             
     
-    init_ids = [int(value) for value in np.unique(init_seed) if value != background]
+    init_ids = [int(value) for value in sprout_core.unique_labels(init_seed) if value != background]
     if not init_ids:
         raise RuntimeError("No components found from the initial seeds. Exiting.")
     max_seed_id = int(np.max(init_ids))
+    history = _History(init_ids, {"threshold": thresholds[0], "upper": upper_thresholds[0]})
 
 
     combine_seed = init_seed.copy()
     # at least uint16 as before; new ids from splits are checked with ensure_label_capacity
     combine_seed = sprout_core.cast_labels(combine_seed, np.uint16)
 
-    output_dict = {"total_id": {0: len(np.unique(combine_seed))-1},
+    output_dict = {"total_id": {0: len(sprout_core.unique_labels(combine_seed))-1},
                    "split_id" : {0: {}},
                    "split_ori_id": {0: {}},
                    "split_ori_id_filtered":  {0: {}},
@@ -739,6 +802,7 @@ def make_adaptive_seed_thre(
         sprout_core.check_cancel(cancel)
         seed, _ = sprout_core.get_ccomps_with_size_order(mask,segments_list[idx_threshold+1])
         seed = sprout_core.cast_labels(seed, np.uint16)
+        history.start_step(idx_threshold + 1, {"threshold": threshold, "upper": upper_threshold}, seed.max())
         
 
         if save_every_iter:
@@ -749,7 +813,7 @@ def make_adaptive_seed_thre(
                       return_for_napari=return_for_napari, seeds_dict=seeds_dict)
 
         
-        combine_ids = [int(value) for value in np.unique(combine_seed) if value != background]
+        combine_ids = [int(value) for value in sprout_core.unique_labels(combine_seed) if value != background]
         
         
         has_split = False
@@ -844,10 +908,11 @@ def make_adaptive_seed_thre(
                     output_dict["split_ori_id"][threshold][combine_id] = inter_log["inter_ids"]
                     output_dict["split_ori_id_filtered"][threshold][combine_id] = filtered_inter_ids
                     output_dict["split_prop"][threshold][combine_id] = inter_log["inter_props"]
+                    history.replaced(combine_id, new_ids)
                 
         
         if combine_ids:
-            output_dict["total_id"][threshold] = len(np.unique(combine_seed))-1
+            output_dict["total_id"][threshold] = len(sprout_core.unique_labels(combine_seed))-1
     
         if has_split:
             no_consec_split_count=0
@@ -858,24 +923,26 @@ def make_adaptive_seed_thre(
         if no_consec_split_count>=no_split_max_iter:
                 print(f"detect non split for {no_consec_split_count}rounds")
                 print(f"break loop at {threshold} threshold")
+                history.stopped(no_consec_split_count)
                 break
         
         # Intermediate thresholds only (the last one is finalised after the loop).
         # Pruning (min_size / top-N / renumber) changes the running seed and therefore
         # the final result; saving alone must not, so it saves a pruned copy.
         if idx_threshold != len(thresholds)-2 and (prune_every_iter or save_every_iter):
-            pruned_seed,_ = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort,
+            pruned_seed, pruned_ids = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort,
                                                   top_n=segments_list[-1])
             if prune_every_iter:
                 combine_seed = pruned_seed
+                history.renumbered(pruned_ids)
             if save_every_iter:
                 output_img_name = f'INTER_adaptive_thre_{threshold}_{upper_threshold}_ero_{erosion_steps}.tif'
                 save_seed(pruned_seed, output_folder, output_img_name, return_for_napari=return_for_napari, seeds_dict=seeds_dict)
          
     sprout_core.check_cancel(cancel)
     steps.jump(steps.total, "saving")    # an early stop counts as done
-    combine_seed,_ = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort,
-                                          top_n=segments_list[-1])
+    combine_seed, final_ids = reorder_segmentation(combine_seed, min_size=min_size, sort_ids=sort,
+                                                   top_n=segments_list[-1])
     # if sort:
     #     output_path = os.path.join(output_folder,"FINAL_" + output_name+'_sorted.tif')
     # else:
@@ -887,6 +954,7 @@ def make_adaptive_seed_thre(
         save_seed(combine_seed, root_output_folder, base_name + "_FINAL_adaptive_seed.tif", 
                   return_for_napari=return_for_napari, seeds_dict=seeds_dict)
     
+    history.save(output_folder, combine_seed, final_ids)
     config_core.save_config_with_output({
         "params": values_to_print},output_folder)
         
@@ -909,10 +977,10 @@ def run_make_adaptive_seed(file_path):
             
 
     # Checking if it's merged from erosion of threhsolds
-    if isinstance(config['thresholds'], int):
+    if isinstance(config['thresholds'], (int, float)):
         seed_merging_mode = "ERO"
     elif isinstance(config['thresholds'], list):
-        if all(isinstance(t, int) for t in config['thresholds']):
+        if all(isinstance(t, (int, float)) for t in config['thresholds']):
             if len(config['thresholds']) == 1:
                 seed_merging_mode = "ERO"
                 config['thresholds'] = config['thresholds'][0]
@@ -922,7 +990,7 @@ def run_make_adaptive_seed(file_path):
             elif len(config['thresholds']) > 1:
                 seed_merging_mode = "THRE"
         else:
-            raise ValueError("'thresholds' must be an int or a list of int(s).")
+            raise ValueError("'thresholds' must be a number or a list of numbers.")
     
     
     # Track the overall start time

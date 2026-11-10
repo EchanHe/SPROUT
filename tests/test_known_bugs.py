@@ -75,14 +75,12 @@ def test_1_overwrite_stays_in_the_threshold(tmp_path):
 
 
 @pytest.mark.core
-@bug(3, "float thresholds are cut to int, so [0.5, 0.9] becomes [0, 0]")
 def test_3_float_thresholds_are_kept():
     thresholds, _ = config_core.check_and_assign_thresholds([0.5, 0.9], None)
     assert thresholds == [0.5, 0.9]
 
 
 @pytest.mark.core
-@bug(4, "a footprint for the other dimension does nothing and says nothing")
 @pytest.mark.parametrize("make, footprint", [(blob_2d, "ball_XY"), (blob_2d, "Z"), (blob_2d, "2XZ_1Y"),
                                              (blob_3d, "disk"), (blob_3d, "square")])
 def test_4_wrong_footprint_erodes_or_is_refused(make, footprint):
@@ -192,14 +190,14 @@ def test_14_paths_of_the_sam_template_exist():
 
 
 @pytest.mark.core
-@bug(15, "num_threads above the CPU cores is an error, so the templates fail on small machines")
 def test_15_more_threads_than_cores(tmp_path):
     code = ("import psutil, yaml\n"
             "psutil.cpu_count = lambda *a, **k: 2\n"
             "import sprout_core.config_core as c\n"
             "config = yaml.safe_load(open('template/make_grow.yaml', encoding='utf-8'))\n"
             "assert config['num_threads'] > 2\n"
-            "c.validate_input_yaml(config, c.input_val_make_grow)\n")
+            "c.validate_input_yaml(config, c.input_val_make_grow)\n"
+            "assert config['num_threads'] == 2\n")
     r = subprocess.run([sys.executable, "-c", code], cwd=ROOT, env=environment(tmp_path), capture_output=True,
                        text=True, encoding="utf-8", errors="replace")
     if r.returncode and "num_threads" not in r.stdout + r.stderr:
@@ -210,7 +208,10 @@ def test_15_more_threads_than_cores(tmp_path):
 PLUGIN_PROBES = [
     "edit_keeps_scale",                # 2
     "mapping_keeps_scale",             # 2
-    pytest.param("float_image_threshold_row", marks=bug(13, "a float image crashes the threshold tables")),
+    "float_image_threshold_row",       # 13
+    "float_image_keeps_decimals",      # 13
+    "float_image_grow_table",          # 13
+    "float_image_histogram_row",       # 13
     "import_adaptive_template",        # 16
     "import_single_values_into_grow",  # 16
     "load_scheme_checks_the_file",     # 17

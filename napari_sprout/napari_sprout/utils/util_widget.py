@@ -374,6 +374,36 @@ def get_max_min_value_by_dtype(dtype):
     else:
         raise ValueError(f"Unsupported image dtype: {dtype}")
 
+
+def is_float_image(image):
+    return image is not None and np.issubdtype(image.dtype, np.floating)
+
+
+def threshold_limits(image):
+    """Limits of a threshold on `image`: those of its dtype; of a float image, those of its values."""
+    if not is_float_image(image):
+        return get_max_min_value_by_dtype(image.dtype)
+    sample = np.asarray(image).ravel()[::max(1, image.size // 1_000_000)]    # enough for a spin box
+    sample = sample[np.isfinite(sample)]
+    if sample.size == 0:
+        return 0.0, 1.0
+    return float(np.floor(sample.min() * 1000) / 1000), float(np.ceil(sample.max() * 1000) / 1000)
+
+
+def threshold_spin(image, low, high, value):
+    """A spin box of a threshold table: whole numbers, with decimals for a float image."""
+    if is_float_image(image):
+        spin = QDoubleSpinBox()
+        spin.setDecimals(3)
+        spin.setSingleStep(10 ** np.floor(np.log10(max(high - low, 0.001)) - 1))
+        spin.setRange(low, high)
+        spin.setValue(value)
+        return spin
+    spin = QSpinBox()
+    spin.setRange(int(low), int(high))
+    spin.setValue(int(value))
+    return spin
+
 def apply_threshold_preview(
     image: np.ndarray,
     threshold,
@@ -450,11 +480,14 @@ class MainSeedParamWidget(_ParamGroup):
         grid = QGridLayout()
         grid.setHorizontalSpacing(8)
         self.seed_method_combo = QComboBox()
-        self.seed_method_combo.addItems(["Original", "Adaptive (Erosion)", "Adaptive (Thresholds)"])
+        self.seed_method_combo.addItems(["Original", "Adaptive (Erosion)", "Adaptive (Thresholds)", *SWEEP_METHODS])
         self.seed_method_combo.setToolTip(
             "Original: one seed layer per threshold row and erosion step.\n"
-            "Adaptive (Erosion) / Adaptive (Thresholds): combine the seeds across the erosion\n"
-            "steps / the threshold rows into one final seed.")
+            "(Erosion): one threshold row, a seed per erosion step. (Thresholds): a seed per threshold row.\n"
+            "Adaptive: checks every split before it keeps it: fewer, cleaner seeds; slower when there\n"
+            "are many seeds.\n"
+            "Sweep: runs all steps at once and keeps every split: fast with many seeds, may keep small\n"
+            "pieces (raise Min segment size).")
         self.thread_spin = _param_spin(1, os.cpu_count(), min(4, os.cpu_count() - 1), 60)
         self.erosion_spin = _param_spin(0, 1000, 0)
         self.segments_spin = _param_spin(1, 100000, 10)
@@ -653,7 +686,7 @@ class MainSeedParamWidget(_ParamGroup):
         if row == 0:
             # upper_value = self._get_img_dtype_max(current_image.dtype)
             # lower_value = 0
-            lower_value, upper_value = get_max_min_value_by_dtype(current_image.dtype)
+            lower_value, upper_value = threshold_limits(current_image)
         else:
             lower_widget = self.threshold_table.cellWidget(row - 1, 0)
             lower_value = lower_widget.value()
@@ -661,21 +694,17 @@ class MainSeedParamWidget(_ParamGroup):
             upper_value = upper_widget.value()
 
         # set the range for the spinboxes
-        lower_min , upper_max = get_max_min_value_by_dtype(current_image.dtype)
+        lower_min , upper_max = threshold_limits(current_image)
         lower_max = upper_value
         upper_min = lower_value
         # upper_max = self._get_img_dtype_max(current_image.dtype)
 
         # Lower threshold
-        lower_spin = QSpinBox()
-        lower_spin.setRange(lower_min, lower_max)
-        lower_spin.setValue(lower_value)
+        lower_spin = threshold_spin(current_image, lower_min, lower_max, lower_value)
         self.threshold_table.setCellWidget(row, 0, lower_spin)
 
         # Upper threshold
-        upper_spin = QSpinBox()
-        upper_spin.setRange(upper_min, upper_max)
-        upper_spin.setValue(upper_value)
+        upper_spin = threshold_spin(current_image, upper_min, upper_max, upper_value)
         self.threshold_table.setCellWidget(row, 1, upper_spin)
 
      
@@ -748,26 +777,24 @@ class MainSeedParamWidget(_ParamGroup):
             # Determine upper threshold
             if upper_thresholds_list and i < len(upper_thresholds_list):
                 upper_threshold = upper_thresholds_list[i]
+            elif is_float_image(current_image):
+                _, upper_threshold = threshold_limits(current_image)
             else:
                 # Use 255 or threshold+100 if threshold > 255
                 upper_threshold = 255 if lower_threshold <= 255 else lower_threshold + 100
             
             # Set range based on image dtype if available
             if current_image is not None:
-                lower_min, upper_max = get_max_min_value_by_dtype(current_image.dtype)
+                lower_min, upper_max = threshold_limits(current_image)
             else:
                 lower_min, upper_max = 0, 65535  # Default range
             
             # Lower threshold spinbox
-            lower_spin = QSpinBox()
-            lower_spin.setRange(lower_min, upper_threshold)
-            lower_spin.setValue(int(lower_threshold))
+            lower_spin = threshold_spin(current_image, lower_min, upper_threshold, lower_threshold)
             self.threshold_table.setCellWidget(row, 0, lower_spin)
             
             # Upper threshold spinbox
-            upper_spin = QSpinBox()
-            upper_spin.setRange(int(lower_threshold), upper_max)
-            upper_spin.setValue(int(upper_threshold))
+            upper_spin = threshold_spin(current_image, lower_threshold, upper_max, upper_threshold)
             self.threshold_table.setCellWidget(row, 1, upper_spin)
 
 
@@ -877,7 +904,7 @@ class MainGrowParamWidget(_ParamGroup):
         if row == 0:
             # upper_value = self._get_img_dtype_max(current_image.dtype)
             # lower_value = 0
-            lower_value, upper_value = get_max_min_value_by_dtype(current_image.dtype)
+            lower_value, upper_value = threshold_limits(current_image)
         else:
             lower_widget = self.threshold_table.cellWidget(row - 1, 0)
             lower_value = lower_widget.value()
@@ -890,19 +917,15 @@ class MainGrowParamWidget(_ParamGroup):
         # lower_min = 0
         lower_max = upper_value
         upper_min = lower_value
-        lower_min, upper_max = get_max_min_value_by_dtype(current_image.dtype)
+        lower_min, upper_max = threshold_limits(current_image)
         # upper_max = self._get_img_dtype_max(current_image.dtype)
 
         # Lower threshold
-        lower_spin = QSpinBox()
-        lower_spin.setRange(lower_min, lower_max)
-        lower_spin.setValue(lower_value)
+        lower_spin = threshold_spin(current_image, lower_min, lower_max, lower_value)
         self.threshold_table.setCellWidget(row, 0, lower_spin)
 
         # Upper threshold
-        upper_spin = QSpinBox()
-        upper_spin.setRange(upper_min, upper_max)
-        upper_spin.setValue(upper_value)
+        upper_spin = threshold_spin(current_image, upper_min, upper_max, upper_value)
         self.threshold_table.setCellWidget(row, 1, upper_spin)
 
         # Dilate iterations
@@ -983,7 +1006,7 @@ class MainGrowParamWidget(_ParamGroup):
             else:
                 # Use max value based on dtype if available
                 if current_image is not None:
-                    _, upper_threshold = get_max_min_value_by_dtype(current_image.dtype)
+                    _, upper_threshold = threshold_limits(current_image)
                 else:
                     upper_threshold = 255 if lower_threshold <= 255 else lower_threshold + 100
             
@@ -995,20 +1018,16 @@ class MainGrowParamWidget(_ParamGroup):
             
             # Set range based on image dtype if available
             if current_image is not None:
-                lower_min, upper_max = get_max_min_value_by_dtype(current_image.dtype)
+                lower_min, upper_max = threshold_limits(current_image)
             else:
                 lower_min, upper_max = 0, 65535  # Default range
             
             # Lower threshold spinbox
-            lower_spin = QSpinBox()
-            lower_spin.setRange(lower_min, upper_threshold)
-            lower_spin.setValue(int(lower_threshold))
+            lower_spin = threshold_spin(current_image, lower_min, upper_threshold, lower_threshold)
             self.threshold_table.setCellWidget(row, 0, lower_spin)
             
             # Upper threshold spinbox
-            upper_spin = QSpinBox()
-            upper_spin.setRange(int(lower_threshold), upper_max)
-            upper_spin.setValue(int(upper_threshold))
+            upper_spin = threshold_spin(current_image, lower_threshold, upper_max, upper_threshold)
             self.threshold_table.setCellWidget(row, 1, upper_spin)
             
             # Dilation steps spinbox
@@ -1024,6 +1043,10 @@ def set_compact(widget, minw=None, maxw=None):
         widget.setMinimumWidth(minw)
     if maxw is not None:
         widget.setMaximumWidth(maxw)
+
+
+SWEEP_EROSION, SWEEP_THRESHOLDS = "Sweep (Erosion)", "Sweep (Thresholds)"
+SWEEP_METHODS = (SWEEP_EROSION, SWEEP_THRESHOLDS)
 
 
 class SeedOptionalParamGroupBox(QGroupBox):
@@ -1196,6 +1219,13 @@ class SeedOptionalParamGroupBox(QGroupBox):
             self.hull_upper_spin.setValue(upper if upper is not None else -1)
 
 
+
+    def set_method(self, method):
+        """A sweep only uses the minimum size: the rest is greyed out."""
+        for widget in (self.sort_checkbox, self.no_split_spin, self.min_split_ratio_spin,
+                       self.min_split_total_ratio_spin, self.size_lower_spin, self.size_upper_spin,
+                       self.hull_lower_spin, self.hull_upper_spin):
+            widget.setEnabled(method not in SWEEP_METHODS)
 
     def get_params(self):
         def parse_optional_spin(spinbox):

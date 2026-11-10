@@ -313,6 +313,10 @@ def dilation_binary_img_on_sub(input, margin, kernal_size, is_round=True):
     
     return input
 
+FOOTPRINTS_3D = ('ball', 'cube', 'ball_XY', 'ball_XZ', 'ball_YZ', 'X', 'Y', 'Z', '2XZ_1Y', '2XY_1Z', '2YZ_1X')
+FOOTPRINTS_2D = ('ball', 'cube', 'disk', 'square', 'X', 'Y')
+
+
 def erosion_binary_img_on_sub(input, kernal_size = 1, footprint='ball'):
     """Binary erosion on the bounding box of the foreground.
 
@@ -325,6 +329,9 @@ def erosion_binary_img_on_sub(input, kernal_size = 1, footprint='ball'):
         assert type(kernal_size) is int
     
     is_3d = (input.ndim == 3)
+    footprints = FOOTPRINTS_3D if is_3d else FOOTPRINTS_2D
+    if footprint not in footprints:
+        raise ValueError(f"Footprint '{footprint}' does not work on a {input.ndim}D image, use one of {footprints}.")
     if is_3d:
         if not _foreground(input).any():
             return input
@@ -524,12 +531,20 @@ def _bincount(labels, length):
     """np.bincount(labels.ravel(), minlength=length) in chunks, without a full-size intp copy.
 
     labels: non-negative integers below `length`, of a dtype that casts safely to intp.
+    Mostly-zero chunks count only their non-zero voxels (seeds are often a small part of a scan).
     """
     flat = labels.reshape(-1)
     step = max(_CHUNK, 4 * length)
     counts = np.zeros(length, np.intp)
     for s in range(0, flat.size, step):
-        counts += np.bincount(flat[s:s + step], minlength=length)
+        chunk = flat[s:s + step]
+        nonzero = chunk != 0
+        n = int(np.count_nonzero(nonzero))
+        if 2 * n > chunk.size:
+            counts += np.bincount(chunk, minlength=length)
+        else:
+            counts += np.bincount(chunk[nonzero], minlength=length)
+            counts[0] += chunk.size - n
     return counts
 
 
@@ -537,13 +552,35 @@ def _apply_lut(lut, labels, out=None):
     """lut[labels] in chunks (fancy indexing copies all of `labels` to intp first).
 
     out: a C-contiguous array of labels' shape and lut's dtype; may be `labels` itself.
+    When lut[0] is 0, mostly-zero chunks only look up their non-zero voxels.
     """
     if out is None:
         out = np.empty(labels.shape, lut.dtype)
     src, dst = labels.reshape(-1), out.reshape(-1)
+    sparse = lut.size > 0 and lut[0] == 0
+    in_place = out is labels
     for s in range(0, src.size, _CHUNK):
-        dst[s:s + _CHUNK] = lut[src[s:s + _CHUNK]]
+        chunk = src[s:s + _CHUNK]
+        if sparse:
+            index = np.flatnonzero(chunk)
+            if 2 * index.size <= chunk.size:
+                values = lut[chunk[index]]
+                if not in_place:
+                    dst[s:s + _CHUNK] = 0
+                dst[s + index] = values
+                continue
+        dst[s:s + _CHUNK] = lut[chunk]
     return out
+
+
+def unique_labels(labels):
+    """np.unique(labels) of an integer array, without sorting all of it when most voxels are 0."""
+    flat = labels.reshape(-1)
+    nonzero = flat != 0
+    values = np.unique(flat[nonzero])
+    if not nonzero.all():
+        values = np.insert(values, np.searchsorted(values, 0), 0)
+    return values
 
 
 def get_ccomps_with_size_order(volume, segments=None, min_vol = None):

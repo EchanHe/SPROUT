@@ -253,9 +253,14 @@ def check_and_assign_base_name(base_name, img_path, default_base_name):
             base_name = os.path.splitext(os.path.basename(img_path))[0]
     return base_name
 
+def _threshold_value(value):
+    """A threshold as it is meant: 100.0 is 100, 0.5 stays 0.5 (a float image)."""
+    return int(value) if float(value).is_integer() else float(value)
+
+
 def check_and_assign_threshold(threshold, upper_threshold):
     """
-    Validate and convert a single threshold pair to integers.
+    Validate a single threshold pair. Whole numbers become integers.
     Used in adaptive erosion mode.
 
     Parameters
@@ -281,7 +286,7 @@ def check_and_assign_threshold(threshold, upper_threshold):
         assert len(threshold) == 1, "If threshold is a list, it must have only one element."
         threshold = threshold[0]
     elif isinstance(threshold, float):
-        threshold = int(threshold)
+        threshold = _threshold_value(threshold)
     elif isinstance(threshold, int):
         threshold = int(threshold)
     else:
@@ -293,7 +298,7 @@ def check_and_assign_threshold(threshold, upper_threshold):
         assert len(upper_threshold) == 1, "If threshold is a list, it must have only one element."
         upper_threshold = upper_threshold[0]
     elif isinstance(upper_threshold, float):
-        upper_threshold = int(upper_threshold) 
+        upper_threshold = _threshold_value(upper_threshold) 
     elif isinstance(upper_threshold, int):
         upper_threshold = int(upper_threshold)
     else:
@@ -330,9 +335,9 @@ def check_and_assign_thresholds(thresholds, upper_thresholds, reverse=False):
     if isinstance(thresholds, int):
         thresholds = [thresholds]
     elif isinstance(thresholds, float):
-        thresholds = [int(thresholds)]
+        thresholds = [_threshold_value(thresholds)]
     elif isinstance(thresholds, list):
-        thresholds = [int(t) for t in thresholds]
+        thresholds = [_threshold_value(t) for t in thresholds]
     else:
         raise ValueError(f"Invalid type for thresholds: {type(thresholds)}. Must be int, float, or list.")
 
@@ -341,9 +346,9 @@ def check_and_assign_thresholds(thresholds, upper_thresholds, reverse=False):
     elif isinstance(upper_thresholds, int):
         upper_thresholds = [upper_thresholds]
     elif isinstance(upper_thresholds, float):
-        upper_thresholds = [int(upper_thresholds)]
+        upper_thresholds = [_threshold_value(upper_thresholds)]
     elif isinstance(upper_thresholds, list):
-        upper_thresholds = [int(t) for t in upper_thresholds]
+        upper_thresholds = [_threshold_value(t) for t in upper_thresholds]
     else:
         raise ValueError(f"Invalid type for upper_thresholds: {type(upper_thresholds)}. Must be int, float, or list.")
 
@@ -514,12 +519,17 @@ def check_file_extension(file_path):
 ###############
 
 
+RENAMED = {"min_area": "min_size", "save_intermediate": "save_every_iter"}    # sweep keys before 1.1.0
+
+
 def validate_input_yaml(config, rules):
     errors = []
     optional_values = {}
     
     for key in config:
-        if key not in rules:
+        if key in RENAMED and key not in rules:
+            errors.append(f"'{key}' is now '{RENAMED[key]}'.")
+        elif key not in rules:
             errors.append(f"Unsupported parameter '{key}' in input config.")
 
     for param, rule in rules.items():
@@ -553,6 +563,14 @@ def validate_input_yaml(config, rules):
                 pass
         
         
+        # More threads than cores gain nothing: a template must still run on a small machine
+        if param == "num_threads" and isinstance(value, int) and "max" in rule and value > rule["max"]:
+            print(f"[WARNING] num_threads {value} is above the {rule['max']} CPU cores: using {rule['max']}.")
+            value = rule["max"]
+            config[param] = value
+            if param in optional_values:
+                optional_values[param] = value
+
         # A CSV column with a blank cell is read as float: an int 5 arrives as 5.0
         if rule["type"] is int and isinstance(value, float) and value.is_integer():
             value = int(value)
@@ -638,7 +656,7 @@ input_val_make_seeds = {
         "description": "num of threads"
     },
     "thresholds": {
-        "type": (int,list),
+        "type": (int, float, list),
         "subtype": (int, float),  # Each element should be int or float
         "required": True,
         "min_length": 1,
@@ -678,7 +696,7 @@ input_val_make_seeds = {
 
     },    
     "upper_thresholds": {
-        "type": (int,list),
+        "type": (int, float, list),
         "subtype": (int, float),  # Each element should be int or float
         "required": False,
         "default":None,
@@ -770,7 +788,7 @@ input_val_make_grow = {
         "description": "Number of iterations, must be a non-negative integer."
     },
     "thresholds": {
-        "type": (int,list),
+        "type": (int, float, list),
         "subtype": (int, float),  # Each element should be int or float
         "required": True,
         "min_length": 1,
@@ -806,7 +824,7 @@ input_val_make_grow = {
 
     },    
     "upper_thresholds": {
-        "type": (int,list),
+        "type": (int, float, list),
         "subtype": (int, float),  # Each element should be int or float
         "required": False,
         'default': None,
@@ -917,7 +935,7 @@ input_val_make_adaptive_seed = {
         "description": "num of threads"
     },
     "thresholds": {
-        "type": (int,list),
+        "type": (int, float, list),
         "subtype": (int, float),  # Each element should be int or float
         "required": True,
         "min_length": 1,
@@ -946,7 +964,7 @@ input_val_make_adaptive_seed = {
     #### Optional parameters
 
     "upper_thresholds": {
-        "type": (int,list),
+        "type": (int, float, list),
         "subtype": (int, float),  # Each element should be int or float
         "required": False,
         "default":None,
@@ -1084,7 +1102,7 @@ input_val_seed_sweep = {
         "description": "Root directory for sweep output TIFFs.",
     },
     "thresholds": {
-        "type": (int, list),
+        "type": (int, float, list),
         "subtype": (int, float),
         "required": True,
         "min": 0,
@@ -1121,7 +1139,7 @@ input_val_seed_sweep = {
         "description": "Parallel threads for threshold mode (ignored in erosion mode).",
     },
     "upper_thresholds": {
-        "type": (int, list),
+        "type": (int, float, list),
         "subtype": (int, float),
         "required": False,
         "default": None,
@@ -1177,7 +1195,7 @@ input_val_sweep_adaptive_seed = {
         "description": "Root directory for all outputs.",
     },
     "thresholds": {
-        "type": (int, list),
+        "type": (int, float, list),
         "subtype": (int, float),
         "required": True,
         "min": 0,
@@ -1214,7 +1232,7 @@ input_val_sweep_adaptive_seed = {
         "description": "Threads for parallel threshold sweep (ignored in erosion mode).",
     },
     "upper_thresholds": {
-        "type": (int, list),
+        "type": (int, float, list),
         "subtype": (int, float),
         "required": False,
         "default": None,
@@ -1273,12 +1291,12 @@ input_val_sweep_adaptive_seed = {
         "choices": ["strict_to_loose", "loose_to_strict", "both"],
         "description": "Combine direction.",
     },
-    "min_area": {
+    "min_size": {
         "type": int,
         "min": 1,
         "required": False,
         "default": 1,
-        "description": "Minimum region area for combine.",
+        "description": "Regions smaller than this (in voxels) are dropped at every step.",
     },
     "connectivity": {
         "type": int,
@@ -1301,11 +1319,22 @@ input_val_sweep_adaptive_seed = {
         "default": None,
         "description": "Keep only the top-N seeds in the final result.",
     },
-    "save_intermediate": {
+    "save_every_iter": {
         "type": bool,
         "required": False,
         "default": False,
-        "description": "Save combine_seed after each combine step.",
+        "description": "Save the combined seed after every step.",
+    },
+    "memory_limit_gb": {
+        "type": (int, float),
+        "min": 0,
+        "required": False,
+        "default": None,
+        "description": (
+            "Memory the steps of the sweep may take, in GB. If they need more, they are read back "
+            "from disk one at a time and fewer threads run at once (slower, same result). "
+            "Null (default): all steps in memory."
+        ),
     },
     "verbose": {
         "type": bool,

@@ -133,6 +133,44 @@ def import_single_values_into_grow(viewer):
     result(rows == [[100, 200, 3]], f"{tab.params_status.text()} {rows}")
 
 
+def float_image_keeps_decimals(viewer):
+    tab = seed_tab(viewer)
+    viewer.add_image(np.linspace(0, 1, 512, dtype=np.float32).reshape(8, 8, 8), name="F")
+    C.pump(10)
+    tab.image_combo.setCurrentText("F")
+    C.pump(10)
+    params = tab.main_param_widget
+    start = table(params)
+    params.populate_thresholds_from_list([0.25, 0.5], [0.75, 1.0])
+    values = params._get_threshold_params()
+    result(start == [[0.0, 1.0]] and values == ([0.25, 0.5], [0.75, 1.0]), f"{start} {values}")
+
+
+def float_image_grow_table(viewer):
+    tab = sprout_tab(viewer, "SeedGrowthWidget")
+    viewer.add_image(np.linspace(0, 1, 512, dtype=np.float32).reshape(8, 8, 8), name="F")
+    viewer.add_labels(labels(), name="L")
+    C.pump(10)
+    tab.image_combo.setCurrentText("F")
+    C.pump(10)
+    params = tab.main_param_widget
+    params.populate_thresholds_from_list([0.25], [0.75], [3])
+    values = params._get_threshold_params()
+    result(values == ([0.25], [0.75], [3]), str(values))
+
+
+def float_image_histogram_row(viewer):
+    from napari_sprout.utils.histogram_threshold_widget import append_threshold_row
+    tab = seed_tab(viewer)
+    viewer.add_image(np.linspace(0, 1, 512, dtype=np.float32).reshape(8, 8, 8), name="F")
+    C.pump(10)
+    tab.image_combo.setCurrentText("F")
+    C.pump(10)
+    append_threshold_row(tab.main_param_widget, 0.25, 0.75)
+    values = tab.main_param_widget._get_threshold_params()
+    result(values == ([0.25], [0.75]), str(values))
+
+
 def load_scheme_checks_the_file(viewer):
     viewer.add_labels(labels(), name="L")
     _, mapping = viewer.window.add_plugin_dock_widget("napari-sprout", "Label Mapping")

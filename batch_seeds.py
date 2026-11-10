@@ -65,6 +65,7 @@ def run_batch_seeds(file_path):
             
         df.loc[index,'output_folder'] = config['output_folder']
 
+    os.makedirs(config['output_folder'], exist_ok=True)
     df.to_csv(os.path.join(config['output_folder'],
                            os.path.basename(csv_path) + f"_running_results_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"), index = False)    
 
@@ -92,10 +93,10 @@ def run_batch_adaptive_seed(file_path):
         
         
         try:           
-            if isinstance(config['thresholds'], int):
+            if isinstance(config['thresholds'], (int, float)):
                 seed_merging_mode = "ERO"
             elif isinstance(config['thresholds'], list):
-                if all(isinstance(t, int) for t in config['thresholds']):
+                if all(isinstance(t, (int, float)) for t in config['thresholds']):
                     if len(config['thresholds']) == 1:
                         seed_merging_mode = "ERO"
                         config['thresholds'] = config['thresholds'][0]
@@ -105,7 +106,7 @@ def run_batch_adaptive_seed(file_path):
                     elif len(config['thresholds']) > 1:
                         seed_merging_mode = "THRE"
                 else:
-                    raise ValueError("'thresholds' must be an int or a list of int(s).")
+                    raise ValueError("'thresholds' must be a number or a list of numbers.")
                     
             if seed_merging_mode == "THRE":
         
@@ -187,6 +188,7 @@ def run_batch_adaptive_seed(file_path):
             
         df.loc[index,'output_folder'] = config['output_folder']
 
+    os.makedirs(config['output_folder'], exist_ok=True)
     df.to_csv(os.path.join(config['output_folder'],
                            os.path.basename(csv_path) + f"_running_results_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"), index = False)    
 
@@ -208,13 +210,15 @@ def run_batch_sweep_adaptive_seed(file_path):
 
     yaml_config.pop("csv_path", None)
     df['error'] = None
+    df['final_output_path'] = None
     for index, row in df.iterrows():
         # a CSV column overrides the YAML, a blank cell keeps the YAML value
-        row = {k: v for k, v in row.items() if k != 'error' and not pd.isna(v)}
+        row = {k: v for k, v in row.items() if k not in ('error', 'final_output_path') and not pd.isna(v)}
         shared = {k: v for k, v in yaml_config.items() if k not in row}
         try:
             config = config_core.merge_row_and_yaml_no_conflict(row, shared)
-            make_sweep_adaptive_seed.run_sweep_adaptive_seed_from_dict(config)
+            finals = make_sweep_adaptive_seed.run_sweep_adaptive_seed_from_dict(config)
+            df.loc[index, 'final_output_path'] = ";".join(str(path) for path in finals)
         except Exception as e:
             print(f"Error occurs when processing {row['img_path']}: {e}")
             df.loc[index, 'error'] = str(e)

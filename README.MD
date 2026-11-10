@@ -22,6 +22,7 @@ Click [here](https://www.youtube.com/watch?v=4DHI1gs1lzc&list=PL8tsvVKJ9n6FjYYpl
    - [Quickstart with Demo Data](#quickstart-with-demo-data)
    - [Seed Generation](#-run-seed-generation)
    - [Adaptive Seed Generation](#-run-adaptive-seed-generation)
+   - [Sweep Adaptive Seed](#-run-sweep-adaptive-seed)
    - [Growth](#-run-growth)
    - [External Model Prediction](#-external-model-prediction)
 - [View & Edit (napari)](#view--edit-napari)
@@ -164,6 +165,7 @@ SPROUT follows a **two-step workflow** for multi-class segmentation:
    
    - [**Vanilla seed generation**](#-run-seed-generation): generate multiple seeds by varying configurations such as thresholds and erosion steps.
    - [**Adaptive seed generation**](#-run-adaptive-seed-generation): automatically combine information across seeds from different configurations to produce a often better and final seed.
+   - [**Sweep adaptive seed**](#-run-sweep-adaptive-seed): make one seed per threshold, then combine them all. It has no early stop and stays fast with many seeds.
 2. **Seed Growth**  
    - [**Threshold-based growth**](#-run-growth): grows a seed by expanding the reduced components back toward their full target shapes. Growth is guided by image intensity and connectivity.
    - [**Sprout+External**](#-external-model-prediction): seeds are converted into prompts for a segmentation foundation model such as SAM & nnInteractive, which then predicts the segmentation. These slice-wise predictions are then fused into a final 3D output.
@@ -184,6 +186,7 @@ The same words are used in the code, the YAML configs, the napari plugin and the
 | **seed** / **seeds** | A segmentation made by seed generation, where structures are shrunk apart by thresholds and erosion. Seeds are the input of growth. |
 | **region** | The voxels that share one id. A region has an id but no meaning yet: the id is just a number, and regions can be split, merged or removed. |
 | **class** | A semantic category, e.g. *head* or *femur*. Class mapping assigns regions to classes; the id of a class is its *class id*. Interactive models (nnInteractive) segment one class at a time, so map the seeds to classes first. |
+| **step** | One threshold or erosion setting of a sweep adaptive seed run. Each step gives one mask, in `steps/`. |
 | **segments** | The parameter "keep the N largest regions" (`segments`; adaptive seed also has `init_segments` and `last_segments` for its first and last step). It never means a region itself. |
 | **grown segmentation** | The result of growth ("Grow result" in napari); likewise the *nnInteractive segmentation* ("Prompt result"). |
 
@@ -247,6 +250,25 @@ For full details on YAML parameters and other configs see:
     
 
 For example, see the YAML configuration files in `./template/`.
+
+### 🌊 Run Sweep Adaptive Seed
+
+**on a single image**
+```bash
+python sprout.py --sweep_adaptive --config ./template/sweep_adaptive_seed.yaml
+```
+
+**in batch mode**
+
+```bash
+python sprout.py --sweep_adaptive --batch --config path/to/batch_sweep_adaptive_seed.yaml
+```
+
+The seeds are in `FINAL_sweep_seed.tif`, and `sweep_regions.csv` tells where each seed comes from. For large scans, `memory_limit_gb` caps the memory.
+
+For the parameters, the output, and how to choose between this and adaptive seed see:
+
+-   [Sweep adaptive seed configuration options](./docs/config_sweep_adaptive_seed.md)
 
 ### 🌱 Run Growth
 

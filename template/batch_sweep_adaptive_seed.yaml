@@ -11,11 +11,12 @@ num_threads: 4
 
 # ── Combine ───────────────────────────────────────────────────────────────────
 direction: strict_to_loose   # strict_to_loose | loose_to_strict | both
-min_area: 20
+min_size: 20
 connectivity: 3
 input_mode: label
 top_n: 100
-save_intermediate: false
+save_every_iter: false
+memory_limit_gb: ~
 verbose: true
 
 # s2l params (null = use function default)

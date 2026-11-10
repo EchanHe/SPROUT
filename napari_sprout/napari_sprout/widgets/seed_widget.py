@@ -12,7 +12,7 @@ from typing import Optional
 from napari.layers import Image, Labels
 from napari.utils.notifications import show_info, show_error
 
-from ..utils.util_widget import (as_list, create_output_folder_row, SeedOptionalParamGroupBox,
+from ..utils.util_widget import (SWEEP_EROSION, SWEEP_METHODS, SWEEP_THRESHOLDS, as_list, create_output_folder_row, SeedOptionalParamGroupBox,
                                  MainSeedParamWidget, ThresholdWidget,apply_threshold_preview)
 from ..utils.histogram_threshold_widget import PREVIEW_NAME, HistogramThresholdWidget, append_threshold_row
 from ..utils.boundary_check import boundary_ok
@@ -34,6 +34,7 @@ if root_dir not in sys.path:
     
 from make_seeds import make_seeds
 from make_adaptive_seed import make_adaptive_seed_thre, make_adaptive_seed_ero
+from make_sweep_adaptive_seed import make_sweep_adaptive_seed
 from sprout_core import roi as R
 from sprout_core.roi import RoiError
 
@@ -51,7 +52,7 @@ class SeedWorker:
                     ):
         self.roi = roi   # sprout_core.roi.Roi or None (whole image)
         ## Parameters for both original and adaptive seed making
-        self.seed_mode = seed_mode  # "Original", "Adaptive (Erosion)", "Adaptive (Thresholds)"
+        self.seed_mode = seed_mode  # "Original", "Adaptive (Erosion)", "Adaptive (Thresholds)", or one of SWEEP_METHODS
         self.img = img
         self.boundary = boundary
         self.thresholds = thresholds
@@ -87,7 +88,7 @@ class SeedWorker:
         the number of files written (files_written)."""
         watch = jobs.FolderWatch(self.folder)
         try:
-            if self.seed_mode not in ["Original", "Adaptive (Erosion)", "Adaptive (Thresholds)"]:
+            if self.seed_mode not in ["Original", "Adaptive (Erosion)", "Adaptive (Thresholds)", *SWEEP_METHODS]:
                 raise ValueError("Invalid seed mode selected.")
             if self.roi is not None:
                 # ROI as a wall: run on its bbox + 1, outside the ROI counts as boundary
@@ -167,6 +168,21 @@ class SeedWorker:
                     return_for_napari=True,
                     cancel=cancel, progress=progress
                 )
+            elif self.seed_mode in SWEEP_METHODS:
+                seeds_dict = make_sweep_adaptive_seed(
+                    img=self.img,
+                    boundary=self.boundary,
+                    thresholds=self.thresholds,
+                    upper_thresholds=self.upper_thresholds,
+                    erosion_steps=self.erosion_steps,
+                    segments=self.segments,
+                    output_folder=self.output_folder,
+                    num_threads=self.num_threads,
+                    footprints=self.footprints,
+                    base_name=self.base_name,
+                    min_size=self.min_size,
+                    cancel=cancel, progress=progress
+                )
             jobs.check_cancel(cancel)         # Stop after the last step: no layers either
             if self.roi is not None:
                 seeds_dict = R.paste_seeds(self.roi, seeds_dict)
@@ -178,7 +194,7 @@ class SeedWorker:
 
     def stopped(self, e, done, total):
         """The orange line after Stop."""
-        unit = {"Original": "seeds", "Adaptive (Erosion)": "steps"}.get(self.seed_mode, "thresholds")
+        unit = {"Original": "seeds", "Adaptive (Thresholds)": "thresholds"}.get(self.seed_mode, "steps")
         return jobs.stopped_text(done, total, unit, getattr(e, "files_written", None))
 
 
@@ -437,6 +453,26 @@ class SeedGenerationWidget(QWidget):
         hub.layer_renamed.connect(self._on_layer_renamed)
         # Tab reaches Import / Export YAML where they are shown: before the parameters
         put_in_tab_order(self.main_param_widget.seed_method_combo, self.import_btn, self.export_btn)
+        self.main_param_widget.seed_method_combo.currentTextChanged.connect(self._on_method_changed)
+
+    def _on_method_changed(self, method):
+        """Grey what the method does not use."""
+        self.advanced_params_box.set_method(method)
+        self.save_every_iter_checkbox.setEnabled(method not in SWEEP_METHODS)
+        self.main_param_widget.thread_spin.setEnabled(method != SWEEP_EROSION)     # an erosion sweep is sequential
+        self.main_param_widget.segments_spin.setToolTip(
+            "Number of largest connected components to keep in each step; the result can have more seeds"
+            if method in SWEEP_METHODS else "Number of largest connected components to keep in each seed")
+
+    def _sweep_rows_problem(self, method, rows, erosion_steps):
+        """Why the threshold table does not fit the sweep, or None."""
+        if method == SWEEP_EROSION and rows != 1:
+            return f"{SWEEP_EROSION} uses one threshold row (there are {rows}); for several, use {SWEEP_THRESHOLDS}"
+        if method == SWEEP_EROSION and erosion_steps < 1:
+            return f"{SWEEP_EROSION} needs at least 1 erosion step"
+        if method == SWEEP_THRESHOLDS and rows < 2:
+            return f"{SWEEP_THRESHOLDS} needs at least 2 threshold rows; for one row, use {SWEEP_EROSION}"
+        return None
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -665,6 +701,11 @@ class SeedGenerationWidget(QWidget):
             
             main_params = self.main_param_widget.get_params()
             selected_method = main_params['seed_method']
+            problem = self._sweep_rows_problem(selected_method, len(main_params['thresholds']),
+                                               main_params['erosion_steps'])
+            if problem:
+                self.results_label.set(problem, "error")
+                return
             print(f"Generating seeds with method: {selected_method}")
             
             

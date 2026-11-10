@@ -18,11 +18,12 @@ import re
 import sys
 import time
 import yaml
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import numpy as np
-from tifffile import imwrite
+from tifffile import TiffFile, imread, imwrite
 
 import sprout_core.sprout_core as sprout_core
 import sprout_core.config_core as config_core
@@ -78,9 +79,33 @@ def _generate_one_threshold_step(img, lower, upper, footprint_list, erosion_step
     return step_index, path, seed
 
 
+class StepFiles(Sequence):
+    """Steps saved by a sweep, read from disk only when one is used.
+
+    The combine uses one step at a time, so a scan whose steps do not fit in memory together can
+    still be combined. A slice is another StepFiles: seeds[::-1] reads nothing.
+    """
+
+    def __init__(self, paths):
+        self.paths = [Path(p) for p in paths]
+
+    def __len__(self):
+        return len(self.paths)
+
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            return StepFiles(self.paths[index])
+        return imread(str(self.paths[index]))
+
+    def shape_of(self, index):
+        """Shape of a step from its file header, without reading its voxels."""
+        with TiffFile(str(self.paths[index])) as tif:
+            return tuple(tif.series[0].shape)
+
+
 def _single_upper(upper_thresholds):
     """The upper threshold of an erosion sweep, given as one value or a list of one."""
-    if upper_thresholds is None or isinstance(upper_thresholds, int):
+    if upper_thresholds is None or isinstance(upper_thresholds, (int, float)):
         return upper_thresholds
     if len(upper_thresholds) != 1:
         raise ValueError(f"An erosion sweep has one threshold, so it takes one upper threshold. Got {upper_thresholds}.")
@@ -165,6 +190,8 @@ def seed_sweep_threshold(
     num_threads=1,
     verbose=True,
     seeds_out=None,
+    cancel=None,
+    step=None,
 ):
     """Threshold sweep: each threshold → one TIFF, steps are parallel.
 
@@ -172,6 +199,7 @@ def seed_sweep_threshold(
     s2l: lower ↓ / upper ↑ — step_000 is strictest (range widens over steps).
     l2s: lower ↑ / upper ↓ — step_000 is loosest (range narrows over steps).
     Direction is auto-detected from threshold ordering.
+    cancel: checked before every step, raises Cancelled. step: called after every step.
     """
     sweep_direction = _detect_threshold_direction(thresholds, upper_thresholds)
     reverse = (sweep_direction == "s2l")
@@ -196,10 +224,16 @@ def seed_sweep_threshold(
 
     def _worker(args):
         idx, lower, upper = args
-        return _generate_one_threshold_step(
+        sprout_core.check_cancel(cancel)
+        done = _generate_one_threshold_step(
             img, lower, upper, footprint_list, erosion_steps,
             segments_list[idx], idx, output_folder, boundary
         )
+        if seeds_out is None:
+            done = done[:2] + (None,)       # a future keeps its result: do not keep the step alive in it
+        if step is not None:
+            step(f"threshold {lower}")
+        return done
 
     pairs = [(i, lower, upper) for i, (lower, upper) in enumerate(zip(thresholds, upper_thresholds))]
 
@@ -236,11 +270,14 @@ def seed_sweep_erosion(
     footprints=None,
     verbose=True,
     seeds_out=None,
+    cancel=None,
+    step=None,
 ):
     """Erosion sweep: one threshold, progressively eroded, steps are sequential.
 
     Returns (ordered_paths, "l2s") — step_000 has no erosion (loosest) so the
     natural file order is loose-to-strict.
+    cancel: checked before every step, raises Cancelled. step: called after every step.
     """
     threshold, upper_threshold = config_core.check_and_assign_threshold(threshold, upper_threshold)
     footprint_list = config_core.check_and_assign_footprint(footprints, erosion_steps) if erosion_steps > 0 else []
@@ -270,9 +307,12 @@ def seed_sweep_erosion(
         seeds_out.append(seed)
     if verbose:
         print(f"[seed_sweep] step 000 done: {path.name}")
+    if step is not None:
+        step("erosion 0")
 
     # Steps 1..erosion_steps: progressive erosion
     for ero_iter in range(1, erosion_steps + 1):
+        sprout_core.check_cancel(cancel)
         mask = sprout_core.erosion_binary_img_on_sub(
             mask, kernal_size=1, footprint=footprint_list[ero_iter - 1]
         )
@@ -284,6 +324,8 @@ def seed_sweep_erosion(
             seeds_out.append(seed)
         if verbose:
             print(f"[seed_sweep] step {ero_iter:03d} done: {path.name}")
+        if step is not None:
+            step(f"erosion {ero_iter}")
 
     return ordered_paths, "l2s"
 
@@ -327,8 +369,8 @@ def run_seed_sweep(config_path):
     start = time.time()
 
     # Auto-detect mode: single int or [x] → erosion, list >1 → threshold
-    if isinstance(thresholds, int) or (isinstance(thresholds, list) and len(thresholds) == 1):
-        single_threshold = thresholds if isinstance(thresholds, int) else thresholds[0]
+    if isinstance(thresholds, (int, float)) or (isinstance(thresholds, list) and len(thresholds) == 1):
+        single_threshold = thresholds[0] if isinstance(thresholds, list) else thresholds
         single_upper = _single_upper(upper_thresholds)
         ordered_paths, _ = seed_sweep_erosion(
             img=img,

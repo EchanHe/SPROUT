@@ -6,6 +6,16 @@
     
 
 
+**Q: Should I use adaptive seed or sweep adaptive seed?**
+
+-   Use **sweep adaptive seed** for many seeds or a long list of thresholds: it uses every step and stays fast.
+-   Use **adaptive seed** to reproduce results of the paper.
+-   They give different seeds, so compare them on your own data. See [the comparison](./config_sweep_adaptive_seed.md#which-adaptive-seed-should-i-use).
+
+**Q: Can I use a probability map of a model as the image?**
+
+Yes. A float image takes decimal thresholds, for example `thresholds: [0.9, 0.7, 0.5]`, in the YAML and in napari.
+
 **Q: Can I see intermediate results during SPROUT processing?**
 
 Yes. Saving intermediate outputs can be useful if some results are **over-grown**, **over-split**, or if you want to understand how the SPROUT algorithm proceeds.
