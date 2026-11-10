@@ -1,0 +1,141 @@
+name: release
+
+# A tag v1.2.3 publishes sprout-seg and napari-sprout 1.2.3 to PyPI (after an approval in the
+# pypi-sprout-seg environment), then makes the GitHub release (Zenodo makes the DOI from it).
+# The "Run workflow" button publishes to TestPyPI instead, to rehearse. TestPyPI takes each version
+# once too: to rehearse again, give a version such as 1.1.0.post1.
+#
+# No passwords or tokens: PyPI trusts this file (trusted publishing). Each package has its own
+# environment, as registered on PyPI / TestPyPI: pypi-sprout-seg, pypi-napari-sprout,
+# testpypi-sprout-seg, testpypi-napari-sprout.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "TestPyPI only: the version to upload (empty: the one in the code)"
+        type: string
+        default: ""
+
+env:
+  TARGET: ${{ github.event_name == 'push' && 'pypi' || 'testpypi' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Version for a TestPyPI rehearsal
+        if: github.event_name == 'workflow_dispatch' && inputs.version != ''
+        run: |
+          sed -i 's/^__version__ = .*/__version__ = "${{ inputs.version }}"/' \
+            sprout_core/__init__.py napari-sprout/napari_sprout/__init__.py
+      - name: Both packages have the version of the tag
+        run: |
+          core=$(python -c "import re; print(re.search(r'__version__ = \"(.+)\"', open('sprout_core/__init__.py').read())[1])")
+          plugin=$(python -c "import re; print(re.search(r'__version__ = \"(.+)\"', open('napari-sprout/napari_sprout/__init__.py').read())[1])")
+          echo "sprout-seg $core, napari-sprout $plugin"
+          test "$core" = "$plugin" || { echo "::error::the two versions differ"; exit 1; }
+          if [ "${{ github.event_name }}" = "push" ]; then
+            test "v$core" = "${{ github.ref_name }}" || { echo "::error::tag ${{ github.ref_name }}, code $core"; exit 1; }
+          fi
+      - name: CHANGELOG.md has a dated section for this version (checked before anything is uploaded)
+        if: github.event_name == 'push'
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          head=$(grep -E "^## $v( |$)" CHANGELOG.md || true)
+          echo "$head"
+          test -n "$head" || { echo "::error::no section '## $v' in CHANGELOG.md"; exit 1; }
+          ! echo "$head" | grep -qi unreleased || { echo "::error::CHANGELOG.md still says unreleased"; exit 1; }
+      - run: pip install build
+      - run: python -m build --outdir dist/sprout-seg .
+      - run: python -m build --outdir dist/napari-sprout napari-sprout
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  test:                          # the wheels in a clean venv, run from an empty folder
+    needs: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Libraries Qt needs on Linux
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libdbus-1-3 libfontconfig1 libglib2.0-0
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - name: Both packages in one folder
+        shell: bash
+        run: mkdir wheels && cp dist/*/*.whl wheels/
+      - run: pip install numpy tifffile
+      - run: python tests/clean_install.py wheels
+
+  publish-sprout-seg:            # first: napari-sprout needs it
+    needs: test
+    runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'push' && 'pypi-sprout-seg' || 'testpypi-sprout-seg' }}
+    permissions:
+      id-token: write            # what trusted publishing uses instead of a token
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/sprout-seg/
+          repository-url: ${{ env.TARGET == 'pypi' && 'https://upload.pypi.org/legacy/' || 'https://test.pypi.org/legacy/' }}
+
+  publish-napari-sprout:
+    needs: publish-sprout-seg
+    runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'push' && 'pypi-napari-sprout' || 'testpypi-napari-sprout' }}
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/napari-sprout/
+          repository-url: ${{ env.TARGET == 'pypi' && 'https://upload.pypi.org/legacy/' || 'https://test.pypi.org/legacy/' }}
+
+  github-release:                # the release notes are the version's section of CHANGELOG.md
+    if: github.event_name == 'push'
+    needs: publish-napari-sprout
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - name: Release notes from CHANGELOG.md
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          awk -v v="$v" '/^## /{on = index($0, "## " v " ") == 1 || $0 == "## " v; next} on' CHANGELOG.md > notes.md
+          cat notes.md
+      - run: gh release create "$GITHUB_REF_NAME" dist/*/* --title "SPROUT $GITHUB_REF_NAME" --notes-file notes.md
+        env:
+          GH_TOKEN: ${{ github.token }}
