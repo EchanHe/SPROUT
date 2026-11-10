@@ -286,10 +286,17 @@ def check_map():
     viewer.layers.remove(A)
     del A
     C.pump(5)
-    C.run_event_loop(0.3)
-    gc.collect()
+    for _ in range(10):                     # Qt6 runs deleteLater only in an event loop
+        C.run_event_loop(0.2)
+        gc.collect()
+        if len(getattr(mw, "_mappings", {})) <= 2:
+            break
+    stale = [k for k in getattr(mw, "_mappings", {}).keys() if k not in viewer.layers]
+    holders = sorted({type(r).__qualname__ for s in stale for r in gc.get_referrers(s)} - {"frame", "list"})
     ok(len(mw._mappings) == 2 if hasattr(mw, "_mappings") else False,
-       f"A3: mappings are held weakly (removed layer dropped; {len(getattr(mw, '_mappings', {}))} left)")
+       f"A3: mappings are held weakly (removed layer dropped; {len(getattr(mw, '_mappings', {}))} left; "
+       f"the removed layer is held by {holders})")
+    del stale
     viewer.layers.selection.events.active.disconnect(mw.update_active_label_layer_binding)
     mw.close()
 

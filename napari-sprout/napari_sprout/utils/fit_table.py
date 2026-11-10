@@ -20,6 +20,7 @@ class FitTable(QTableWidget):
             m = self.model()
             for sig in (m.rowsInserted, m.rowsRemoved, m.modelReset, m.layoutChanged):
                 sig.connect(self._fit_later)
+            self.horizontalScrollBar().rangeChanged.connect(self._fit_if_alive)
             self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             self.fit()
 
@@ -37,7 +38,8 @@ class FitTable(QTableWidget):
         n = min(self.rowCount(), self.MAX_ROWS)
         h = 2 * self.frameWidth() + self.horizontalHeader().sizeHint().height()
         h += sum(self.rowHeight(i) for i in range(n))
-        if self.horizontalHeader().length() > self.viewport().width():      # columns wider than the table
+        if self.horizontalScrollBar().maximum() > 0:     # columns wider than the table (not the header length:
+            # right after the vertical scrollbar appears it is briefly wider than the viewport)
             h += self.horizontalScrollBar().sizeHint().height()
         if self.minimumHeight() != h or self.maximumHeight() != h:
             self.setFixedHeight(h)
