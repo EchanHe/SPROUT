@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.1.0 (unreleased)
+## 1.1.0 (2026-11-10)
 
 ### New
 - **pip install**: `pip install "napari-sprout[all]"` (plugin, napari and Qt) or `pip install sprout-seg` (command line only). Extras: `sprout-seg[ai]` (nnInteractive), `sprout-seg[mesh]`.
