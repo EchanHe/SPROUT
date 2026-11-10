@@ -72,8 +72,6 @@ Other ways:
 | SAM | see [External Models](docs/external_model_installation.md#sam-segment-anything-model) |
 | To change the code | `git clone https://github.com/EchanHe/SPROUT.git`, `cd SPROUT`, `pip install -e . -e ./napari-sprout` |
 
-**Following the paper (Supplementary Note 4)?** Run its steps in a clone of this repository (`git clone https://github.com/EchanHe/SPROUT.git`, `cd SPROUT`), and install napari with Qt: `pip install "napari[all]"` (plain `napari` has no Qt and does not start). `pip install -e .` in `napari-sprout` takes the core (`sprout-seg`) from PyPI; to use the core of the clone too, run `pip install -e . -e ./napari-sprout` in the repository folder instead.
-
 The paper's results were made with Python 3.10, numpy 1.26.4, pandas 2.2.1, scikit-image 0.22.0, scipy 1.15.3, tifffile 2024.2.12, napari 0.6.1. The tests run on these versions and on the newest ones.
 
 
