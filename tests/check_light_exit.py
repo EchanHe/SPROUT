@@ -37,13 +37,17 @@ def ok(cond, msg):
         FAILED.append(msg)
 
 
-# why: napari wraps a brushed id in a uint8 layer (the reason for the rule)
+# why: a uint8 layer cannot hold a brushed id 300 (the reason for the rule)
 lab = Labels(np.zeros((5, 5), np.uint8))
-lab.paint((2, 2), 300)
+try:
+    lab.paint((2, 2), 300)
+    in_uint8 = int(lab.data[2, 2])
+except OverflowError:                # numpy 2 refuses where numpy 1 wraps it to 44
+    in_uint8 = "refused"
 lab16 = Labels(np.zeros((5, 5), np.uint16))
 lab16.paint((2, 2), 300)
-ok(int(lab.data[2, 2]) == 44 and int(lab16.data[2, 2]) == 300,
-   f"napari: brushing id 300 writes {int(lab.data[2, 2])} into uint8, {int(lab16.data[2, 2])} into uint16")
+ok(in_uint8 in (44, "refused") and int(lab16.data[2, 2]) == 300,
+   f"napari: brushing id 300 gives {in_uint8} in uint8, {int(lab16.data[2, 2])} in uint16")
 
 viewer = napari.Viewer(show=False)
 viewer.theme = "light"

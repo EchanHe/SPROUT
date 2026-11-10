@@ -732,7 +732,7 @@ def menu_texts(menu, out=None):
 plug = [a for a in viewer.window._qt_window.menuBar().actions() if "Plugin" in a.text()]
 mtexts = menu_texts(plug[0].menu()) if plug else []
 sub = [t for t in mtexts if t and t not in ("Install/Uninstall Plugins...", "Plugin Errors...")
-       and "napari-animation" not in t
+       and "napari-animation" not in t and "napari-metadata" not in t   # other plugins (napari[all] 0.7)
        and not t.endswith("(napari builtins)")]      # napari 0.7 lists its own widgets here too
 ok(sub == ["SPROUT", "SPROUT", "Edit", "Label Mapping", "Batch Builder", "Data Info"],
    f"Plugins -> SPROUT lists SPROUT, Edit, Label Mapping, Batch Builder, Data Info (no Prompts, no Load): {sub}")
