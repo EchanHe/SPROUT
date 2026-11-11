@@ -1,6 +1,8 @@
 # Demo Data and Basic Usage
 This document introduces the demo datasets and the basic usage of SPROUT.  
-We demonstrate how to use **seed generation**, **adaptive seed generation**, **growth**, and **Sprout+SAM**.  
+We demonstrate how to use **seed generation**, **adaptive seed generation**, **growth**, and seeds as **SAM** prompts.  
+
+Run the commands in a clone of this repository: the demo data and the templates are in it.
 
 For more advanced scenarios and parameter tuning, see [scenarios.md](scenarios.md).
 
@@ -21,12 +23,12 @@ We can understand that using a threshold range of **(120, 255)** (using `preview
 
 ### Example: simple seed generation
 
-To segment **four specific bones** mentioned in the manuscript (scapula, humerus, radius, and ulna), we tested several thresholds — (210,255), (220,255), (230,255) — with erosion values 0 or 1, `segments = 8`, and different erosion footprints (ball, XY disk, XZ disk, YZ disk).  
+To segment **four specific bones** of the paper (scapula, humerus, radius, and ulna), we tested several thresholds — (210,255), (220,255), (230,255) — with erosion values 0 or 1, `segments = 8`, and different erosion footprints (ball, XY disk, XZ disk, YZ disk).  
 
 A configuration file is provided in `./template/make_seeds.yaml`. Run with:
 
 ```bash
-python sprout.py --seeds --config ./template/make_seeds.yaml
+sprout --seeds --config ./template/make_seeds.yaml
 ```
 
 The process finishes in under one minute (3 threads).
@@ -37,7 +39,7 @@ From the results, the best setting was:
 -   **erosion = 0**
 -   **segments = 8**
     
-This produces eight connected components, including the four target bones and extra parts. The final cleanup can be done interactively with `napari-sprout`->`sprout_edit`.
+This produces eight connected components, including the four target bones and extra parts. The final cleanup can be done interactively with the **Edit** panel of napari-sprout.
 
 ### Example: threshold-based adaptive seed generation
 Instead of using a single threshold, we can define a list threshold ranges, for example lower thresholds from 120 to 220 with a step of 10.
@@ -49,21 +51,21 @@ Also if the task requires segmenting more bones, adaptive seed generation can re
 ### Example: sweep adaptive seed
 
 ```bash
-python sprout.py --sweep_adaptive --config ./template/sweep_adaptive_seed.yaml
+sprout --sweep_adaptive --config ./template/sweep_adaptive_seed.yaml
 ```
 
 This makes one seed per threshold of the template and combines them, in a few seconds on the dog. The result is `./result/sweep_adaptive/dog_img/FINAL_sweep_seed.tif`; give it to growth as `seg_path`. See [the options](./config_sweep_adaptive_seed.md).
 
 ### Example: Threshold-based Growth
 
- Growth can be applied by with multiple threshold ranges (from narrow to wide). This allows seed regions to expand incrementally and helps control overgrowth. 
+ Growth can be applied with multiple threshold ranges (from narrow to wide). This allows seed regions to expand incrementally and helps control overgrowth. 
 
 The example seed can be found in: `./demo_data/dog_seed.tif`
 
-A configuration file is provided in `./template/make_seeds.yaml`. Run with:
+A configuration file is provided in `./template/make_grow.yaml`. Run with:
 
 ```bash
-python sprout.py --grow --config ./template/make_grow.yaml
+sprout --grow --config ./template/make_grow.yaml
 ```
 
 In this example, we use **6 threshold ranges**, lower threshold decreasing from `220` to `120`:
@@ -96,15 +98,15 @@ The goal is to segment **individual chambers**. This demo image contains **18 ch
     
 -   Increasing erosion helps separation, but excessive erosion causes chamber loss. For example, at `erosion = 5`, most chambers are separated, but only **13 regions** remain because smaller chambers are eroded away.
 
-A configuration file is provided in `./template/make_seeds.yaml`. Run with:
+A configuration file is provided in `./template/make_adaptive_seed.yaml`. Run with:
 
 ```bash
-python sprout.py --adaptive_seed --config ./template/make_adaptive_seed.yaml
+sprout --adaptive_seed --config ./template/make_adaptive_seed.yaml
 ```
 
 The process finishes in around 8 minutes (4 threads).
 
-The final cleanup can be done interactively with `napari-sprout`->`sprout_edit`.
+The final cleanup can be done interactively with the **Edit** panel of napari-sprout.
 
 ### **Single-threshold Grow**
 
@@ -124,5 +126,5 @@ The configuration file is provided at `./template/sam_predict.yaml`.
 Run the following command:
 
 ```bash
-python sprout.py --sam --config ./template/sam_predict.yaml
+sprout --prompt --sam --config ./template/sam_predict.yaml
 ```

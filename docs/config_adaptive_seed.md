@@ -1,7 +1,7 @@
-## 🧠 Adaptive Seed Generation Config Parameters (`--adaptive_seed`)
+## Adaptive Seed Generation Config Parameters (`--adaptive_seed`)
 
 ```bash
-python sprout.py --adaptive_seed --config path/to/config.yaml
+sprout --adaptive_seed --config path/to/config.yaml
 ```
 
 A template of the configuration file for adaptive seed generation can be found at: [`../template/make_adaptive_seed.yaml`](../template/make_adaptive_seed.yaml).
@@ -66,5 +66,5 @@ Adaptive seed batch mode supports multi-image processing using a CSV file, follo
 
 
 ```bash
-python sprout.py --adaptive_seed --batch --config path/to/batch_config.yaml
+sprout --adaptive_seed --batch --config path/to/batch_config.yaml
 ```

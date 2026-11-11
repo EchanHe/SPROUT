@@ -1,7 +1,7 @@
-## 🧠 Foundation Model Segmentation Config (`--sam`)
+## Foundation Model Segmentation Config (`--prompt --sam`)
 
 ```bash
-python sprout.py --sam --config path/to/config.yaml
+sprout --prompt --sam --config path/to/config.yaml
 ```
 
 A template of the configuration file for SAM-based segmentation can be found at:  [`../template/sam_predict.yaml`](../template/sam_predict.yaml).
@@ -39,12 +39,12 @@ This mode uses **foundation models** (e.g., Segment Anything Model, SAM, SAM2) t
 | `custom_checkpoint` | ❌        | `str` | Optional custom checkpoint path for SAM1/SAM2. If provided, overrides. |
 
 
-## SAM Config Parameters in batch (`--sam --batch`)
+## SAM Config Parameters in batch (`--prompt --sam --batch`)
 
 Batch mode allows you to predict segmentations for multiple images in a single run using a CSV file. Each row in the CSV corresponds to one image and one segmentation, and may optionally override additional parameters.
 
 ```bash
-python sprout.py --sam --batch --config path/to/batch_config.yaml
+sprout --prompt --sam --batch --config path/to/batch_config.yaml
 ```
 
 Templates of the configuration file and the csv file for sam can be found at: [`../template/batch_sam.yaml`](../template/batch_sam.yaml) and [../template/sam_input.csv](../template/sam_input.csv).

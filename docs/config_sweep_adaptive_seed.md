@@ -1,7 +1,7 @@
-## 🌊 Sweep Adaptive Seed Config Parameters (`--sweep_adaptive`)
+## Sweep Adaptive Seed Config Parameters (`--sweep_adaptive`)
 
 ```bash
-python sprout.py --sweep_adaptive --config path/to/config.yaml
+sprout --sweep_adaptive --config path/to/config.yaml
 ```
 
 A template of the configuration file can be found at: [`../template/sweep_adaptive_seed.yaml`](../template/sweep_adaptive_seed.yaml)
@@ -27,7 +27,7 @@ With `direction: loose_to_strict`, the steps are combined the other way: seeds s
 | Memory | All steps at once, see [Large images](#large-images) | One step at a time |
 | napari | Seeds tab, Method `Sweep (Erosion)` or `Sweep (Thresholds)` | Seeds tab, Method `Adaptive (Erosion)` or `Adaptive (Thresholds)` |
 
-Use sweep adaptive seed when you want many seeds fast. More thresholds give more seeds. Use adaptive seed for fewer, cleaner seeds, or to reproduce results of the paper. The two give different seeds, so compare them on your own data.
+Use sweep adaptive seed when you want many seeds fast. More thresholds give more seeds, also small ones from noise: `min_size` drops them. Use adaptive seed for fewer, cleaner seeds, or to reproduce results of the paper. The two give different seeds, so compare them on your own data.
 
 ### In napari
 
@@ -117,7 +117,7 @@ In `sweep_regions.csv`:
 ## Batch (`--sweep_adaptive --batch`)
 
 ```bash
-python sprout.py --sweep_adaptive --batch --config path/to/batch_config.yaml
+sprout --sweep_adaptive --batch --config path/to/batch_config.yaml
 ```
 
 A template can be found at: [`../template/batch_sweep_adaptive_seed.yaml`](../template/batch_sweep_adaptive_seed.yaml)

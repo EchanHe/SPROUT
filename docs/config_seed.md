@@ -1,7 +1,7 @@
-## 🌰 Seed Generation Config Parameters (`--seeds`)
+## Seed Generation Config Parameters (`--seeds`)
 
 ```bash
-python sprout.py --seeds --config path/to/config.yaml
+sprout --seeds --config path/to/config.yaml
 ```
 
 A template of the configuration file for seed generation can be found at: [`../template/make_seeds.yaml`](../template/make_seeds.yaml).
@@ -52,10 +52,10 @@ We are currently using napari to render our results, so if you only want to visu
 Batch mode allows you to generate seeds for multiple images in a single run using a CSV file. Each row in the CSV corresponds to an individual image and can optionally override parameters on a per-image basis.
 
 ```bash
-python sprout.py --seeds --batch --config path/to/batch_config.yaml
+sprout --seeds --batch --config path/to/batch_config.yaml
 ```
 
-Templates of the configuration file and the csv file for grow can be found at: [`../template/batch_seeds.yaml`](../template/batch_seeds.yaml) and [../template/seeds_input.csv](../template/seeds_input.csv]).
+Templates of the configuration file and the csv file for seeds can be found at: [`../template/batch_seeds.yaml`](../template/batch_seeds.yaml) and [../template/seeds_input.csv](../template/seeds_input.csv).
 
 
 ### New required YAML parameter for batch mode:
@@ -67,7 +67,7 @@ Templates of the configuration file and the csv file for grow can be found at: [
 In addition, all **required seed parameters** (`thresholds`, `erosion_steps`, `segments`, etc.) must be either: Globally defined in the YAML file, **or** Provided per image in the CSV file
 
 
-### ✅ Example
+### Example
 
 If you want to generate seeds for multiple images with different thresholds but with other parameters same across images.
 

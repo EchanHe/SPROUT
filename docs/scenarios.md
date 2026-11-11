@@ -8,7 +8,7 @@
 
 **Q: Should I use adaptive seed or sweep adaptive seed?**
 
--   Use **sweep adaptive seed** for many seeds or a long list of thresholds: it uses every step and stays fast.
+-   Use **sweep adaptive seed** for many seeds, fast. Close thresholds give more seeds, also small ones from noise: raise `min_size` to drop them.
 -   Use **adaptive seed** to reproduce results of the paper.
 -   They give different seeds, so compare them on your own data. See [the comparison](./config_sweep_adaptive_seed.md#which-adaptive-seed-should-i-use).
 

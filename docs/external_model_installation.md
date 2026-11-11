@@ -24,10 +24,10 @@ pip install torch torchvision torchaudio
 pip install opencv-python-headless
 ```
 
-⚠️ For optimal performance, we recommend using GPU-enabled PyTorch. You can find the correct installation command based on your system here:  
+We recommend using GPU-enabled PyTorch. You can find the correct installation command based on your system here:  
 [https://pytorch.org/get-started/locally/](https://pytorch.org/get-started/locally/)
 
-### 📦 Install Segment Anything Models
+### Install Segment Anything Models
 
 You also need to install the SAM and/or SAM2 libraries:
 
