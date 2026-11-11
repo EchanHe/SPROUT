@@ -13,28 +13,24 @@ pip install "napari-sprout[all]"     # then start napari: Plugins → SPROUT
 
 More ways to install: [Install](#install).
 
-👉 Quickstart: [Quickstart with Demo Data](./docs/demo_data_tutorial.md)
+Quickstart: [Quickstart with Demo Data](./docs/demo_data_tutorial.md)
 
 Video demo — Getting started with GUI-supported SPROUT using napari:
 <a href="https://www.youtube.com/watch?v=6rA7wW6f0SU" target="_blank">
   <img src="https://img.youtube.com/vi/6rA7wW6f0SU/0.jpg" width="360">
 </a>
 
-Click [here](https://www.youtube.com/watch?v=4DHI1gs1lzc&list=PL8tsvVKJ9n6FjYYplo-IAwKBLxDh578aj) for the playlist of all SPROUT videos (mainly focus on GUI-based SPROUT in napari). See [Usage](#️-usage) section for command-line usage.
+Click [here](https://www.youtube.com/watch?v=4DHI1gs1lzc&list=PL8tsvVKJ9n6FjYYplo-IAwKBLxDh578aj) for the playlist of all SPROUT videos (mainly the napari plugin). See [Usage](#usage) section for command-line usage.
 
 ---
 
 - [Introduction](#introduction)
 - [Install](#install)
-- [Usage](#️-usage)
+- [Usage](#usage)
    - [Terms](#terms)
-   - [Input Data Format](#input-data-format)
-   - [Quickstart with Demo Data](#quickstart-with-demo-data)
-   - [Seed Generation](#-run-seed-generation)
-   - [Adaptive Seed Generation](#-run-adaptive-seed-generation)
-   - [Sweep Adaptive Seed](#-run-sweep-adaptive-seed)
-   - [Growth](#-run-growth)
-   - [External Model Prediction](#-external-model-prediction)
+   - [Input data](#input-data)
+   - [Quickstart with demo data](#quickstart-with-demo-data)
+   - [Command line](#command-line)
 - [View & Edit (napari)](#view--edit-napari)
 - [Demo Results](#demo-results)
 - [Related tools](#related-tools)
@@ -75,30 +71,21 @@ Other ways:
 The paper's results were made with Python 3.10, numpy 1.26.4, pandas 2.2.1, scikit-image 0.22.0, scipy 1.15.3, tifffile 2024.2.12, napari 0.6.1. The tests run on these versions and on the newest ones.
 
 
-## ⚙️ Usage
+## Usage
 
-SPROUT follows a **two-step workflow** for multi-class segmentation:
+SPROUT has two steps:
 
+<img src="./docs/material/flowchart.png" alt="SPROUT workflow" width="600">
 
-![workflow](./docs/material/flowchart.png)
+1. **Seeds**: thresholds and erosion split the image into separate regions.
+   - **Seed generation**: one seed per setting of thresholds and erosion.
+   - **Adaptive seed**: combines the seeds of several settings into one final seed, often better than any single setting.
+   - **Sweep adaptive seed**: one seed per threshold, then all of them are combined. No early stop, and fast with many seeds. Adaptive or sweep? See [the comparison](./docs/config_sweep_adaptive_seed.md#which-adaptive-seed-should-i-use).
+2. **Growth**: seeds grow back to the full shape of each part.
+   - **Threshold-based growth**, guided by image intensity.
+   - **Seeds as prompts** for nnInteractive (3D) or SAM (slice by slice, fused into 3D).
 
-1. **Seed Generation**  
-   The goal of this step is to reduce the regions of the image by breaking it into multiple distinct components (splits). There are two strategies:
-   
-   - [**Vanilla seed generation**](#-run-seed-generation): generate multiple seeds by varying configurations such as thresholds and erosion steps.
-   - [**Adaptive seed generation**](#-run-adaptive-seed-generation): automatically combine information across seeds from different configurations to produce a often better and final seed.
-   - [**Sweep adaptive seed**](#-run-sweep-adaptive-seed): make one seed per threshold, then combine them all. It has no early stop and stays fast with many seeds.
-2. **Seed Growth**  
-   - [**Threshold-based growth**](#-run-growth): grows a seed by expanding the reduced components back toward their full target shapes. Growth is guided by image intensity and connectivity.
-   - [**Sprout+External**](#-external-model-prediction): seeds are converted into prompts for a segmentation foundation model such as SAM & nnInteractive, which then predicts the segmentation. nnInteractive works in 3D; SAM predicts slice by slice, and the slices are fused into a 3D output.
-
-**🧪 Interactive Inspection & Editing**
-
-In practice, both seed and grow results often require **visualisation, quality checking, or manual editing**, depending on your segmentation goals.
-
-To support this, SPROUT is fully integrated into the **Napari** ecosystem as a plugin, please see [napari-sprout](#view--edit-napari). 
-
-**Command line:** the examples below use `python sprout.py` in a clone of this repository. After `pip install`, `sprout` does the same from any folder, e.g. `sprout --seeds --config my_seeds.yaml`.
+Seeds and grown results often need checking or editing: see the [napari plugin](#view--edit-napari).
 
 ### Terms
 
@@ -115,142 +102,36 @@ The same words are used in the code, the YAML configs, the napari plugin and the
 | **grown segmentation** | The result of growth ("Grow result" in napari); likewise the *nnInteractive segmentation* ("Prompt result"). |
 
 
-### **Input Data Format**
-SPROUT processes 2D and 3D grayscale images stored in **TIFF (`.tif`, `.tiff`) format**. 
+### Input data
 
-- **Supported file types:** `.tif`, `.tiff`
-- **Image Type:** 2D or 3D grayscale images
-- **Bit Depth:** 8-bit, 16-bit, or 32-bit (floating point)
-- **File Structure:**  
-   - 2D images: `(Height, Width)`
-   - 3D images: `(Depth, Height, Width)`
+2D or 3D greyscale TIFF (`.tif`, `.tiff`), 8-bit, 16-bit or float, with shape `(Height, Width)` or `(Depth, Height, Width)`. Colour images are not supported.
 
-**Unsupported inputs:** Color images.
+### Quickstart with demo data
 
-### Quickstart with Demo Data
+- [Demo data and basic usage](docs/demo_data_tutorial.md): a dog skeleton, foraminifera chambers and a 2D cell image, in `./demo_data` with their seeds. More demo data on [Zenodo](https://zenodo.org/records/16857648).
+- [Scenarios](docs/scenarios.md): advanced usage, as questions and answers.
 
-See [Demo Data and Basic Usage](docs/demo_data_tutorial.md) for a quick start.
+### Command line
 
-See [Scenarios](docs/scenarios.md) for advance usage in a Q&A style.   
+Each step is one command with a YAML config. Templates are in [`template/`](./template/).
 
-`./demo_data` includes a **dog skeleton** `dog_img.tif`, a **foraminifera chamber segmentation** `foram_img.tif` and a **2D cell microscopy image** `2d_cell.tif`. Their corresponding seed images are also provided in the same directory. 
+| Step | Command | Parameters |
+|---|---|---|
+| Seed generation | `sprout --seeds --config make_seeds.yaml` | [config_seed.md](./docs/config_seed.md) |
+| Adaptive seed | `sprout --adaptive_seed --config make_adaptive_seed.yaml` | [config_adaptive_seed.md](./docs/config_adaptive_seed.md) |
+| Sweep adaptive seed | `sprout --sweep_adaptive --config sweep_adaptive_seed.yaml` | [config_sweep_adaptive_seed.md](./docs/config_sweep_adaptive_seed.md) |
+| Growth | `sprout --grow --config make_grow.yaml` | [config_grow.md](./docs/config_grow.md) |
+| nnInteractive | `sprout --prompt --nninteractive --config nninteractive_predict.yaml` | [config_nninteractive.md](./docs/config_nninteractive.md) |
+| SAM | `sprout --prompt --sam --config sam_predict.yaml` | [config_sam.md](./docs/config_sam.md) |
 
-Additional demo data can be found [here](https://zenodo.org/records/16857648).
-
-### 🌰 Run seed generation
-
-**on a single image**
-```bash
-python sprout.py --seeds --config path/to/seed_config.yaml
-```
-**in batch mode**
-```bash
-python sprout.py --seeds --batch --config path/to/batch_seed.yaml
-```
-
-A video explain batch mode: [link](https://www.youtube.com/watch?v=5o-PJ34Yirc)
-
-For full details on YAML parameters and other configs see:
-- [Seed configuration options](./docs/config_seed.md)
-
-For example, see the YAML configuration files in `./template/`.
-
-### 🧠 Run Adaptive Seed Generation
-
-**on a single image**
-```bash
-python sprout.py --adaptive_seed --config path/to/adaptive_seed_config.yaml
-```
-
-**in batch mode**
-
-```bash
-python sprout.py --adaptive_seed --batch --config path/to/batch_adaptive_seed.yaml
-```
-
-For full details on YAML parameters and other configs see:
-
--   [Adaptive seed configuration options](./docs/config_adaptive_seed.md)
-    
-
-For example, see the YAML configuration files in `./template/`.
-
-### 🌊 Run Sweep Adaptive Seed
-
-**on a single image**
-```bash
-python sprout.py --sweep_adaptive --config ./template/sweep_adaptive_seed.yaml
-```
-
-**in batch mode**
-
-```bash
-python sprout.py --sweep_adaptive --batch --config path/to/batch_sweep_adaptive_seed.yaml
-```
-
-The seeds are in `FINAL_sweep_seed.tif`, and `sweep_regions.csv` tells where each seed comes from. For large scans, `memory_limit_gb` caps the memory.
-
-For the parameters, the output, and how to choose between this and adaptive seed see:
-
--   [Sweep adaptive seed configuration options](./docs/config_sweep_adaptive_seed.md)
-
-### 🌱 Run Growth
-
-**on a single image**
-```bash
-python sprout.py --grow --config path/to/grow_config.yaml
-```
-**in batch mode**
-```bash
-python sprout.py --grow --batch --config path/to/batch_grow.yaml
-```
-
-For full details on YAML parameters and other configs see:
-- [Growth configuration options](./docs/config_grow.md)
-
-For example, see the YAML configuration files in `./template/`.
-
-### 🧠 External Model Prediction
-**Using SPROUT seeds as prompts:**
-Prompts extracted from SPROUT seeds (e.g., point coordinates, bounding boxes) can be used as inputs for external models like SAM-based methods and nnInteractive. See [Foundation Model configuration options](./docs/config_sam.md) for details.
-
-**on a single image or a folder of images**
- - SAM-based
-```bash
-python sprout.py --prompt --sam --config path/to/config.yaml
-```
- - nnInteractive
-```bash
-python sprout.py --prompt --nninteractive --config path/to/config.yaml
-```
-
-
-**in batch mode**
- - SAM-based
-```bash
-python sprout.py --prompt --sam --batch --config path/to/config.yaml
-```
- - nnInteractive
-```bash
-python sprout.py --prompt --nninteractive --batch --config path/to/config.yaml
-```
-
-For full details on YAML parameters and other configs see:
-- [Foundation Model configuration options](./docs/config_sam.md)
-
-For example, see the YAML configuration files in `./template/`.
-
-### ⚡ Parallelization Support
-
-`sprout.py` can run tasks in parallel using Python’s `threading`. Just set `num_threads` in your config to speed up processing, especially for large datasets.
-
-
-
-
+- Many images: add `--batch` and use a batch config with a CSV of images (`template/batch_*.yaml`; [video](https://www.youtube.com/watch?v=5o-PJ34Yirc)).
+- Threads: `num_threads` in the config.
+- In a clone of this repository, without installing, `python sprout.py` does the same as `sprout`.
+- `sprout --help` lists all options.
 
 ## View & Edit (napari)
 
-🎥 **Tutorial Video — Editing Segmentation Results in napari-SPROUT**  
+Video: editing segmentation results in napari-sprout  
 <a href="https://www.youtube.com/watch?v=H9pLkmy6WwA" target="_blank">
   <img src="https://img.youtube.com/vi/H9pLkmy6WwA/0.jpg" width="360">
 </a>
@@ -265,7 +146,7 @@ From here, you can use a set of tools to load, view, and edit your data.
 -   **SPROUT**: tabs for the whole pipeline. Parameters match the YAML configs (Import / Export YAML).
     -   **1. Seeds**: seed and adaptive seed generation.
     -   **2. Grow**: grow seeds into a segmentation.
-    -   **3. Prompt (AI)**: seeds as prompts for nnInteractive ([install](#-external-model-prediction)).
+    -   **3. Prompt (AI)**: seeds as prompts for nnInteractive ([install](#install)).
     -   **ROI & Boundary**: run a tab inside a region of interest; make a boundary mask (top-hat).
 -   **Edit**: keep or remove regions (Ctrl+click), replace ids, merge layers, split, filter, fill holes, morphology.
 -   **Label Mapping**: map regions to classes, e.g. `1 → bone_1`, `2 → bone_2`.
@@ -273,7 +154,7 @@ From here, you can use a set of tools to load, view, and edit your data.
 -   **Data Info**: shape, value range, label count and sizes of the selected layer.
 
 
-In addition to `napari-sprout`, **napari** also provides powerful editing options (e.g. **Brush** to add regions, **Erase** to remove).
+In addition to `napari-sprout`, **napari** has its own editing tools (e.g. **Brush** to add regions, **Erase** to remove).
 
 
 You can also visualize, inspect, and edit seeds or results using 3D image processing tools such as **3D Slicer**, **Dragonfly**, and **AVIZO**. Alternatively, you can generate meshes and view or edit them in mesh-based tools like **MeshLab**. See [Extra section](#extra-features)
@@ -283,16 +164,18 @@ You can also visualize, inspect, and edit seeds or results using 3D image proces
 
 ## Demo Results
 
-Batch processing results of segmenting dog bones in CT scans with varying anatomy and postures.
-![Result1](./docs/material/dog.png)
+Batch results: dog bones in CT scans with different anatomy and postures.
+
+<img src="./docs/material/dog.png" alt="Dog bones" width="700">
 
 
-Batch processing results of segmenting foram binary segmentation (supports segmentation masks as input too) with variable numbers of chambers
-![Result2](./docs/material/foram_v3_no_3.png)
+Batch results: foraminifera chambers from binary masks (masks work as input too), with different numbers of chambers.
+
+<img src="./docs/material/foram_v3_no_3.png" alt="Foraminifera chambers" width="700">
 
 Gallery of other results
 
-![Result1](./docs/material/result_1.png)
+<img src="./docs/material/result_1.png" alt="Other results" width="560">
 
 _Note: All results underwent manual post-processing primarily to verify and correct segmentation errors._
 
@@ -316,7 +199,7 @@ In napari-sprout and plugins, we provided GUI version of editing results. You ca
 
 ### BounTI Multithreaded Implementation
 
-The script `./BounTI/run_bounti_mp.py` is designed to run **BounTI** ([Related tools](#related-tools)) and **BounTI Flood** using a multithreaded approach. It efficiently processes a list of initial thresholds in parallel, leveraging multiple threads for improved performance.
+The script `./BounTI/run_bounti_mp.py` runs **BounTI** ([Related tools](#related-tools)) and **BounTI Flood** for a list of initial thresholds in parallel.
 
 
 

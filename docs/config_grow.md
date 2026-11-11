@@ -1,7 +1,7 @@
-## 🌱 Grow Config Parameters (`--grow`)
+## Grow Config Parameters (`--grow`)
 
 ```bash
-python sprout.py --grow --config path/to/config.yaml
+sprout --grow --config path/to/config.yaml
 ```
 
 A template of the configuration file for grow can be found at: [`../template/make_grow.yaml`](../template/make_grow.yaml).
@@ -53,10 +53,10 @@ We are currently using napari to render our results, so if you only want to visu
 Batch mode allows you to grow segmentations for multiple images in a single run using a CSV file. Each row in the CSV corresponds to one image and one segmentation, and may optionally override additional parameters.
 
 ```bash
-python sprout.py --grow --batch --config path/to/batch_config.yaml
+sprout --grow --batch --config path/to/batch_config.yaml
 ```
 
-Templates of the configuration file and the csv file for grow can be found at: [`../template/batch_grow.yaml`](../template/batch_grow.yaml) and [../template/grow_input.csv](../template/grow_input.csv]).
+Templates of the configuration file and the csv file for grow can be found at: [`../template/batch_grow.yaml`](../template/batch_grow.yaml) and [../template/grow_input.csv](../template/grow_input.csv).
 
 
 ### New required YAML parameter for batch mode:
@@ -68,7 +68,7 @@ Templates of the configuration file and the csv file for grow can be found at: [
 
 In addition, all **required grow parameters** (`thresholds`, `dilation_steps`, `touch_rule`, etc.) must be either: : Globally defined in the YAML file, **or** Provided per image in the CSV file.
 
-### ✅ Example
+### Example
 
 If you want to grow seeds for multiple image/segmentation pairs using the same global dilation parameters, but different thresholds per image, you can define:
 
