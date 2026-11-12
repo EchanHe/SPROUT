@@ -16,6 +16,7 @@ from ..utils.util_widget import (SWEEP_EROSION, SWEEP_METHODS, SWEEP_THRESHOLDS,
                                  MainSeedParamWidget, ThresholdWidget,apply_threshold_preview)
 from ..utils.histogram_threshold_widget import PREVIEW_NAME, HistogramThresholdWidget, append_threshold_row
 from ..utils.boundary_check import boundary_ok
+from ..utils.layer_shapes import find_layer_item, grey_out_mismatches, item_layer, placement_differs
 from ..utils.layer_files import layer_name, saved_note, yaml_path
 from ..utils.roi_widget import RoiSelect
 from ..utils.status import RUN_BUTTON, STOP_BUTTON, StatusLine, follow_theme
@@ -216,7 +217,7 @@ def input_combo():
 
 
 def combo_items(combo):
-    return [combo.itemText(i) for i in range(combo.count())]
+    return [item_layer(combo, i) for i in range(combo.count())]
 
 
 def put_in_tab_order(first, *widgets):
@@ -233,11 +234,52 @@ def put_in_tab_order(first, *widgets):
 def rename_in_combos(layer, old, combos):
     """A layer was renamed in napari: rename its item in place (the selection stays)."""
     for combo in combos:
-        i = combo.findText(old)
+        i = find_layer_item(combo, old)
         if i >= 0 and old != "None":
             combo.blockSignals(True)
-            combo.setItemText(i, layer.name)
+            combo.setItemText(i, combo.itemText(i).replace(old, layer.name, 1))
+            if isinstance(combo.itemData(i), str):
+                combo.setItemData(i, layer.name)
             combo.blockSignals(False)
+
+
+def pick_layer(combo, name, label, notes):
+    """YAML import: pick layer `name` in `combo`, or add a note if it is missing or greyed out."""
+    i = find_layer_item(combo, name)
+    if i < 0:
+        notes.append(f"{label} '{name}' not found in current layers.")
+    elif not combo.model().item(i).isEnabled():
+        notes.append(f"{label} '{name}': shape mismatch.")
+    else:
+        combo.setCurrentIndex(i)
+
+
+def input_layer(viewer, combo, kind):
+    """The layer picked in `combo`, if it is a `kind` layer, else None."""
+    name = combo.currentText()
+    layer = viewer.layers[name] if name and name in viewer.layers else None
+    return layer if isinstance(layer, kind) else None
+
+
+def check_input_shapes(viewer, image_combo, inputs, note):
+    """Grey out the layers of each (label, combo) in `inputs` whose shape is not the image's;
+    a picked layer that gets greyed is dropped, with a line in `note` (a StatusLine)."""
+    image = input_layer(viewer, image_combo, Image)
+    dropped = [label for label, combo in inputs if grey_out_mismatches(combo, viewer, image)]
+    if dropped:
+        note.set(f"{' and '.join(dropped)} cleared: shape mismatch.", "warn")
+    else:
+        warn_placement(viewer, image_combo, inputs, note)
+
+
+def warn_placement(viewer, image_combo, inputs, note):
+    """A line in `note` if a picked layer has the image's shape but another scale or translate."""
+    image = input_layer(viewer, image_combo, Image)
+    for label, combo in inputs:
+        layer = input_layer(viewer, combo, Labels)
+        if image is not None and layer is not None and placement_differs(layer, image):
+            note.set(f"{label}: scale/translate differs from the image.", "warn")
+            return
 
 
 def set_min_size_policy_recursive(widget, min_width=40, max_width=300):
@@ -516,12 +558,17 @@ class SeedGenerationWidget(QWidget):
         finally:
             self._refreshing = False
         self._on_boundary_changed(self.boundary_combo.currentText())
+        check_input_shapes(self.viewer, self.image_combo, self._shape_inputs(), self.boundary_error)
 
     def _on_boundary_changed(self, text):
         if getattr(self, "_refreshing", False):              # combo refilled: same selection
             return
         if text != getattr(self, "_bad_boundary", None):    # another mask: its red line goes
             self.boundary_error.clear()
+            warn_placement(self.viewer, self.image_combo, self._shape_inputs(), self.boundary_error)
+
+    def _shape_inputs(self):
+        return (("Boundary", self.boundary_combo),)
 
     def _on_layer_renamed(self, layer, old):
         """Rename in place: the selection (and the threshold table) stay as they are."""
@@ -579,6 +626,8 @@ class SeedGenerationWidget(QWidget):
                 self.current_image = layer.data
                 self.threshold_widget.set_image(layer)
                 self.roi_select.refresh()
+            if not getattr(self, "_refreshing", False):   # a layer event: _on_layers_changed checks after it
+                check_input_shapes(self.viewer, self.image_combo, self._shape_inputs(), self.boundary_error)
        
 
     
@@ -882,10 +931,7 @@ class SeedGenerationWidget(QWidget):
                         notes.append(f"Input image '{input_image_name}' not found in current layers.")
                 if 'boundary_path' in params:
                     boundary_name = layer_name(self.viewer, params['boundary_path'])
-                    if boundary_name in [self.boundary_combo.itemText(i) for i in range(self.boundary_combo.count())]:
-                        self.boundary_combo.setCurrentText(boundary_name)
-                    else:
-                        notes.append(f"Boundary image '{boundary_name}' not found in current layers.")
+                    pick_layer(self.boundary_combo, boundary_name, "Boundary image", notes)
                 
                 
                 # Main parameters

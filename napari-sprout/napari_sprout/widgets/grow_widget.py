@@ -22,7 +22,8 @@ from ..utils.roi_layers import is_roi_layer
 from ..utils.roi_widget import RoiSelect, range_text
 from ..utils.status import RUN_BUTTON, STOP_BUTTON, StatusLine, follow_theme, style
 from ..utils import jobs
-from .seed_widget import combo_items, input_combo, put_in_tab_order, rename_in_combos, seed_runs
+from .seed_widget import (check_input_shapes, combo_items, input_combo, pick_layer, put_in_tab_order,
+                          rename_in_combos, seed_runs, warn_placement)
 
 import yaml
 import sys
@@ -298,6 +299,7 @@ class SeedGrowthWidget(QWidget):
         # a finished Seeds run: its last seeds layer is picked (the user can pick another)
         seed_runs(self.viewer).finished.connect(self._on_seeds_run)
         self.seeds_combo.activated.connect(self._on_seeds_picked)
+        self.seeds_combo.currentTextChanged.connect(self._on_seeds_changed)
         self._seeds_note = None
         # Tab reaches Import / Export YAML where they are shown: before the parameters
         put_in_tab_order(self.main_param_widget.thread_spin, self.import_btn, self.export_btn)
@@ -334,12 +336,23 @@ class SeedGrowthWidget(QWidget):
         finally:
             self._refreshing = False
         self._on_boundary_changed(self.boundary_combo.currentText())
+        check_input_shapes(self.viewer, self.image_combo, self._shape_inputs(), self.boundary_error)
 
     def _on_boundary_changed(self, text):
         if getattr(self, "_refreshing", False):              # combo refilled: same selection
             return
         if text != getattr(self, "_bad_boundary", None):    # another mask: its red line goes
             self.boundary_error.clear()
+            warn_placement(self.viewer, self.image_combo, self._shape_inputs(), self.boundary_error)
+
+    def _on_seeds_changed(self, *_):
+        if getattr(self, "_refreshing", False) or self.boundary_error.level == "error":
+            return
+        self.boundary_error.clear()
+        warn_placement(self.viewer, self.image_combo, self._shape_inputs(), self.boundary_error)
+
+    def _shape_inputs(self):
+        return (("Seeds", self.seeds_combo), ("Boundary", self.boundary_combo))
 
     def _on_seeds_run(self, name):
         """A Seeds run finished: pick the last seeds layer it added."""
@@ -385,6 +398,8 @@ class SeedGrowthWidget(QWidget):
                 self.current_image = layer.data
             self.threshold_widget.set_image(layer)
             self.roi_select.refresh()
+            if not getattr(self, "_refreshing", False):   # a layer event: _on_layers_changed checks after it
+                check_input_shapes(self.viewer, self.image_combo, self._shape_inputs(), self.boundary_error)
             
     def _seed_roi(self):
         """(name, recorded metadata, ROI layer or None) if the picked seeds were made in an ROI."""
@@ -644,18 +659,12 @@ class SeedGrowthWidget(QWidget):
                 # Seeds layer
                 if 'seg_path' in params:
                     seeds_name = layer_name(self.viewer, params['seg_path'])
-                    if seeds_name in [self.seeds_combo.itemText(i) for i in range(self.seeds_combo.count())]:
-                        self.seeds_combo.setCurrentText(seeds_name)
-                    else:
-                        notes.append(f"Seeds layer '{seeds_name}' not found in current layers.")
+                    pick_layer(self.seeds_combo, seeds_name, "Seeds layer", notes)
                 
                 # Boundary layer
                 if 'boundary_path' in params and params['boundary_path'] is not None:
                     boundary_name = layer_name(self.viewer, params['boundary_path'])
-                    if boundary_name in [self.boundary_combo.itemText(i) for i in range(self.boundary_combo.count())]:
-                        self.boundary_combo.setCurrentText(boundary_name)
-                    else:
-                        notes.append(f"Boundary layer '{boundary_name}' not found in current layers.")
+                    pick_layer(self.boundary_combo, boundary_name, "Boundary layer", notes)
                 
                 # Main parameters
                 main_keys = ["thresholds", "upper_thresholds", "dilation_steps", 

@@ -178,6 +178,16 @@ def detect_direction_from_files(paths):
     return "l2s"
 
 
+def _boundary_mask(img, boundary):
+    """The boundary as a bool mask of the image's shape (0/1 labels would index, not mask)."""
+    if boundary is None:
+        return None
+    boundary = np.asarray(boundary)
+    if boundary.shape != np.shape(img):
+        raise ValueError(f"Image and boundary must have the same shape, got {np.shape(img)} and {boundary.shape}.")
+    return config_core.check_and_cast_boundary(boundary)
+
+
 def seed_sweep_threshold(
     img,
     output_folder,
@@ -201,6 +211,7 @@ def seed_sweep_threshold(
     Direction is auto-detected from threshold ordering.
     cancel: checked before every step, raises Cancelled. step: called after every step.
     """
+    boundary = _boundary_mask(img, boundary)
     sweep_direction = _detect_threshold_direction(thresholds, upper_thresholds)
     reverse = (sweep_direction == "s2l")
     thresholds, upper_thresholds = config_core.check_and_assign_thresholds(
@@ -279,6 +290,7 @@ def seed_sweep_erosion(
     natural file order is loose-to-strict.
     cancel: checked before every step, raises Cancelled. step: called after every step.
     """
+    boundary = _boundary_mask(img, boundary)
     threshold, upper_threshold = config_core.check_and_assign_threshold(threshold, upper_threshold)
     footprint_list = config_core.check_and_assign_footprint(footprints, erosion_steps) if erosion_steps > 0 else []
     n_steps = erosion_steps + 1  # step 0 (no erosion) + steps 1..erosion_steps

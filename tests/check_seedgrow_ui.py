@@ -256,7 +256,7 @@ sw.output_folder_line.setText(str(TMP / "seeds"))
 print("\n== the Input combos follow napari (add / remove / rename)")
 main.tabs.setCurrentWidget(sw)
 viewer.add_image(dog[:20], name="img_b")
-viewer.add_labels(dseed[:20], name="lab_b")
+viewer.add_labels(dseed, name="lab_b")          # the image's shape: other shapes are greyed out
 pump()
 ok("img_b" in items(sw.image_combo) and "img_b" in items(gw.image_combo) and "lab_b" in items(sw.boundary_combo)
    and "lab_b" in items(gw.seeds_combo) and "lab_b" in items(gw.boundary_combo), "added layers appear")

@@ -297,6 +297,7 @@ def dilation_binary_img_on_sub(input, margin, kernal_size, is_round=True):
 
     kernal_size is a radius: ball/disk(kernal_size) if is_round, else a cube/square
     with edge 2*kernal_size + 1.
+    Writes the result into input and returns it; pass a copy to keep the input.
     """
     if margin <=kernal_size:
         margin = kernal_size + 1
@@ -342,6 +343,7 @@ def erosion_binary_img_on_sub(input, kernal_size = 1, footprint='ball'):
     default kernal_size=1, one call erodes by one voxel, using a 3x3x3 cross
     ('ball', 6-neighbourhood) or a full 3x3x3 cube ('cube', 26-neighbourhood).
     The other footprints ('ball_XY', 'X', ...) are fixed one-voxel footprints.
+    Writes the result into input and returns it; pass a copy to keep the input.
     """
     if footprint == 'ball' or footprint == 'cube':
         assert type(kernal_size) is int
@@ -410,7 +412,10 @@ def erosion_binary_img_on_sub(input, kernal_size = 1, footprint='ball'):
 
 
 def closing_binary_img_on_sub(input, margin, kernal_size, is_round=True):
-    """Binary closing on the bounding box; kernal_size is a radius (see cube_fp)."""
+    """Binary closing on the bounding box; kernal_size is a radius (see cube_fp).
+
+    Writes the result into input and returns it; pass a copy to keep the input.
+    """
     if margin <=kernal_size:
         margin = kernal_size + 1
         
