@@ -56,6 +56,7 @@ from sprout_core.sprout_core import label_dtype
 from ..utils import jobs
 from ..utils.fit_table import FitTable
 from ..utils.layer_files import same_path, source_path
+from ..utils.layer_shapes import find_layer_item, grey_out_mismatches, item_layer, layer_shape, placement_differs
 from ..utils.status import RUN_BUTTON, STOP_BUTTON, StatusLine, follow_theme, style, tab_hidden
 from ..utils.roi_layers import get_roi_hub
 from ..utils.roi_widget import RoiSelect
@@ -266,6 +267,8 @@ class PromptTab(QWidget):
             c.setMinimumContentsLength(12)
         f1.addRow("Image", self.image_combo)
         f1.addRow("Seeds", self.seeds_combo)
+        self.input_note = StatusLine(hide_empty=True)
+        f1.addRow(self.input_note)
         self.roi_select = RoiSelect(self.viewer, self._shape, "Prompt")
         f1.addRow("ROI", self.roi_select)
         layout.addWidget(g1)
@@ -597,18 +600,18 @@ class PromptTab(QWidget):
     def _on_layer_renamed(self, layer, old):
         """Rename in place: the selections (and the class table) stay."""
         for combo in (self.image_combo, self.seeds_combo, self.init_combo):
-            i = combo.findData(old) if combo is self.init_combo else combo.findText(old)
-            if i >= 0:
+            i = find_layer_item(combo, old)
+            if i >= 0 and combo.itemData(i) != (None if combo is self.init_combo else "None"):
                 combo.blockSignals(True)
-                combo.setItemText(i, layer.name)
-                if combo is self.init_combo:
+                combo.setItemText(i, combo.itemText(i).replace(old, layer.name, 1))
+                if isinstance(combo.itemData(i), str):
                     combo.setItemData(i, layer.name)
                 combo.blockSignals(False)
 
     def _combos_in_sync(self):
         images = [l.name for l in self.viewer.layers if isinstance(l, Image)]
         labels = [l.name for l in self.viewer.layers if isinstance(l, Labels)]
-        texts = [[c.itemText(i) for i in range(c.count())]
+        texts = [[item_layer(c, i) for i in range(c.count())]
                  for c in (self.image_combo, self.seeds_combo, self.init_combo)]
         return texts == [images, labels, ["None"] + labels]
 
@@ -789,8 +792,11 @@ class PromptTab(QWidget):
         images = [l.name for l in self.viewer.layers if isinstance(l, Image)]
         derived = ("_nni", "_scribbles", "_scribbles_neg", "_prompts")
         labels = [l.name for l in self.viewer.layers if isinstance(l, Labels)]
+        img_next = img_cur if img_cur in images else (images[0] if images else "")
+        img_shape = layer_shape(self.viewer.layers[img_next]) if img_next else None
         prefer = [n for n in labels if not any(n.endswith(s) or n.endswith(s + "_roi") for s in derived)
-                  and META_KEY not in getattr(self.viewer.layers[n], "metadata", {})]
+                  and META_KEY not in getattr(self.viewer.layers[n], "metadata", {})
+                  and img_shape in (None, layer_shape(self.viewer.layers[n]))]
         for combo, names, cur, pref in ((self.image_combo, images, img_cur, images),
                                         (self.seeds_combo, labels, seeds_cur, prefer)):
             combo.blockSignals(True)
@@ -811,8 +817,29 @@ class PromptTab(QWidget):
         self.init_combo.blockSignals(False)
         self._on_inputs_changed()
 
+    def _check_input_shapes(self, img):
+        """Grey out the seeds and initial masks whose shape is not the image's; say why a picked
+        one was dropped, or that a picked one is placed differently (scale / translate)."""
+        dropped = []
+        for label, combo in (("Seeds", self.seeds_combo), ("Initial mask", self.init_combo)):
+            blocked = combo.blockSignals(True)          # the caller reads the combos after this
+            try:
+                if grey_out_mismatches(combo, self.viewer, img):
+                    dropped.append(label)
+            finally:
+                combo.blockSignals(blocked)
+        note = f"{' and '.join(dropped)} cleared: shape mismatch." if dropped else ""
+        if not note and img is not None:
+            for label, lay in (("Seeds", self._layer(self.seeds_combo.currentText(), Labels)),
+                               ("Initial mask", self.init_layer)):
+                if lay is not None and placement_differs(lay, img):
+                    note = f"{label}: scale/translate differs from the image."
+                    break
+        self.input_note.set(note, "warn")
+
     def _on_inputs_changed(self):
         img = self._layer(self.image_combo.currentText(), Image)
+        self._check_input_shapes(img)
         seeds = self._layer(self.seeds_combo.currentText(), Labels)
         if img is self._img_layer and seeds is self._seeds_layer:
             self._connect_points_layer()
@@ -822,10 +849,6 @@ class PromptTab(QWidget):
         self._class_status = {}
         self._current = None
         self._out_auto = True
-        if seeds is not None and img is not None and np.shape(seeds.data) != np.shape(img.data):
-            self.classes_label.setText(f"Seeds {np.shape(seeds.data)} and image {np.shape(img.data)} "
-                                       f"differ in shape")
-            self._seeds_layer = None
         self._connect_points_layer()
         self._update_output_name()
         self.roi_select.refresh()        # shows an ROI / image shape mismatch
