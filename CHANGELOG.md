@@ -10,6 +10,7 @@
 - napari Sweep with a boundary (no ROI) gave wrong seeds in 1.1.0; it now gives the YAML result.
 - napari Edit > Merge: ids above 255 no longer wrap in a uint8 layer.
 - Sweep loose to strict: a seed whose region is left out of a step (as by `segments`) and comes back later splits again; its later splits were dropped.
+- Adaptive seed: a region splits only into two or more parts that count (at least `min_size` voxels and more than `min_split_ratio` of it); otherwise it keeps its shape. Specks no longer shrink a seed or make a thin part disappear. With the defaults (`min_size` 1, `min_split_ratio` 0) the results do not change. `adaptive_seed_steps.csv` has no `shrunk` and `dropped` columns (now always 0).
 
 ### Changed
 - napari: layers of another shape are greyed out, "(shape mismatch)", in Seeds, Grow, Prompt (AI) and Edit > Merge, and Import YAML does not pick them.
