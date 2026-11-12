@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Results that change
+- Sweep loose to strict: a seed whose region is left out of a step (as by `segments`) and comes back later splits again; its later splits were dropped.
+
 ## 1.1.0 (2026-11-10)
 
 ### New

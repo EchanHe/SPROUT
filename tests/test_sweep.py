@@ -304,6 +304,21 @@ def test_a_seed_is_only_cleared_where_it_still_is():
     assert seeds.tolist() == [[1, 0, 1], [0, 1, 1], [2, 1, 0]]
 
 
+def test_a_seed_that_comes_back_still_splits():
+    """A region left out of one step (as by segments) and back at a stricter step updates its seed."""
+    steps = [np.zeros((4, 12), np.uint16) for _ in range(3)]
+    steps[0][:, 0:5] = 1
+    steps[0][:, 7:12] = 2
+    steps[1][:, 0:5] = 1                         # the second region is left out
+    steps[2][1:3, 7:9] = 1                       # back, in two parts
+    steps[2][1:3, 10:12] = 2
+    seeds, metadata = combine.adaptive_seed_l2s_from_seeds(steps, input_mode="label")
+    back = seeds[:, 7:12]
+    assert len(set(np.unique(back)) - {0}) == 2 and np.count_nonzero(back) == 8
+    status = {item["seed_id"]: item["status"] for item in metadata}
+    assert status[seeds[1, 7]] == status[seeds[1, 10]] == "active"
+
+
 def test_memory_does_not_grow_with_the_regions():
     shape = (64, 64, 64)
     step = np.zeros(shape, np.uint16)
