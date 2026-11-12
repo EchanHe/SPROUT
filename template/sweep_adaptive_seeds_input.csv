@@ -1,0 +1,2 @@
+img_path,thresholds,segments
+./demo_data/foram_img.tif,"[230, 220, 210, 190, 180, 170, 160, 140]",500

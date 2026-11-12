@@ -1,0 +1,81 @@
+# Path to the trained nnInteractive model folder
+model_path: "./models/nninteractive_model"
+
+# CSV with the columns img_path and seg_path, one row per image
+csv_path: "./template/nninteractive_input.csv"
+
+# Type of prompt to use: "point" or "scribble"
+prompt_type: "point"
+
+# Device to run inference on, for example "cuda:0" or "cpu"
+device: "cuda:0"
+
+# Output folder for prediction results
+output_folder: "./result/batch_nninteractive"
+
+
+#### Optional parameters ####
+## Can be commented out if you want to use the default values
+
+# Path to an initial segmentation mask for iterative refinement
+# init_seg_path: "./demo_data/init_seg.tif"
+
+# Save one binary mask per class
+return_per_class_masks: true
+
+# Save per-class foreground probability maps as float32 TIFF files
+save_prob_maps: false
+
+# nnInteractive AutoZoom: zoom out and refine when the prediction reaches the patch border
+do_autozoom: true
+
+
+## Seed ROI: per class, the seed bbox + a margin
+
+# "off": not used
+# "postmask": predict on the full image, then clear each class's prediction outside its ROI
+#             (removes leaks into other parts, e.g. an antenna prediction that reaches a leg)
+# "crop": nnInteractive only sees the ROI crop (faster, less memory; less accurate with scribbles)
+# A warning is printed when a prediction lies on the ROI edge: the part may extend beyond its seed
+seed_roi: "off"
+
+# Margin added around the seed bbox: one value or [z, y, x]
+seed_roi_margin: 32
+
+# Unit of seed_roi_margin: "voxel", or "percent" of the seed bbox size on each axis
+# (e.g. 20 with "percent" adds 20% of the bbox size on each side, rounded up)
+seed_roi_margin_unit: "voxel"
+
+
+## Point prompt configuration
+
+# Number of positive points per class
+default_n_pos: 1
+
+# Number of negative points per class
+default_n_neg: 0
+
+# Point sampling method: "kmeans", "grid", "center_edge", or "random"
+default_method: "random"
+
+# Sample negative points from background
+negative_from_bg: true
+
+# Sample negative points from other class regions
+negative_from_other_classes: true
+
+# Sample negative points individually for each other class
+negative_per_other_class: false
+
+# Per-class prompt configuration
+# class_config:
+#   1:
+#     n_pos: 3
+#     n_neg: 1
+#     method: "grid"
+
+
+## Scribble prompt configuration
+
+# Use negative scribbles when prompt_type is "scribble"
+use_negative_scribble: false

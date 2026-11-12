@@ -80,3 +80,5 @@ sprout --prompt --nninteractive --batch --config path/to/batch_config.yaml
 ```
 
 The batch config is the config above with `csv_path` in place of `img_path` and `seg_path`. The CSV has the columns `img_path` and `seg_path`, one row per image, and may set other parameters per image (a parameter goes in the CSV or in the YAML, not both). Each image gets a subfolder of `output_folder`, named after the image.
+
+A template: [`../template/batch_nninteractive.yaml`](../template/batch_nninteractive.yaml) with [`../template/nninteractive_input.csv`](../template/nninteractive_input.csv) (or `sprout --template nninteractive --batch`).
