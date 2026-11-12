@@ -9,8 +9,50 @@ from sprout_core.batch_grow import run_batch_grow
 from sprout_core.batch_seeds import run_batch_adaptive_seed, run_batch_seeds, run_batch_sweep_adaptive_seed
 
 import os
+from pathlib import Path
 
 from sprout_core import __version__
+
+HINT = "Templates: sprout --template <step>. Docs: https://github.com/EchanHe/SPROUT"
+
+# step: (command, template, batch template, its CSV)
+TEMPLATES = {
+    "seeds": ("--seeds", "make_seeds.yaml", "batch_seeds.yaml", "seeds_input.csv"),
+    "adaptive_seed": ("--adaptive_seed", "make_adaptive_seed.yaml", "batch_adaptive_seed.yaml", "seeds_input.csv"),
+    "sweep_adaptive": ("--sweep_adaptive", "sweep_adaptive_seed.yaml", "batch_sweep_adaptive_seed.yaml",
+                       "sweep_adaptive_seeds_input.csv"),
+    "grow": ("--grow", "make_grow.yaml", "batch_grow.yaml", "grow_input.csv"),
+    "nninteractive": ("--prompt --nninteractive", "nninteractive_predict.yaml", "batch_nninteractive.yaml",
+                      "nninteractive_input.csv"),
+    "sam": ("--prompt --sam", "sam_predict.yaml", "batch_sam.yaml", "sam_input.csv"),
+}
+
+
+class Parser(argparse.ArgumentParser):
+    def error(self, message):
+        self.exit(2, f"{self.prog}: error: {message}\n{HINT}\n")
+
+
+def template_dir():
+    """The templates: in the package when installed, else template/ of the clone."""
+    here = Path(__file__).resolve().parent
+    return next(d for d in (here / "templates", here.parent / "template") if d.is_dir())
+
+
+def write_template(step, batch):
+    command, single, batch_yaml, csv = TEMPLATES[step]
+    names = [batch_yaml, csv] if batch else [single]
+    here = [name for name in names if Path(name).exists()]
+    if here:
+        print(f"[ERROR] {', '.join(here)} already here, not overwritten.")
+        return 1
+    for name in names:
+        # the batch YAML points to its CSV in template/; here they sit side by side
+        Path(name).write_bytes((template_dir() / name).read_bytes().replace(b'"./template/', b'"./'))
+    print(f"Wrote {', '.join(names)}. Edit the paths, then: sprout {command}{' --batch' if batch else ''} "
+          f"--config {names[0]}")
+    return 0
+
 
 def load_config(path):
     try:
@@ -21,7 +63,7 @@ def load_config(path):
         exit(1)
 
 def main():
-    parser = argparse.ArgumentParser(
+    parser = Parser(
         description="SPROUT CLI: generate seeds with a YAML config",
         usage=
         """
@@ -46,9 +88,11 @@ def main():
         To run in batch mode (pipeline version), add --batch:
             sprout --seeds --batch --config path/to/config.yaml
 
+        To write the YAML template of a step here (add --batch for the batch template):
+            sprout --template seeds
+
         In a clone of the repository, "python sprout.py" works the same as "sprout".
-        For more info, see README.md and ./template examples.
-        """
+        """ + HINT
     )
     
 
@@ -59,7 +103,9 @@ def main():
     group.add_argument('--sweep_adaptive', action='store_true', help="Run fast sweep + adaptive combine (recommended)")
     group.add_argument('--grow', action='store_true', help="Run the grow function")
     group.add_argument('--prompt', action='store_true', help="Run the PROMPT extraction function")
-    
+    group.add_argument('--template', choices=list(TEMPLATES), metavar="STEP",
+                       help=f"Write the YAML template of a step here: {', '.join(TEMPLATES)}")
+
     # a group args only when --prompt is specified
     # sam or nninteractive
     prompt_group = parser.add_mutually_exclusive_group()
@@ -67,14 +113,23 @@ def main():
     prompt_group.add_argument('--nninteractive', '--nn', action='store_true', help="Use nnInteractive for prompt extraction")
     
     parser.add_argument('--batch', action='store_true', help="Run in batch mode using pipeline functions")
-    parser.add_argument('--config', type=str, required=True, help="Path to the YAML config file")
+    parser.add_argument('--config', type=str, help="Path to the YAML config file")
     parser.add_argument('--version', action='version', version=f"%(prog)s {__version__}")
 
     args = parser.parse_args()
 
-    assert args.config.endswith(".yaml"), f"Error: {args.config} does not end with '.yaml'"
-    assert os.path.isfile(args.config), f"Error: File not found - {args.config}"
-    
+    if args.template:
+        exit(write_template(args.template, args.batch))
+    if args.config is None:
+        parser.error("the following arguments are required: --config")
+    step = next((s for s in TEMPLATES if getattr(args, s)), "<step>")
+    if not args.config.endswith(".yaml"):
+        print(f"[ERROR] The config must be a .yaml file: {args.config}")
+        exit(1)
+    if not os.path.isfile(args.config):
+        print(f"[ERROR] Config not found: {args.config}. Get a template: sprout --template {step}")
+        exit(1)
+
     # check sam or interactive only when --prompt is specified
     if not args.prompt:
         if args.sam or args.nninteractive:

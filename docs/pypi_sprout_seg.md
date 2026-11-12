@@ -21,6 +21,7 @@ Extras: `sprout-seg[ai]` (nnInteractive; with an NVIDIA GPU, install PyTorch for
 Every step is a YAML config ([templates](https://github.com/EchanHe/SPROUT/tree/main/template)):
 
 ```bash
+sprout --template seeds          # writes make_seeds.yaml here
 sprout --seeds --config make_seeds.yaml
 sprout --sweep_adaptive --config sweep_adaptive_seed.yaml
 sprout --adaptive_seed --config make_adaptive_seed.yaml
