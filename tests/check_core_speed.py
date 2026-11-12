@@ -26,6 +26,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import types
 from pathlib import Path
 
 import numpy as np
@@ -72,6 +73,8 @@ try:
     base_grow = base_module("sprout_core/make_grow.py", "base_make_grow")
 except subprocess.CalledProcessError:   # bases before 1.1.0 keep it at the root
     base_grow = base_module("make_grow.py", "base_make_grow")
+if not hasattr(cc, "save_config_with_output"):   # 1.1.1 writes used_config.yaml instead
+    base_grow.config_core = types.SimpleNamespace(**vars(cc), save_config_with_output=base_cc.save_config_with_output)
 
 
 def best(fn, n=3):
