@@ -57,8 +57,7 @@ By default all steps stay in memory: about 2 bytes per voxel per step, plus 7 by
 | `direction` | `strict_to_loose` | `strict_to_loose`, `loose_to_strict`, or `both` to write both results. |
 | `min_size` | `1` | Regions smaller than this are ignored. This has a large effect on the number of seeds. |
 | `top_n` | none | Keep only the N largest seeds of the result. |
-| `connectivity` | `1` | Connectivity of connected components. |
-| `input_mode` | `auto` | `label`: each id of a step is one region. `binary`: find the connected components of a step. |
+| `input_mode` | `auto` | `label`: each id of a step is one region. `binary`: find the connected components of a step (touching at a corner counts, as everywhere in SPROUT). |
 | `upper_thresholds` | none | One value per threshold, for a range: `threshold <= image <= upper`. An erosion sweep takes one value. |
 | `boundary_path` | none | A boundary mask: its voxels are excluded. |
 | `footprints` | `ball` | Erosion footprint, see [seed generation](./config_seed.md). |

@@ -10,7 +10,7 @@ output using the fast combine logic from adaptive_seed_combine.py.
 YAML parameter naming:
   - Sweep params: img_path, thresholds, erosion_steps, segments, num_threads,
     upper_thresholds, boundary_path, footprints, base_name, workspace
-  - Shared combine params: direction, min_size, connectivity, input_mode,
+  - Shared combine params: direction, min_size, input_mode,
     top_n, save_every_iter, verbose
   - s2l-specific: s2l_min_current_coverage, s2l_max_emerge_coverage
   - l2s-specific: l2s_min_new_coverage, l2s_max_new_coverage,
@@ -68,7 +68,6 @@ def _map_yaml_to_combine_kwargs(optional, direction):
     """Translate prefixed YAML params to internal function parameter names."""
     shared = {
         "min_area": optional.get("min_size", 1),
-        "connectivity": optional.get("connectivity", 1),
         "input_mode": optional.get("input_mode", "auto"),
         "top_n": optional.get("top_n", None),
         "save_intermediate": optional.get("save_every_iter", False),

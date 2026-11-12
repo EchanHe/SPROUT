@@ -10,6 +10,8 @@
 - napari Sweep with a boundary (no ROI) gave wrong seeds in 1.1.0; it now gives the YAML result.
 - napari Edit > Merge: ids above 255 no longer wrap in a uint8 layer.
 - Sweep loose to strict: a seed whose region is left out of a step (as by `segments`) and comes back later splits again; its later splits were dropped.
+- Sweep (YAML): regions that touch only at a corner are one region, as in napari and everywhere in SPROUT (a YAML without `connectivity` split them when each step had one region). The `connectivity` option is removed.
+- Python: `make_adaptive_seed_ero` and `make_adaptive_seed_thre` have the YAML defaults: `min_size` 1, `min_split_ratio` 0, `save_every_iter` True (were 5, 0.01 and False). YAML and napari runs do not change.
 
 ### Changed
 - napari: layers of another shape are greyed out, "(shape mismatch)", in Seeds, Grow, Prompt (AI) and Edit > Merge, and Import YAML does not pick them.

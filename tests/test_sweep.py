@@ -84,6 +84,32 @@ def test_an_old_key_name_gives_the_new_one(tmp_path, old, new):
         run(values)
 
 
+def test_connectivity_is_no_longer_a_key(tmp_path):
+    with pytest.raises(ValueError, match="'connectivity' is no longer used"):
+        run(config(tmp_path, connectivity=1))
+
+
+def corner_image(ndim):
+    """Two blocks that touch only at their corners: one region, as everywhere in SPROUT."""
+    img = np.zeros((6, 12, 12), np.uint8)
+    img[1:5, 2:6, 2:6] = 200
+    img[1:5, 6:10, 6:10] = 200
+    return img if ndim == 3 else img[2]
+
+
+@pytest.mark.parametrize("ndim", [3, 2])
+def test_blocks_touching_at_a_corner_are_one_seed_from_yaml_and_napari(tmp_path, ndim):
+    tifffile.imwrite(tmp_path / "img.tif", corner_image(ndim))
+    values = config(tmp_path, thresholds=[200, 150], segments=1)       # one region per step: id 1 only
+    for key in ("input_mode", "connectivity"):                         # not in the YAML: the defaults
+        values.pop(key, None)
+    from_yaml = result(run(values))
+    from_napari = next(iter(sweep.make_sweep_adaptive_seed(
+        img=corner_image(ndim), thresholds=[200, 150], erosion_steps=0, segments=1,
+        output_folder=str(tmp_path / "napari")).values()))
+    assert len(np.unique(from_yaml)) == len(np.unique(from_napari)) == 2       # background and one seed
+
+
 def boundary_file(folder):
     boundary = np.zeros(image().shape, np.uint8)
     boundary[:, 14, :] = 1
