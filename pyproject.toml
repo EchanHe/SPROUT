@@ -45,8 +45,13 @@ Documentation = "https://github.com/EchanHe/SPROUT#readme"
 Issues = "https://github.com/EchanHe/SPROUT/issues"
 Changelog = "https://github.com/EchanHe/SPROUT/blob/main/CHANGELOG.md"
 
-[tool.setuptools.packages.find]
-include = ["sprout_core*"]
+[tool.setuptools]
+# template/ stays where the docs and the paper point; installed, it is sprout_core/templates (sprout --template)
+packages = ["sprout_core", "sprout_core.templates"]
+package-dir = { "sprout_core.templates" = "template" }
+
+[tool.setuptools.package-data]
+"sprout_core.templates" = ["*.yaml", "*.csv"]
 
 [tool.setuptools.dynamic]
 version = { attr = "sprout_core.__version__" }

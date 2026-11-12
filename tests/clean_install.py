@@ -58,6 +58,7 @@ def check_wheels(dist):
     missing = [m for m in CORE_MODULES if f"sprout_core/{m}.py" not in names]
     ok(not missing, f"{core.name} holds the pipelines, missing {missing}")
     ok("sprout = sprout_core.cli:main" in entry, "the sprout command is declared")
+    ok("sprout_core/templates/make_seeds.yaml" in names, "the YAML templates are in the core wheel")
     with zipfile.ZipFile(plugin) as z:
         names = z.namelist()
         entry = next(z.read(n).decode() for n in names if n.endswith("entry_points.txt"))
@@ -91,6 +92,8 @@ def main(dist):
     work.mkdir()
     r = run([str(sprout), "--version"], work)
     ok(r.returncode == 0 and r.stdout.startswith("sprout"), f"sprout --version: {r.stdout.strip()!r}")
+    r = run([str(sprout), "--template", "seeds"], work)
+    ok(r.returncode == 0 and (work / "make_seeds.yaml").is_file(), f"sprout --template seeds: {r.stdout.strip()!r}")
 
     img = np.zeros((12, 12, 24), np.uint8)
     img[3:9, 3:9, 2:10] = 200

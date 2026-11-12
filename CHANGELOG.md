@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### New
+- `sprout --template <step>` (add `--batch`) writes the YAML template of a step into the current folder: no clone needed.
+- Template for batch nnInteractive (`template/batch_nninteractive.yaml`).
+
 ### Results that change
 - napari Sweep with a boundary (no ROI) gave wrong seeds in 1.1.0; it now gives the YAML result.
 - napari Edit > Merge: ids above 255 no longer wrap in a uint8 layer.
@@ -10,6 +14,11 @@
 ### Changed
 - napari: layers of another shape are greyed out, "(shape mismatch)", in Seeds, Grow, Prompt (AI) and Edit > Merge, and Import YAML does not pick them.
 - napari Edit > Merge: rows Into / Add / Added IDs (Keep, Shift up).
+- `sprout`: a missing config or option gives a short message and where to find templates and docs, not a traceback.
+- Templates: batch adaptive seed has the `min_size` and `min_split_ratio` of the single one (1 and 0, were 5 and 0.01); nnInteractive `default_method` is `random`, as in the docs and napari (was `grid`).
+
+### Fixed
+- The batch sweep template's CSV (`sweep_adaptive_seeds_input.csv`) was missing.
 
 ## 1.1.0 (2026-11-10)
 

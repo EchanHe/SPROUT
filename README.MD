@@ -113,7 +113,7 @@ The same words are used in the code, the YAML configs, the napari plugin and the
 
 ### Command line
 
-Each step is one command with a YAML config. Templates are in [`template/`](./template/).
+Each step is one command with a YAML config. Templates are in [`template/`](./template/); `sprout --template seeds` writes one into the current folder.
 
 | Step | Command | Parameters |
 |---|---|---|
@@ -124,7 +124,7 @@ Each step is one command with a YAML config. Templates are in [`template/`](./te
 | nnInteractive | `sprout --prompt --nninteractive --config nninteractive_predict.yaml` | [config_nninteractive.md](./docs/config_nninteractive.md) |
 | SAM | `sprout --prompt --sam --config sam_predict.yaml` | [config_sam.md](./docs/config_sam.md) |
 
-- Many images: add `--batch` and use a batch config with a CSV of images (`template/batch_*.yaml`; [video](https://www.youtube.com/watch?v=5o-PJ34Yirc)).
+- Many images: add `--batch` and use a batch config with a CSV of images (`template/batch_*.yaml`, or `sprout --template seeds --batch`; [video](https://www.youtube.com/watch?v=5o-PJ34Yirc)).
 - Threads: `num_threads` in the config.
 - In a clone of this repository, without installing, `python sprout.py` does the same as `sprout`.
 - `sprout --help` lists all options.

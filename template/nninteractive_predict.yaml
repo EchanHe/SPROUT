@@ -59,7 +59,7 @@ default_n_pos: 1
 default_n_neg: 0
 
 # Point sampling method: "kmeans", "grid", "center_edge", or "random"
-default_method: "grid"
+default_method: "random"
 
 # Sample negative points from background
 negative_from_bg: true

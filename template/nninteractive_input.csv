@@ -1,0 +1,2 @@
+img_path,seg_path
+./demo_data/dog_img.tif,./demo_data/dog_seed.tif
