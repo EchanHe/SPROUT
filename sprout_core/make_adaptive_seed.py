@@ -81,6 +81,7 @@ def detect_inter(ccomp_combine_seed, ero_seed, inter_log, background=0):
     inter_log["inter_count"] = inter_ids.size
     inter_log["inter_ids"] = inter_ids.astype(float)
     inter_log["inter_props"] = np.array([round(c / region_size, 6) * 100 for c in inter_counts[inter_ids]])
+    inter_log["inter_sizes"] = inter_counts[inter_ids]
 
 def save_seed(seed, output_folder, output_name, return_for_napari=False, seeds_dict=None):
     """
@@ -111,25 +112,24 @@ class _History:
 
     def __init__(self, ids, setting):
         self.seeds = {int(i): dict(first_step=0, **setting, began="first step") for i in ids}
-        self.steps = [dict(step=0, **setting, regions=len(self.seeds), split=0, shrunk=0, dropped=0,
+        self.steps = [dict(step=0, **setting, regions=len(self.seeds), split=0,
                            new_seeds=len(self.seeds), pruned=0, seeds_after=len(self.seeds), note="")]
         self.setting = setting
 
     def start_step(self, step, setting, regions):
         self._close()
         self.setting = setting
-        self.steps.append(dict(step=step, **setting, regions=int(regions), split=0, shrunk=0, dropped=0,
+        self.steps.append(dict(step=step, **setting, regions=int(regions), split=0,
                                new_seeds=0, pruned=0, seeds_after=None, note=""))
 
     def replaced(self, old_id, new_ids):
-        """A region of the running seed was replaced by its parts in this step (none: dropped)."""
+        """A region of the running seed was split into these parts (two or more) in this step."""
         row, n = self.steps[-1], len(new_ids)
         self.seeds.pop(int(old_id), None)
-        row["split" if n > 1 else "shrunk" if n == 1 else "dropped"] += 1
+        row["split"] += 1
         row["new_seeds"] += n
         for k, new_id in enumerate(new_ids, start=1):
-            self.seeds[int(new_id)] = dict(first_step=row["step"], **self.setting,
-                                           began=f"separated ({k} of {n})" if n > 1 else "shrank (rest disappeared)")
+            self.seeds[int(new_id)] = dict(first_step=row["step"], **self.setting, began=f"separated ({k} of {n})")
 
     def renumbered(self, class_mapping):
         """The running seed was pruned and renumbered (prune_every_iter)."""
@@ -153,7 +153,7 @@ class _History:
         columns = ["id", "area", "first_step", *self.setting, "began"]
         pd.DataFrame(sorted(rows, key=lambda row: row["id"]), columns=columns).to_csv(
             os.path.join(output_folder, "adaptive_seed_regions.csv"), index=False)
-        pd.DataFrame(self.steps, columns=["step", *self.setting, "regions", "split", "shrunk", "dropped", "new_seeds",
+        pd.DataFrame(self.steps, columns=["step", *self.setting, "regions", "split", "new_seeds",
                                           "pruned", "seeds_after", "note"]).to_csv(
             os.path.join(output_folder, "adaptive_seed_steps.csv"), index=False)
 
@@ -410,8 +410,10 @@ def make_adaptive_seed_ero(
             detect_inter(ccomp_combine_seed, seed, inter_log, background)
         
         
-            ## if there are any intersection between seed and the init seed
-            if inter_log["inter_count"]>1:
+            # The parts that count: at least min_size voxels and more than min_split_ratio of the region.
+            # A region splits into two or more of them; else it stays as it is (specks do not split it).
+            counted = (inter_log["inter_sizes"] >= (min_size or 0)) & (inter_log["inter_props"] > min_split_ratio)
+            if np.count_nonzero(counted) > 1:
                 temp_inter_count = inter_log["inter_count"]
                 temp_inter_ids = inter_log["inter_ids"]
                 temp_inter_props = inter_log["inter_props"]
@@ -433,10 +435,8 @@ def make_adaptive_seed_ero(
                 # print(f"\tSplit prop is {sum_inter_props}")
                 if split_condition:
                     combine_seed[combine_seed == combine_id] =0
-                    filtered_inter_ids = temp_inter_ids[temp_inter_props>min_split_ratio]
-                    
-                    if len(filtered_inter_ids)>0:
-                        has_split = True
+                    filtered_inter_ids = temp_inter_ids[counted]
+                    has_split = True
                     
                     new_ids = []
                     for inter_id in filtered_inter_ids:
@@ -833,8 +833,10 @@ def make_adaptive_seed_thre(
             detect_inter(ccomp_combine_seed, seed, inter_log, background)
         
         
-            ## if there are any intersection between seed and the init seed
-            if inter_log["inter_count"]>1:
+            # The parts that count: at least min_size voxels and more than min_split_ratio of the region.
+            # A region splits into two or more of them; else it stays as it is (specks do not split it).
+            counted = (inter_log["inter_sizes"] >= (min_size or 0)) & (inter_log["inter_props"] > min_split_ratio)
+            if np.count_nonzero(counted) > 1:
                 temp_inter_count = inter_log["inter_count"]
                 temp_inter_ids = inter_log["inter_ids"]
                 temp_inter_props = inter_log["inter_props"]
@@ -857,11 +859,8 @@ def make_adaptive_seed_thre(
 
                 if split_condition:
                     combine_seed[combine_seed == combine_id] =0
-                    filtered_inter_ids = temp_inter_ids[temp_inter_props>min_split_ratio]
-                    
-                
-                    if len(filtered_inter_ids)>0:
-                        has_split = True
+                    filtered_inter_ids = temp_inter_ids[counted]
+                    has_split = True
                     
                     # inter_coords_map = {
                     #     inter_id: np.where(seed == inter_id)

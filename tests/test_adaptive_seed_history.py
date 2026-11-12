@@ -70,21 +70,39 @@ def test_a_split_by_erosion(tmp_path):
     assert steps["erosion"].tolist() == [0, 1, 2] and steps["split"].tolist() == [0, 1, 0]
 
 
-def test_a_part_too_small_to_count_leaves_a_shrunk_seed(tmp_path):
+def core_and_speck():
+    """A block at 100 (1000 voxels) holding a core at 200 (216 voxels) and a speck at 200 (2 voxels)."""
     img = np.zeros((12, 12, 12), np.uint8)
     img[1:11, 1:11, 1:11] = 100
     img[3:9, 3:9, 3:9] = 200                     # 21.6 % of the block
     img[10, 10, 3:5] = 200                       # 0.2 %
-    regions, steps, final = run_thre(tmp_path, img, [100, 150], min_split_ratio=0.05)
+    return img
+
+
+# A region splits only into parts that count (min_size and min_split_ratio); else it stays as it is.
+@pytest.mark.parametrize("small", [dict(min_split_ratio=0.05), dict(min_size=5)], ids=["by ratio", "by size"])
+def test_a_core_and_a_speck_are_no_split(tmp_path, small):
+    regions, steps, final = run_thre(tmp_path, core_and_speck(), [100, 150], **small)
     assert rows_are_the_image(regions, final)
-    assert regions["began"].tolist() == ["shrank (rest disappeared)"]
-    assert steps["shrunk"].tolist() == [0, 1]
+    assert regions["began"].tolist() == ["first step"] and regions["area"].tolist() == [1000]   # the loose region
+    assert steps["split"].tolist() == [0, 0]
 
 
-def test_parts_all_too_small_drop_the_region(tmp_path):
-    regions, steps, final = run_thre(tmp_path, block(), [100, 150], min_split_ratio=0.5)
-    assert not final.any() and regions.empty
-    assert steps["dropped"].tolist() == [0, 1] and steps["seeds_after"].tolist() == [1, 0]
+def test_parts_all_too_small_keep_the_region(tmp_path):
+    regions, steps, final = run_thre(tmp_path, block(), [100, 150], min_split_ratio=0.5)      # cores: 8.3 % each
+    assert rows_are_the_image(regions, final) and regions["area"].tolist() == [10 * 10 * 26]
+    assert steps["seeds_after"].tolist() == [1, 1]
+
+
+def test_a_thin_part_is_not_lost_by_erosion(tmp_path):
+    """Two 3x3x3 knobs on a thin bar: one erosion leaves two single voxels, below min_size."""
+    img = np.zeros((7, 7, 15), np.uint8)
+    img[2:5, 2:5, 2:5] = img[2:5, 2:5, 10:13] = img[3, 3, 5:10] = 200
+    make_adaptive_seed.make_adaptive_seed_ero(img=img, threshold=100, erosion_steps=1, segments=10, num_threads=1,
+                                              output_folder=str(tmp_path), base_name="t", min_size=5,
+                                              min_split_ratio=0)
+    regions, _, final = read(tmp_path)
+    assert rows_are_the_image(regions, final) and np.array_equal(final > 0, img > 0)
 
 
 def test_an_early_stop_is_noted(tmp_path):
@@ -93,7 +111,8 @@ def test_an_early_stop_is_noted(tmp_path):
 
 
 def test_pruning_keeps_the_rows_on_the_seeds(tmp_path):
-    regions, steps, final = run_thre(tmp_path, block(speck=True), [100, 150, 180], min_size=5, prune_every_iter=True)
+    regions, steps, final = run_thre(tmp_path, block(speck=True), [100, 150, 180], min_size=1, last_segments=2,
+                                     prune_every_iter=True)        # the speck counts as a part, then top 2 are kept
     assert rows_are_the_image(regions, final)
     assert steps["pruned"].sum() >= 1                   # the speck
     assert set(regions["began"]) == {"separated (1 of 3)", "separated (2 of 3)"}      # the speck was 3 of 3
