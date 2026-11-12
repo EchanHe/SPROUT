@@ -55,7 +55,7 @@ def run_batch_sam(file_path):
         
             df.loc[index,'error'] = str(e)
     
-    df.to_csv(csv_path + "_running_results.csv", index = False)
+    df.to_csv(config_core.batch_results_path(yaml_config['output_folder'], csv_path), index=False)
 
 if __name__ == "__main__":
     # Get the file path from the first command-line argument or use the default

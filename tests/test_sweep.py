@@ -142,8 +142,9 @@ def test_both_gives_what_each_direction_gives(tmp_path):
 
 def test_the_output_folder(tmp_path):
     folder = run(config(tmp_path))
-    names = {path.name for path in folder.iterdir() if not path.name.startswith("config_")}
-    assert names == {"FINAL_sweep_seed.tif", "sweep_regions.csv", "sweep_steps.csv", "sweep_metadata.json", "steps"}
+    names = {path.name for path in folder.iterdir()}
+    assert names == {"FINAL_sweep_seed.tif", "sweep_regions.csv", "sweep_steps.csv", "sweep_metadata.json", "steps",
+                     "used_config.yaml"}
 
 
 def test_regions_say_what_the_image_holds(tmp_path):
@@ -338,8 +339,9 @@ def test_steps_from_disk_give_what_steps_in_memory_give(tmp_path, direction):
     (tmp_path / "b").mkdir()
     memory = run(config(tmp_path / "a", direction=direction, num_threads=2))
     disk = run(config(tmp_path / "b", direction=direction, num_threads=2, memory_limit_gb=0))
-    names = sorted(p.name for p in memory.iterdir() if not p.name.startswith("config_") and p.is_file())
-    assert names == sorted(p.name for p in disk.iterdir() if not p.name.startswith("config_") and p.is_file())
+    names = sorted(p.name for p in memory.iterdir() if p.is_file())        # used_config.yaml: each run's own
+    assert names == sorted(p.name for p in disk.iterdir() if p.is_file())
+    names.remove("used_config.yaml")
     for name in names:
         assert (memory / name).read_bytes() == (disk / name).read_bytes(), name
 
@@ -552,7 +554,7 @@ def test_a_failed_row_does_not_stop_the_batch(tmp_path):
     batch_seeds.run_batch_sweep_adaptive_seed(path)
     final = tmp_path / "out" / "other" / "FINAL_sweep_seed.tif"
     assert final.is_file()
-    report = pd.read_csv(next((tmp_path / "out").glob("*_running_results_*.csv")))
+    report = pd.read_csv(next((tmp_path / "out").glob("*_results.csv")))
     assert report["error"].notna().tolist() == [True, False]
     assert report["final_output_path"].iloc[1] == str(final)
 

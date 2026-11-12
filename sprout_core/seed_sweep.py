@@ -409,7 +409,8 @@ def run_seed_sweep(config_path):
             verbose=verbose,
         )
 
-    config_core.save_config_with_output({"params": config}, output_folder)
+    config_core.save_used_config(output_folder, config_core.used_config(
+        {**config, **optional}, config_core.input_val_seed_sweep))
     print(f"[seed_sweep] {len(ordered_paths)} steps saved to {output_folder}")
     print(f"[seed_sweep] total time: {time.time() - start:.2f}s")
     return ordered_paths

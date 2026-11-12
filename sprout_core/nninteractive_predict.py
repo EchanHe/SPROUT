@@ -828,13 +828,10 @@ def run_nninteractive_yaml(file_path):
     point_config = parse_point_config(optional_params)
     
     scribble_config = parse_scribble_config(optional_params)
-    # use the output folder to save yaml
     output_folder = config['output_folder']
-    Path(output_folder).mkdir(parents=True, exist_ok=True)
-    # save config and optional to yaml
-    with open(Path(output_folder) / "used_config.yaml", 'w') as f:
-        yaml.dump(config, f)
-        yaml.dump(optional_params, f)
+    config_core.warn_earlier_results(output_folder)
+    config_core.save_used_config(output_folder, config_core.used_config(
+        {**config, **optional_params}, config_core.input_val_nninteractive_run), "--prompt --nninteractive")
 
     
     _ = nninter_main(
