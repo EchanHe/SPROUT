@@ -219,6 +219,7 @@ ok(sw.boundary_combo.currentText() == "cut_plane", "Seeds: boundary still select
 viewer.add_labels(np.zeros(block.shape, np.uint8), name="unrelated")
 pump()
 ok(sw.boundary_combo.currentText() == "cut_plane", "Seeds: boundary still selected after adding another layer")
+gw.image_combo.setCurrentText("block")          # the seeds must have the image's shape
 gw.seeds_combo.setCurrentText("cut_plane")
 gw.boundary_combo.setCurrentText("unrelated")
 viewer.add_labels(np.zeros(block.shape, np.uint8), name="unrelated2")

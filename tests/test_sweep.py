@@ -555,3 +555,51 @@ def test_a_failed_row_does_not_stop_the_batch(tmp_path):
     report = pd.read_csv(next((tmp_path / "out").glob("*_running_results_*.csv")))
     assert report["error"].notna().tolist() == [True, False]
     assert report["final_output_path"].iloc[1] == str(final)
+
+
+@pytest.mark.parametrize("route", ["array", "yaml"])
+def test_a_boundary_of_another_shape_is_refused(tmp_path, route):
+    boundary = np.zeros((20, 40, 41), np.uint8)
+    boundary[:, :, 0] = 1
+    if route == "array":
+        call = lambda: from_array(tmp_path, boundary=boundary)  # noqa: E731
+    else:
+        tifffile.imwrite(tmp_path / "boundary.tif", boundary)
+        call = lambda: run(config(tmp_path, boundary_path=str(tmp_path / "boundary.tif")))  # noqa: E731
+    with pytest.raises(ValueError, match="same shape"):
+        call()
+
+
+def test_an_array_with_a_label_boundary_gives_what_a_yaml_gives(tmp_path):
+    """napari passes the boundary layer as it is (0/1 integers), the YAML route casts it to bool."""
+    boundary = np.zeros((20, 40, 40), np.uint8)
+    boundary[:, 14, :] = 1
+    tifffile.imwrite(tmp_path / "boundary.tif", boundary)
+    seeds = from_array(tmp_path, boundary=boundary)["img_FINAL_sweep_seed"]
+    assert np.array_equal(seeds, result(run(config(tmp_path, boundary_path=str(tmp_path / "boundary.tif")))))
+
+
+@pytest.mark.parametrize("mode", ["threshold", "erosion"])
+def test_the_step_functions_take_a_label_boundary_as_a_mask(tmp_path, mode):
+    """Called directly, as from a script: 0/1 integers give what True/False gives."""
+    boundary = np.zeros((20, 40, 40), np.uint8)
+    boundary[:, 14, :] = 1
+
+    def steps(b, name):
+        if mode == "threshold":
+            paths, _ = seed_sweep.seed_sweep_threshold(image(), str(tmp_path / name), list(THRESHOLDS), segments=10,
+                                                       boundary=b, verbose=False)
+        else:
+            paths, _ = seed_sweep.seed_sweep_erosion(image(), str(tmp_path / name), 100, erosion_steps=2, segments=10,
+                                                     boundary=b, verbose=False)
+        return [tifffile.imread(p) for p in paths]
+
+    as_labels, as_mask = steps(boundary, "labels"), steps(boundary.astype(bool), "mask")
+    assert all(np.array_equal(a, b) for a, b in zip(as_labels, as_mask))
+    assert not any((s[boundary > 0] > 0).any() for s in as_labels)
+
+
+def test_the_step_functions_refuse_a_boundary_of_another_shape(tmp_path):
+    with pytest.raises(ValueError, match="same shape"):
+        seed_sweep.seed_sweep_threshold(image(), str(tmp_path / "s"), list(THRESHOLDS), segments=10,
+                                        boundary=np.zeros((20, 40, 41), bool), verbose=False)

@@ -3,7 +3,13 @@
 ## Unreleased
 
 ### Results that change
+- napari Sweep with a boundary (no ROI) gave wrong seeds in 1.1.0; it now gives the YAML result.
+- napari Edit > Merge: ids above 255 no longer wrap in a uint8 layer.
 - Sweep loose to strict: a seed whose region is left out of a step (as by `segments`) and comes back later splits again; its later splits were dropped.
+
+### Changed
+- napari: layers of another shape are greyed out, "(shape mismatch)", in Seeds, Grow, Prompt (AI) and Edit > Merge, and Import YAML does not pick them.
+- napari Edit > Merge: rows Into / Add / Added IDs (Keep, Shift up).
 
 ## 1.1.0 (2026-11-10)
 
