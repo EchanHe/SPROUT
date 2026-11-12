@@ -64,6 +64,7 @@ CHECKS = [
     Check("check_docks.py", "napari", 67, needs=NAPARI),
     Check("check_edit_round2.py", "napari", 133, quick=("--quick",), timeout=1800, needs=NAPARI),
     Check("check_info_widget.py", "napari", 9, needs=NAPARI),
+    Check("check_input_shapes.py", "napari", 27, needs=NAPARI),
     Check("check_jobs.py", "napari", 58, needs=NAPARI),
     Check("check_layer_lock.py", "napari", 14, needs=NAPARI),
     Check("check_light_exit.py", "napari", 6, repeat=5, needs=NAPARI),

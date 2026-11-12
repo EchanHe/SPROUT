@@ -14,10 +14,12 @@ from skimage.morphology import remove_small_holes
 from skimage.morphology import erosion, dilation, opening, closing, disk, ball
 from scipy import ndimage as ndi
 
-from sprout_core.sprout_core import get_sub_binary_image_by_pos
+from sprout_core.sprout_core import ensure_label_capacity, get_sub_binary_image_by_pos
 
 from ..utils.status import LAYER_HEADER, NO_LAYER, StatusLine, style
 from ..utils.layer_lock import lock_layers, lock_note, placement, unlock_layers
+from ..utils.layer_shapes import current_layer_name, find_layer_item, grey_out_mismatches, placement_differs
+from ..utils.roi_layers import get_roi_hub
 from . import click_owner
 
 # One style for every run button, the same as the main panel's run buttons. Only the enabled
@@ -266,26 +268,28 @@ class QtLabelSelector(QWidget):
 
         # ---- Merge Labels Group ----
         label_merge_group = QGroupBox("Merge Label Layers")
-        label_merge_group.setToolTip(
-            "Merge another label layer into the active label layer.\n"
-            "Voxels that are 0 in the active layer will be filled with values from the source layer."
-        )
         label_merge_layout = QFormLayout()
 
-        self.merge_source_combo = QComboBox()
-        self.merge_source_combo.setToolTip("Select the label layer to merge INTO the active label layer.")
-        label_merge_layout.addRow(QLabel("Source Label Layer:"), self.merge_source_combo)
+        self.merge_into_label = QLabel("")
+        self.merge_into_label.setToolTip("The selected label layer. It is changed (or copied first, with Duplicate).")
+        label_merge_layout.addRow(QLabel("Into:"), self.merge_into_label)
 
-        self.merge_offset_checkbox = QCheckBox("Auto offset source IDs to avoid conflicts")
-        self.merge_offset_checkbox.setChecked(False)
-        self.merge_offset_checkbox.setToolTip(
-            "If checked, source region IDs will be shifted up to avoid overlapping with active layer IDs."
-        )
-        label_merge_layout.addRow(self.merge_offset_checkbox)
+        self.merge_source_combo = QComboBox()
+        self.merge_source_combo.setToolTip(
+            "Layer to add. Same shape as the Into layer. Where both have a region, the Into layer stays.")
+        self.merge_source_combo.currentIndexChanged.connect(self._warn_merge_placement)
+        label_merge_layout.addRow(QLabel("Add:"), self.merge_source_combo)
+
+        self.merge_ids_combo = QComboBox()
+        self.merge_ids_combo.addItems(["Keep", "Shift up"])
+        self.merge_ids_combo.setToolTip(
+            "Keep: same ID = same region (two class maps).\n"
+            "Shift up: new IDs above the Into layer's (two seed layers).")
+        label_merge_layout.addRow(QLabel("Added IDs:"), self.merge_ids_combo)
 
         merge_btn = QPushButton("Run Merge")
         merge_btn.setStyleSheet(RUN_STYLE)
-        merge_btn.setToolTip("Merge the source layer into the active label layer.")
+        merge_btn.setToolTip("Add the layer to the Into layer.")
         merge_btn.clicked.connect(self.merge_labels_operation)
         label_merge_layout.addRow(merge_btn)
 
@@ -294,6 +298,7 @@ class QtLabelSelector(QWidget):
         
         self.viewer.layers.events.inserted.connect(self._refresh_merge_source_combo)
         self.viewer.layers.events.removed.connect(self._refresh_merge_source_combo)
+        get_roi_hub(self.viewer).layer_renamed.connect(self._on_layer_renamed)
         
 
         # ---- Label Split Group ----
@@ -965,10 +970,19 @@ class QtLabelSelector(QWidget):
             
         self._refresh_merge_source_combo()
 
-    def _refresh_merge_source_combo(self, event=None):
+    def _on_layer_renamed(self, layer, old):
+        """The header, Into and Add follow a renamed layer (a picked Add layer stays picked)."""
+        if layer is self.last_bound_layer:
+            self.layer_label.setText(f"Active Label Layer: {layer.name}")
+        self._refresh_merge_source_combo(renamed=(old, layer.name))
+
+    def _refresh_merge_source_combo(self, event=None, renamed=None):
         """Refresh merge source combo, excluding the current active layer."""
-        current_selection = self.merge_source_combo.currentText()
+        current_selection = current_layer_name(self.merge_source_combo)
+        if renamed is not None and current_selection == renamed[0]:
+            current_selection = renamed[1]
         active_name = self.last_bound_layer.name if self.last_bound_layer else None
+        self.merge_into_label.setText(active_name or "")
 
         self.merge_source_combo.blockSignals(True)
         self.merge_source_combo.clear()
@@ -978,11 +992,17 @@ class QtLabelSelector(QWidget):
                 self.merge_source_combo.addItem(layer.name)
 
         # retain previous selection if possible
-        idx = self.merge_source_combo.findText(current_selection)
+        idx = find_layer_item(self.merge_source_combo, current_selection)
         if idx >= 0:
             self.merge_source_combo.setCurrentIndex(idx)
+        grey_out_mismatches(self.merge_source_combo, self.viewer, self.last_bound_layer)
 
         self.merge_source_combo.blockSignals(False)
+
+    def _warn_merge_placement(self, *_):
+        name, into = current_layer_name(self.merge_source_combo), self.last_bound_layer
+        if into is not None and name in self.viewer.layers and placement_differs(self.viewer.layers[name], into):
+            self.status.set("Add: scale/translate differs from the Into layer.", "warn")
 
     def clear_selection(self):
         self.selected_labels.clear()
@@ -1118,9 +1138,9 @@ class QtLabelSelector(QWidget):
             QMessageBox.warning(self, "Error", "No active label layer.")
             return
 
-        source_name = self.merge_source_combo.currentText()
+        source_name = current_layer_name(self.merge_source_combo)
         if not source_name:
-            QMessageBox.warning(self, "Error", "No source layer selected.")
+            QMessageBox.warning(self, "Error", "Pick a layer to add.")
             return
 
         try:
@@ -1139,8 +1159,7 @@ class QtLabelSelector(QWidget):
         if target_data.shape != source_data.shape:
             QMessageBox.warning(
                 self, "Shape Mismatch",
-                f"Active layer shape {target_data.shape} != source layer shape {source_data.shape}.\n"
-                "Cannot merge layers with different shapes."
+                f"Into {target_data.shape}, Add {source_data.shape}."
             )
             return
 
@@ -1157,7 +1176,7 @@ class QtLabelSelector(QWidget):
         data = label_layer.data
         self._set_backup(label_layer, data)
 
-        use_offset = self.merge_offset_checkbox.isChecked()
+        use_offset = self.merge_ids_combo.currentText() == "Shift up"
 
         def on_done(result):
             if label_layer not in self.viewer.layers:
@@ -1176,20 +1195,14 @@ class QtLabelSelector(QWidget):
     def _do_merge_labels(
         self, target: np.ndarray, source: np.ndarray, use_offset: bool
     ) -> np.ndarray:
-        result = target.copy()
-
-        if use_offset:
-            # Shift source IDs above the max of target to avoid conflicts
-            max_target = int(result.max())
-            source_nonzero = source > 0
-            source_shifted = np.where(source_nonzero, source + max_target, 0)
-        else:
-            source_shifted = source
-
-        # Fill zeros in target with source values
-        empty_mask = result == 0
-        result[empty_mask] = source_shifted[empty_mask]
-
+        """The source fills the 0 voxels of the target. use_offset: source ids start above the
+        target's largest id. The result dtype holds every id (no uint8 wrap-around)."""
+        fill = (target == 0) & (source != 0)
+        offset = int(target.max()) if use_offset and target.size else 0
+        added = source[fill].astype(np.int64) + offset
+        max_id = max(int(target.max()) if target.size else 0, int(added.max()) if added.size else 0)
+        result = ensure_label_capacity(target.copy(), max_id)
+        result[fill] = added
         return result
     
     def fill_holes_in_labels(self, label_img, area_threshold=64, target_label=None, apply_in_2d=False):
