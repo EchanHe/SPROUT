@@ -88,11 +88,13 @@ g, _ = q(make_grow.grow_mp, img=dog, seg=dseed, thresholds=[130], dilation_steps
 keep("grow_unsorted", g)
 a, _, _ = q(make_adaptive_seed.make_adaptive_seed_ero, img=dog, boundary=bnd, threshold=140, upper_threshold=255,
             erosion_steps=3, segments=10, num_threads=3, footprints="ball", save_every_iter=True,
+            min_size=5, min_split_ratio=0.01,                   # the defaults before 1.1.1: the golden holds
             output_folder=str(out / "a1"), base_name="ero", return_for_napari=True)
 keep("adaptive_ero", a)
 a, _, _ = q(make_adaptive_seed.make_adaptive_seed_thre, img=dog, thresholds=[130, 150, 170],
             upper_thresholds=[255, 255, 255], erosion_steps=1, segments=10, num_threads=3, footprints="ball",
-            sort=False, min_size=20, output_folder=str(out / "a2"), base_name="thre", return_for_napari=True)
+            sort=False, min_size=20, min_split_ratio=0.01, save_every_iter=False,   # defaults before 1.1.1
+            output_folder=str(out / "a2"), base_name="thre", return_for_napari=True)
 keep("adaptive_thre", a)
 thr = int(np.percentile(cell, 70))
 s, _ = q(make_seeds.make_seeds, img=cell, thresholds=[thr], erosion_steps=3, segments=30, num_threads=2,
