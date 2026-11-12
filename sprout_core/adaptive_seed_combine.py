@@ -761,17 +761,23 @@ def adaptive_seed_l2s_from_seeds(
         shrink_count = split_count = disappeared_count = new_count = children_count = 0
 
         for old_seed_id in old_seed_ids:
-            if old_seed_id in locked_seed_ids:
-                continue
             assigned = old_to_regions[old_seed_id]
+            if old_seed_id in locked_seed_ids:
+                if len(assigned) == 0:
+                    continue
+                # Its region is back (a step can leave it out, as by segments):
+                # unlock it and update it like any other seed.
+                locked_seed_ids.discard(old_seed_id)
+                metadata_by_seed_id[old_seed_id]["finalization_reason"] = None
+                metadata_by_seed_id[old_seed_id].pop("disappear_index", None)
             if len(assigned) == 0:
                 disappeared_count += 1
                 metadata_by_seed_id[old_seed_id]["status"] = "disappeared"
                 metadata_by_seed_id[old_seed_id]["finalization_reason"] = "disappeared"
                 metadata_by_seed_id[old_seed_id]["disappear_index"] = int(seed_index)
-                # Finalize once: lock the seed so it is not re-matched or
-                # re-flagged on later (stricter) steps. keep_disappeared only
-                # decides whether its last-shape voxels are kept.
+                # Lock the seed so it is not flagged again on later (stricter)
+                # steps; a region that matches it again unlocks it.
+                # keep_disappeared only decides whether its last-shape voxels are kept.
                 locked_seed_ids.add(old_seed_id)
                 if not keep_disappeared:
                     _clear_seed(flat_seed, seed_voxels, old_seed_id)
