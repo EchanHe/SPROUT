@@ -520,15 +520,18 @@ def check_file_extension(file_path):
 
 
 RENAMED = {"min_area": "min_size", "save_intermediate": "save_every_iter"}    # sweep keys before 1.1.0
+REMOVED = {"connectivity": "regions that touch at a corner are one region, as everywhere in SPROUT"}   # 1.1.1
 
 
 def validate_input_yaml(config, rules):
     errors = []
     optional_values = {}
-    
+
     for key in config:
         if key in RENAMED and key not in rules:
             errors.append(f"'{key}' is now '{RENAMED[key]}'.")
+        elif key in REMOVED and key not in rules:
+            errors.append(f"'{key}' is no longer used: {REMOVED[key]}.")
         elif key not in rules:
             errors.append(f"Unsupported parameter '{key}' in input config.")
 
@@ -1297,13 +1300,6 @@ input_val_sweep_adaptive_seed = {
         "required": False,
         "default": 1,
         "description": "Regions smaller than this (in voxels) are dropped at every step.",
-    },
-    "connectivity": {
-        "type": int,
-        "min": 1,
-        "required": False,
-        "default": 1,
-        "description": "Connectivity for connected-components labelling.",
     },
     "input_mode": {
         "type": str,
