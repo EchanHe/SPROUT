@@ -56,7 +56,9 @@ In `<output_folder>/<base_name>/`:
 | `adaptive_seed_regions.csv` | One row per seed: `id`, `area`, the step where it began (`first_step` and its threshold or erosion), and how it `began` (below). |
 | `adaptive_seed_steps.csv` | One row per step: its threshold or erosion, `regions` in it, how many seeds `split`, `shrunk` or were `dropped`, `new_seeds`, `pruned` (with `prune_every_iter`), `seeds_after` it, and a `note` when the run stopped early. |
 | `INTER_*.tif` | With `save_every_iter: true`: the seed of every step, and the running result after it. |
-| `config_<time>.yaml`, `output_dict_<time>.csv` | The config of this run, and its record of every split. |
+| `used_config.yaml` | Every parameter of the run, the defaults filled in, and the SPROUT version. It is also a config: `sprout --adaptive_seed --config used_config.yaml` runs it again (relative paths are from the folder you run in). |
+
+A run into a folder with earlier results overwrites files of the same name (a warning says so). To keep a result, use another `output_folder`.
 
 In `adaptive_seed_regions.csv`, `began` is `first step` (a region of the first step), `separated (k of N)` (part k of a region that split into N parts), or `shrank (rest disappeared)` (a region with one part large enough to count, see `min_split_ratio`).
 

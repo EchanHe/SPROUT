@@ -58,3 +58,5 @@ Templates of the configuration file and the csv file for sam can be found at: [`
 
 
 In addition, all **required parameters** (`output_folder` etc.) must be either: : Globally defined in the YAML file, **or** Provided per image in the CSV file.
+
+The table `<output_folder>/<csv name>_results.csv` has one row per image, with an `error` column for a row that failed.
