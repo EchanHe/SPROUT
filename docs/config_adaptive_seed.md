@@ -33,7 +33,7 @@ This is the method of the paper. For many seeds fast, see [sweep adaptive seed](
 | `sort`                    | ❌        | `bool`          | Whether to sort segment labels by size (default: `True`).                                 |
 | `no_split_max_iter`       | ❌        | `int`           | Early stopping: number of iterations without any new split before stopping. Default: `3`. |
 | `min_size`                | ❌        | `int`           | Minimum size to keep a segment. Default: `1`.                                             |
-| `min_split_ratio`         | ❌        | `float`         | Minimum area/volume ratio of a sub-region to its region to consider as split. Default: `0`.                 |
+| `min_split_ratio`         | ❌        | `float`         | Minimum area/volume ratio of a sub-region to its region to consider as split. Default: `0`. A region splits only into two or more parts with more than this ratio and at least `min_size` voxels; with fewer, it keeps its shape (specks do not split it). |
 | `min_split_total_ratio`   | ❌        | `float`         | Minimum ratio of the sum of new sub-regions to  original region to count as valid split.               |
 | `split_size_limit`        | ❌        | `list[2]`       | Only split segments whose size is within the specified min/max range.                     |
 | `split_convex_hull_limit` | ❌        | `list[2]`       | Only split segments whose convex hull area/volume is within this range.                   |
@@ -53,14 +53,23 @@ In `<output_folder>/<base_name>/`:
 | File | Content |
 |---|---|
 | `FINAL_adaptive_seed.tif` | The seeds. Use it as `seg_path` of [growth](./config_grow.md). |
-| `adaptive_seed_regions.csv` | One row per seed: `id`, `area`, the step where it began (`first_step` and its threshold or erosion), and how it `began` (below). |
-| `adaptive_seed_steps.csv` | One row per step: its threshold or erosion, `regions` in it, how many seeds `split`, `shrunk` or were `dropped`, `new_seeds`, `pruned` (with `prune_every_iter`), `seeds_after` it, and a `note` when the run stopped early. |
+| `adaptive_seed_regions.csv` | One row per seed, with the columns of the sweep's `sweep_regions.csv`: `id`, `area`, `first_step` and `last_step`, the settings that change between steps at those steps (for example `first_threshold`, `last_threshold`), and `began`, `ended`, `at_step` (below). |
+| `adaptive_seed_steps.csv` | One row per step: its threshold or erosion, `regions` in it, how many seeds `split`, `new_seeds`, `pruned` (with `prune_every_iter`), `seeds_after` it, and a `note` when the run stopped early. |
 | `INTER_*.tif` | With `save_every_iter: true`: the seed of every step, and the running result after it. |
 | `used_config.yaml` | Every parameter of the run, the defaults filled in, and the SPROUT version. It is also a config: `sprout --adaptive_seed --config used_config.yaml` runs it again (relative paths are from the folder you run in). |
 
 A run into a folder with earlier results overwrites files of the same name (a warning says so). To keep a result, use another `output_folder`.
 
-In `adaptive_seed_regions.csv`, `began` is `first step` (a region of the first step), `separated (k of N)` (part k of a region that split into N parts), or `shrank (rest disappeared)` (a region with one part large enough to count, see `min_split_ratio`).
+In `adaptive_seed_regions.csv`:
+
+| Column | Value | Meaning |
+|---|---|---|
+| `began` | `first step` | The seed is a region of the first step. |
+| | `separated (k of N)` | Part k of a region that split into N parts. |
+| `ended` | `disappeared` | At step `at_step` its region had no part left that counts (`min_size`, `min_split_ratio`); the seed keeps its shape. `last_step` is the last step with one. |
+| | `reached the end` | Its region still had a part at the last step. |
+
+A part left out at a step by `segments` that is back at a later step does not make the seed disappear.
 
 ## Seed Generation Config Parameters in batch (`--adaptive_seed`)
 

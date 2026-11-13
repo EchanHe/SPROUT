@@ -12,16 +12,17 @@
 - Sweep loose to strict: a seed whose region is left out of a step (as by `segments`) and comes back later splits again; its later splits were dropped.
 - Sweep (YAML): regions that touch only at a corner are one region, as in napari and everywhere in SPROUT (a YAML without `connectivity` split them when each step had one region). The `connectivity` option is removed.
 - Python: `make_adaptive_seed_ero` and `make_adaptive_seed_thre` have the YAML defaults: `min_size` 1, `min_split_ratio` 0, `save_every_iter` True (were 5, 0.01 and False). YAML and napari runs do not change.
+- Adaptive seed: a region splits only into two or more parts that count (at least `min_size` voxels and more than `min_split_ratio` of it); otherwise it keeps its shape. Specks no longer shrink a seed or make a thin part disappear. With the defaults (`min_size` 1, `min_split_ratio` 0) the results do not change. `adaptive_seed_steps.csv` has no `shrunk` and `dropped` columns (now always 0).
 
 ### Changed
 - napari: layers of another shape are greyed out, "(shape mismatch)", in Seeds, Grow, Prompt (AI) and Edit > Merge, and Import YAML does not pick them.
 - napari Edit > Merge: rows Into / Add / Added IDs (Keep, Shift up).
 - `sprout`: a missing config or option gives a short message and where to find templates and docs, not a traceback.
 - Templates: batch adaptive seed has the `min_size` and `min_split_ratio` of the single one (1 and 0, were 5 and 0.01); nnInteractive `default_method` is `random`, as in the docs and napari (was `grid`).
-
 - Every result folder has `used_config.yaml`: all parameters of the run, the defaults filled in, and the SPROUT version; it is also a config that runs it again. It replaces `config_<time>.yaml`.
 - Output files have fixed names: a run into a folder with results overwrites them (a warning says so) instead of adding files with a time in the name (`seed_log.json`; batch tables are `<output_folder>/<csv name>_results.csv`, also for SAM and nnInteractive, which wrote them next to the CSV). Adaptive seed no longer writes `output_dict_<time>.csv`: `adaptive_seed_regions.csv` and `adaptive_seed_steps.csv` hold the same.
 - Docs: the output files of seeds and growth; the four footprints that seeds use when `footprints` is not set.
+- Adaptive seed: `adaptive_seed_regions.csv` has the columns of the sweep's `sweep_regions.csv`, so it also says when each seed ended: `last_step`, `ended` (`disappeared` or `reached the end`), `at_step`. `threshold` / `erosion` is now `first_threshold` / `first_erosion`; a setting that is the same at every step (as `upper`) has no column.
 
 ### Fixed
 - The batch sweep template's CSV (`sweep_adaptive_seeds_input.csv`) was missing.
