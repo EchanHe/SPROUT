@@ -46,6 +46,12 @@ def _apply_erosions(mask, footprint_list, n_steps):
     return mask
 
 
+def _in_memory(seed):
+    """The step as the combine keeps it in memory: uint8 when its ids fit (as with segments
+    up to 255), else as it is. The file of the step stays uint16; the ids are the same."""
+    return sprout_core.cast_labels(seed, np.uint8, copy=False)
+
+
 def _save_step(seed, output_folder, step_index, lower, upper, ero_steps):
     fname = f"step_{step_index:03d}_thre_{lower}_{upper}_ero_{ero_steps}.tif"
     path = Path(output_folder) / fname
@@ -73,10 +79,10 @@ def _generate_one_threshold_step(img, lower, upper, footprint_list, erosion_step
     if boundary is not None:
         mask[boundary] = False
     mask = _apply_erosions(mask, footprint_list, erosion_steps)
-    seed, _ = sprout_core.get_ccomps_with_size_order(mask, segments)
-    seed = sprout_core.cast_labels(seed, np.uint16)
+    seed, _ = sprout_core.get_ccomps_with_size_order(mask, segments, uint16=True)
+    seed = sprout_core.cast_labels(seed, np.uint16, copy=False)
     path = _save_step(seed, output_folder, step_index, lower, upper, erosion_steps)
-    return step_index, path, seed
+    return step_index, path, _in_memory(seed)
 
 
 class StepFiles(Sequence):
@@ -311,12 +317,12 @@ def seed_sweep_erosion(
     ordered_paths = []
 
     # Step 0: no erosion
-    seed, _ = sprout_core.get_ccomps_with_size_order(mask.copy(), segments_list[0])
-    seed = sprout_core.cast_labels(seed, np.uint16)
+    seed, _ = sprout_core.get_ccomps_with_size_order(mask, segments_list[0], uint16=True)
+    seed = sprout_core.cast_labels(seed, np.uint16, copy=False)
     path = _save_step(seed, output_folder, 0, threshold, upper_threshold, 0)
     ordered_paths.append(path)
     if seeds_out is not None:
-        seeds_out.append(seed)
+        seeds_out.append(_in_memory(seed))
     if verbose:
         print(f"[seed_sweep] step 000 done: {path.name}")
     if step is not None:
@@ -328,12 +334,12 @@ def seed_sweep_erosion(
         mask = sprout_core.erosion_binary_img_on_sub(
             mask, kernal_size=1, footprint=footprint_list[ero_iter - 1]
         )
-        seed, _ = sprout_core.get_ccomps_with_size_order(mask, segments_list[ero_iter])
-        seed = sprout_core.cast_labels(seed, np.uint16)
+        seed, _ = sprout_core.get_ccomps_with_size_order(mask, segments_list[ero_iter], uint16=True)
+        seed = sprout_core.cast_labels(seed, np.uint16, copy=False)
         path = _save_step(seed, output_folder, ero_iter, threshold, upper_threshold, ero_iter)
         ordered_paths.append(path)
         if seeds_out is not None:
-            seeds_out.append(seed)
+            seeds_out.append(_in_memory(seed))
         if verbose:
             print(f"[seed_sweep] step {ero_iter:03d} done: {path.name}")
         if step is not None:
