@@ -8,7 +8,7 @@
   "seeds/dog/FINAL_adaptive_seed.tif": "ba290edd2ea0c480570f7844e8f52ae48821a1c116f67e0b0882afe155a18351",
   "seeds/dog/INTER_adaptive_thre_140_255_ero_1.tif": "42a120551d0f564c8eb6a85ed7a8324de743356b593ef0b4c6c72ab0ab5e163f",
   "seeds/dog/INTER_adaptive_thre_140_255_ero_2.tif": "70e2b04c099036aad6c2ef9f401538a5cd948981ef7b282dbf9c123cd8d08c5e",
-  "seeds/dog/INTER_thre_140_255_ero_0.tif": "a59875b52f06f85070215ad08b613cedeaab05ee3096bf2d93eedb8db4b82287",
+  "seeds/dog/INTER_thre_140_255_ero_0.tif": "1ff45f4843afdcf70f13f12d4de7b4e402022cba22404b5cc86a07e8abda9762",
   "seeds/dog/INTER_thre_140_255_ero_1.tif": "42a120551d0f564c8eb6a85ed7a8324de743356b593ef0b4c6c72ab0ab5e163f",
   "seeds/dog/INTER_thre_140_255_ero_2.tif": "fd41ed78a8aacfd049b5ec96beed838e170bfdc00f212260965fd61dad53e185",
   "seeds/dog/INTER_thre_140_255_ero_3.tif": "9dfa66c82c6ca7a06b85c1c162b1a8a6ca6c8f6ce607746d44d8a145e2af03af",
@@ -244,8 +244,8 @@
    "type": "Labels"
   },
   "INTER_thre_140_255_ero_0.tif": {
-   "data": "a59875b52f06f85070215ad08b613cedeaab05ee3096bf2d93eedb8db4b82287",
-   "dtype": "int32",
+   "data": "1ff45f4843afdcf70f13f12d4de7b4e402022cba22404b5cc86a07e8abda9762",
+   "dtype": "uint16",
    "metadata": {},
    "scale": [
     1.0,
