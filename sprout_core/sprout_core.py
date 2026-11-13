@@ -996,7 +996,8 @@ def find_seed_by_ero_custom(volume_array, threshold , segments, ero_iter,
         if is_return_seeds:
             # the same dtype as the file (at least uint16), not measure.label's int32
             seeds_dict[os.path.basename(output_dir) + "_" +seed_name] = cast_labels(seed, np.uint16)
-        
+        del seed                         # free these labels before the next step labels again
+
         args_dict = {
             # "start_time": start_time.strftime("%Y-%m-%d %H:%M:%S"),
             # "end_time": end_time.strftime("%Y-%m-%d %H:%M:%S"),

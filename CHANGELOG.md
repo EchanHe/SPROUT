@@ -23,6 +23,7 @@
 - Output files have fixed names: a run into a folder with results overwrites them (a warning says so) instead of adding files with a time in the name (`seed_log.json`; batch tables are `<output_folder>/<csv name>_results.csv`, also for SAM and nnInteractive, which wrote them next to the CSV). Adaptive seed no longer writes `output_dict_<time>.csv`: `adaptive_seed_regions.csv` and `adaptive_seed_steps.csv` hold the same.
 - Docs: the output files of seeds and growth; the four footprints that seeds use when `footprints` is not set.
 - Adaptive seed: `adaptive_seed_regions.csv` has the columns of the sweep's `sweep_regions.csv`, so it also says when each seed ended: `last_step`, `ended` (`disappeared` or `reached the end`), `at_step`. `threshold` / `erosion` is now `first_threshold` / `first_erosion`; a setting that is the same at every step (as `upper`) has no column.
+- Seeds and classic adaptive seed use about a quarter less memory (the labels of a step are freed before the next step); the seeds are the same.
 
 ### Fixed
 - The batch sweep template's CSV (`sweep_adaptive_seeds_input.csv`) was missing.

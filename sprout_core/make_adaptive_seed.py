@@ -371,9 +371,9 @@ def make_adaptive_seed_ero(
     history = _History(init_ids, {"erosion": 0})
 
 
-    combine_seed = init_seed.copy()
     # at least uint16 as before; new ids from splits are checked with ensure_label_capacity
-    combine_seed = sprout_core.cast_labels(combine_seed, np.uint16)
+    combine_seed = sprout_core.cast_labels(init_seed, np.uint16)
+    del init_seed                        # its int32 labels are not needed any more
 
 
     output_dict = {"total_id": {0: len(sprout_core.unique_labels(combine_seed))-1},
@@ -406,6 +406,7 @@ def make_adaptive_seed_ero(
         
         img = sprout_core.erosion_binary_img_on_sub(img, kernal_size = 1,footprint=footprint_list[ero_iter-1])
         sprout_core.check_cancel(cancel)
+        seed = None                      # free the previous step's seed before labelling again
         seed, _ = sprout_core.get_ccomps_with_size_order(img, segments_list[ero_iter])
         seed = sprout_core.cast_labels(seed, np.uint16)
         history.start_step(ero_iter, {"erosion": ero_iter}, seed.max())
@@ -784,9 +785,9 @@ def make_adaptive_seed_thre(
     history = _History(init_ids, {"threshold": thresholds[0], "upper": upper_thresholds[0]})
 
 
-    combine_seed = init_seed.copy()
     # at least uint16 as before; new ids from splits are checked with ensure_label_capacity
-    combine_seed = sprout_core.cast_labels(combine_seed, np.uint16)
+    combine_seed = sprout_core.cast_labels(init_seed, np.uint16)
+    del init_seed                        # its int32 labels are not needed any more
 
     output_dict = {"total_id": {0: len(sprout_core.unique_labels(combine_seed))-1},
                    "split_id" : {0: {}},
@@ -812,8 +813,8 @@ def make_adaptive_seed_thre(
         output_dict["split_ori_id"][threshold] = {}
         output_dict["split_ori_id_filtered"][threshold] = {}
         output_dict["split_prop"][threshold] = {}
-        
-        
+
+        seed = mask = None               # free the previous step's seed and mask before the next ones
         if upper_threshold is not None:
             mask = (img>=threshold) & (img<=upper_threshold)
         else:
