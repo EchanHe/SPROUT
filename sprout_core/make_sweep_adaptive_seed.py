@@ -10,7 +10,7 @@ output using the fast combine logic from adaptive_seed_combine.py.
 YAML parameter naming:
   - Sweep params: img_path, thresholds, erosion_steps, segments, num_threads,
     upper_thresholds, boundary_path, footprints, base_name, workspace
-  - Shared combine params: direction, min_size, connectivity, input_mode,
+  - Shared combine params: direction, min_size, input_mode,
     top_n, save_every_iter, verbose
   - s2l-specific: s2l_min_current_coverage, s2l_max_emerge_coverage
   - l2s-specific: l2s_min_new_coverage, l2s_max_new_coverage,
@@ -68,7 +68,6 @@ def _map_yaml_to_combine_kwargs(optional, direction):
     """Translate prefixed YAML params to internal function parameter names."""
     shared = {
         "min_area": optional.get("min_size", 1),
-        "connectivity": optional.get("connectivity", 1),
         "input_mode": optional.get("input_mode", "auto"),
         "top_n": optional.get("top_n", None),
         "save_intermediate": optional.get("save_every_iter", False),
@@ -290,9 +289,11 @@ def make_sweep_adaptive_seed(img, thresholds, erosion_steps, segments, output_fo
     Writes the same files as a YAML run. cancel: raises Cancelled between steps.
     progress: callable(done, total, text). memory_limit_gb: as in the YAML.
     """
+    values = dict(locals())                       # the arguments, for used_config.yaml
     n_steps = _n_steps(thresholds, erosion_steps)
     steps = sprout_core.StepProgress(progress, n_steps + 1)
     folder = os.path.abspath(os.path.join(output_folder, base_name))
+    config_core.warn_earlier_results(folder)
     in_memory, threads = _memory_plan(img.size, n_steps, num_threads, memory_limit_gb, False)
     seeds = [] if in_memory else None
     try:
@@ -311,11 +312,10 @@ def make_sweep_adaptive_seed(img, thresholds, erosion_steps, segments, output_fo
         raise MemoryError(f"{e}\n{OUT_OF_MEMORY_HINT}") from e
     sprout_core.check_cancel(cancel)
     _save_result(result, metadata, paths, folder, "strict_to_loose", step_log)
-    config_core.save_config_with_output({"params": {
-        "thresholds": thresholds, "upper_thresholds": upper_thresholds, "erosion_steps": erosion_steps,
-        "segments": segments, "footprints": footprints, "num_threads": num_threads, "min_size": min_size,
-        "direction": "strict_to_loose", "input_mode": "label",
-    }}, folder)
+    # this route always combines strict to loose, each id of a step one region
+    config_core.save_used_config(folder, config_core.used_config(
+        {**values, "direction": "strict_to_loose", "input_mode": "label", "save_every_iter": False, "verbose": False},
+        config_core.input_val_sweep_adaptive_seed), "--sweep_adaptive")
     steps.step("combine")
     return {f"{base_name}_FINAL_sweep_seed": sprout_core.cast_labels(result, np.uint16)}
 
@@ -344,6 +344,7 @@ def _run_from_dict(config):
         optional["base_name"], img_path, "sweep_adaptive"
     )
     output_folder_root = os.path.abspath(os.path.join(output_folder_root, base_name))
+    config_core.warn_earlier_results(output_folder_root)
 
     direction = optional.get("direction", "strict_to_loose")
     seeds_folder = optional.get("seeds_folder", None)
@@ -451,7 +452,8 @@ def _run_from_dict(config):
     else:
         finals = [combine(direction, combine_kwargs)]
 
-    config_core.save_config_with_output({"params": config}, output_folder_root)
+    config_core.save_used_config(output_folder_root, config_core.used_config(
+        {**config, **optional}, config_core.input_val_sweep_adaptive_seed), "--sweep_adaptive")
     print(f"[sweep_adaptive] done in {time.time() - start:.2f}s")
     return finals
 

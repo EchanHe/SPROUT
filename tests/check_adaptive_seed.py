@@ -13,7 +13,6 @@ Run in the `sprout` env:
     python tests/check_adaptive_seed.py
 """
 import contextlib
-import glob
 import io
 import os
 import sys
@@ -21,7 +20,6 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 import tifffile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -90,11 +88,12 @@ ok(not ((f > 0) & (cut > 0)).any() and len(np.unique(f)) - 1 == 2, "threshold mo
 # 4. logs
 ok("Boundary: array (20, 30, 60)" in log, "log reports an in-memory boundary (used to print boundary_path: None)")
 ok("Prune Every Iteration: True" in log, "log prints the effective prune_every_iter (None -> follows save_every_iter)")
-seeds, log, out = run(make_adaptive_seed_ero, dog.copy(), save_every_iter=True, **ERO)
-csv = sorted(glob.glob(os.path.join(out, "**", "output_dict_*.csv"), recursive=True))[-1]   # written into out/<base_name>/
-names = pd.read_csv(csv)["cur_seed_name"].dropna().tolist()
+with contextlib.redirect_stdout(io.StringIO()):
+    _, _, record = make_adaptive_seed_ero(img=dog.copy(), output_folder=tempfile.mkdtemp(), num_threads=4,
+                                          return_for_napari=True, save_every_iter=True, **ERO)
+names = [n for n in record["cur_seed_name"].values() if isinstance(n, str)]
 ok(len(names) == len(set(names)) and len(names) > 2,
-   f"erosion mode: CSV keeps one seed file per iteration ({len(names)} distinct names; used to keep only 2)")
+   f"erosion mode: the record keeps one seed file per iteration ({len(names)} distinct names; used to keep only 2)")
 
 # 5. YAML config accepts the new key
 cfg = yaml.safe_load(open(ROOT / "template" / "make_adaptive_seed.yaml", encoding="utf-8"))

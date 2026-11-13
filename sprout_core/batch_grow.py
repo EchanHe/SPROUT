@@ -1,4 +1,3 @@
-from datetime import datetime
 from sprout_core import make_grow
 
 import yaml
@@ -79,9 +78,7 @@ def run_batch_grow(file_path):
             print(f"Error occurs when growing on {config['img_path']}")
             df.loc[index,'error'] = str(e)
 
-    os.makedirs(config['output_folder'], exist_ok=True)
-    df.to_csv(os.path.join(config['output_folder'],
-                           os.path.basename(csv_path) + f"_running_results_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"), index = False)
+    df.to_csv(config_core.batch_results_path(config['output_folder'], csv_path), index=False)
 
 
 

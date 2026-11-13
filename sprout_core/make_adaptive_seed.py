@@ -4,7 +4,6 @@ import pandas as pd
 # from PIL import Image
 from tifffile import imread, imwrite
 import os,sys
-from datetime import datetime
 
 import time
 import yaml
@@ -176,11 +175,11 @@ def make_adaptive_seed_ero(
                         sort = True,
                         
                         no_split_max_iter =3,
-                        min_size=5,
-                        min_split_ratio = 0.01,
+                        min_size=1,
+                        min_split_ratio = 0,
                         min_split_total_ratio = 0,
                         
-                        save_every_iter = False,
+                        save_every_iter = True,
                         prune_every_iter = None,
 
                         base_name = None,
@@ -211,11 +210,11 @@ def make_adaptive_seed_ero(
         background (int, optional): Background value. Defaults to 0.
         sort (bool, optional): Whether to sort output segment IDs. Defaults to True.
         no_split_max_iter (int, optional): Early Stop Check: Limit for consecutive no-split iterations. Defaults to 3.
-        min_size (int, optional): Minimum size for segments. Defaults to 5.
-        min_split_ratio (float, optional): Minimum proportion to consider a split. Defaults to 0.01.
+        min_size (int, optional): Minimum size for segments. Defaults to 1.
+        min_split_ratio (float, optional): Minimum proportion to consider a split. Defaults to 0.
         min_split_total_ratio (float, optional): Minimum proportion of (sub-segments from next step)/(current segments)
             to consider a split. Defaults to 0. Range: 0 to 1
-        save_every_iter (bool, optional): Save results at every iteration. Defaults to False.
+        save_every_iter (bool, optional): Save results at every iteration. Defaults to True.
         prune_every_iter (bool, optional): After every intermediate iteration, remove regions
             smaller than min_size, keep the top-N and renumber the running seed. This changes
             the final result. None (default) = same as save_every_iter, which reproduces the
@@ -235,6 +234,7 @@ def make_adaptive_seed_ero(
     Returns:
         tuple: Merged seeds, original combine ID map, and output dictionary.
     """
+    values = dict(locals())                       # the arguments, for used_config.yaml
     
     img = config_core.check_and_load_data(img, img_path, "img")
 
@@ -267,6 +267,7 @@ def make_adaptive_seed_ero(
     # else:
     #     output_folder = os.path.join(output_folder, sub_folder)
     output_folder = os.path.abspath(output_folder)
+    config_core.warn_earlier_results(output_folder)
     os.makedirs(output_folder,exist_ok=True)
 
 
@@ -514,13 +515,9 @@ def make_adaptive_seed_ero(
     
 
     history.save(output_folder, combine_seed, final_ids)
-    config_core.save_config_with_output({
-        "params": values_to_print},output_folder)
-        
-
-    pd.DataFrame(output_dict).to_csv(os.path.join(output_folder,
-                                                  f"output_dict_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"),
-                                     index=False)
+    config_core.save_used_config(output_folder, config_core.used_config(
+        values, config_core.input_val_make_adaptive_seed,
+        renames={"threshold": "thresholds", "upper_threshold": "upper_thresholds"}), "--adaptive_seed")
 
     return seeds_dict,ori_combine_ids_map, output_dict    
 
@@ -543,11 +540,11 @@ def make_adaptive_seed_thre(
                         sort = True,
                         
                         no_split_max_iter =3,
-                        min_size=5,
-                        min_split_ratio = 0.01,
+                        min_size=1,
+                        min_split_ratio = 0,
                         min_split_total_ratio = 0,
                         
-                        save_every_iter = False,
+                        save_every_iter = True,
                         prune_every_iter = None,
                         base_name = None,
                        
@@ -599,13 +596,13 @@ def make_adaptive_seed_thre(
         Whether to sort segment IDs by size in the final output.
     no_split_max_iter : int, default=3
         Number of consecutive iterations without splits before stopping the process.
-    min_size : int, default=5
+    min_size : int, default=1
         Minimum size (in pixels) for a segment to be kept.
-    min_split_ratio : float, default=0.01
+    min_split_ratio : float, default=0
         Minimum proportion (relative to the parent region) for a split segment to be considered valid.
     min_split_total_ratio : float, default=0
         Minimum total proportion of split segments required to perform a split.
-    save_every_iter : bool, default=False
+    save_every_iter : bool, default=True
         If True, save the seed mask at every iteration.
     prune_every_iter : bool or None, default=None
         After every intermediate threshold, remove regions smaller than min_size, keep
@@ -647,8 +644,7 @@ def make_adaptive_seed_thre(
     - A CSV file summarizing the split operations and parameters is also saved.
 
     """
-    
-    
+    values = dict(locals())                       # the arguments, for used_config.yaml
 
     img = config_core.check_and_load_data(img, img_path, "img")
     boundary = config_core.check_and_load_data(boundary, boundary_path, "boundary", must_exist=False)
@@ -678,6 +674,7 @@ def make_adaptive_seed_thre(
     root_output_folder = output_folder
     output_folder = os.path.join(output_folder , base_name)
     output_folder = os.path.abspath(output_folder)
+    config_core.warn_earlier_results(output_folder)
     os.makedirs(output_folder,exist_ok=True)
 
     footprint_list = config_core.check_and_assign_footprint(footprints, erosion_steps)
@@ -954,13 +951,8 @@ def make_adaptive_seed_thre(
                   return_for_napari=return_for_napari, seeds_dict=seeds_dict)
     
     history.save(output_folder, combine_seed, final_ids)
-    config_core.save_config_with_output({
-        "params": values_to_print},output_folder)
-        
-
-    pd.DataFrame(output_dict).to_csv(os.path.join(output_folder,
-                                                  f"output_dict_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"),
-                                     index=False)
+    config_core.save_used_config(output_folder, config_core.used_config(
+        values, config_core.input_val_make_adaptive_seed), "--adaptive_seed")
     
              
     return seeds_dict,ori_combine_ids_map, output_dict  

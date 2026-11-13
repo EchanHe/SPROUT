@@ -151,7 +151,7 @@ def _clear_seed(flat_seed, seed_voxels, seed_id):
     flat_seed[voxels[flat_seed[voxels] == seed_id]] = 0
 
 
-def extract_regions(mask, min_area=1, connectivity=1, input_mode="binary", return_labeled=False):
+def extract_regions(mask, min_area=1, connectivity=None, input_mode="binary", return_labeled=False):
     """Extract regions from a binary mask or an already-labelled segmentation.
 
     In binary mode, nonzero voxels are split into connected components. In label
@@ -428,7 +428,7 @@ def _choose_old_seed_for_region(
 def adaptive_seed_s2l_from_seeds(
     seeds,
     min_area=1,
-    connectivity=1,
+    connectivity=None,
     input_mode="auto",
     top_n=None,
     min_current_coverage=None,
@@ -662,7 +662,7 @@ def adaptive_seed_s2l_from_tiff_files(file_paths, **kwargs):
 def adaptive_seed_l2s_from_seeds(
     seeds,
     min_area=1,
-    connectivity=1,
+    connectivity=None,
     input_mode="auto",
     min_new_coverage=0.5,
     max_new_coverage=0.05,

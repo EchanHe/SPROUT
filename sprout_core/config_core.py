@@ -486,22 +486,55 @@ def write_json(filename, args_dict):
     with open(filename, 'w') as jsonfile:
         json.dump(results, jsonfile, indent=4)
 
-def save_config_with_output(output_dict, output_dir):
-    os.makedirs(output_dir, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-    config_path = os.path.join(output_dir, f"config_{timestamp}.yaml")
-
-    # Set 'img', 'seg', 'boundary' keys to None if they exist and value is not None
-    for k in ("img", "seg", "boundary"):
-        if k in output_dict['params'] and output_dict['params'][k] is not None:
-            output_dict['params'][k] = None
+USED_CONFIG = "used_config.yaml"
 
 
-    with open(config_path, "w") as f:
-        yaml.dump(output_dict, f)
+def _plain(value):
+    """A value YAML can write and read back: numpy and tuples become plain Python."""
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, (list, tuple)):
+        return [_plain(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _plain(v) for k, v in value.items()}
+    return value
 
-    print(f"Input config for this run has been saved to : {config_path}")
-    return config_path
+
+def used_config(values, rules, renames=None):
+    """The parameters of a run as a config: every key of `rules`, from `values` or its default.
+
+    An input given as an array (napari) has no path: its *_path key is null.
+    `renames` maps a function's argument names to YAML keys (threshold -> thresholds).
+    """
+    values = {(renames or {}).get(k, k): v for k, v in values.items()}
+    return {k: _plain(values[k]) if k in values else rule.get("default") for k, rule in rules.items()}
+
+
+def save_used_config(folder, config, command=None):
+    """Write used_config.yaml into the result folder: the record of how this result was made."""
+    from sprout_core import __version__
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, USED_CONFIG)
+    run = f" As a config: sprout {command} --config {USED_CONFIG}" if command else ""
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(f"# SPROUT {__version__}, {datetime.now():%Y-%m-%d %H:%M}.{run}\n")
+        yaml.safe_dump(config, f, sort_keys=False, allow_unicode=True)
+    return path
+
+
+def batch_results_path(output_folder, csv_path):
+    """The table of a batch run, one row per image: <output_folder>/<csv name>_results.csv."""
+    os.makedirs(output_folder, exist_ok=True)
+    return os.path.join(output_folder, os.path.splitext(os.path.basename(csv_path))[0] + "_results.csv")
+
+
+def warn_earlier_results(folder):
+    """Results of an earlier run in this folder are overwritten: say so."""
+    if os.path.isdir(folder) and any(os.scandir(folder)):
+        print(f"[WARNING] {folder} has results of an earlier run: files of the same name are overwritten. "
+              "Another output_folder keeps them.")
 
 def check_file_extension(file_path):
     # Get the file extension
@@ -520,15 +553,18 @@ def check_file_extension(file_path):
 
 
 RENAMED = {"min_area": "min_size", "save_intermediate": "save_every_iter"}    # sweep keys before 1.1.0
+REMOVED = {"connectivity": "regions that touch at a corner are one region, as everywhere in SPROUT"}   # 1.1.1
 
 
 def validate_input_yaml(config, rules):
     errors = []
     optional_values = {}
-    
+
     for key in config:
         if key in RENAMED and key not in rules:
             errors.append(f"'{key}' is now '{RENAMED[key]}'.")
+        elif key in REMOVED and key not in rules:
+            errors.append(f"'{key}' is no longer used: {REMOVED[key]}.")
         elif key not in rules:
             errors.append(f"Unsupported parameter '{key}' in input config.")
 
@@ -1297,13 +1333,6 @@ input_val_sweep_adaptive_seed = {
         "required": False,
         "default": 1,
         "description": "Regions smaller than this (in voxels) are dropped at every step.",
-    },
-    "connectivity": {
-        "type": int,
-        "min": 1,
-        "required": False,
-        "default": 1,
-        "description": "Connectivity for connected-components labelling.",
     },
     "input_mode": {
         "type": str,

@@ -57,8 +57,7 @@ By default all steps stay in memory: about 2 bytes per voxel per step, plus 7 by
 | `direction` | `strict_to_loose` | `strict_to_loose`, `loose_to_strict`, or `both` to write both results. |
 | `min_size` | `1` | Regions smaller than this are ignored. This has a large effect on the number of seeds. |
 | `top_n` | none | Keep only the N largest seeds of the result. |
-| `connectivity` | `1` | Connectivity of connected components. |
-| `input_mode` | `auto` | `label`: each id of a step is one region. `binary`: find the connected components of a step. |
+| `input_mode` | `auto` | `label`: each id of a step is one region. `binary`: find the connected components of a step (touching at a corner counts, as everywhere in SPROUT). |
 | `upper_thresholds` | none | One value per threshold, for a range: `threshold <= image <= upper`. An erosion sweep takes one value. |
 | `boundary_path` | none | A boundary mask: its voxels are excluded. |
 | `footprints` | `ball` | Erosion footprint, see [seed generation](./config_seed.md). |
@@ -96,7 +95,7 @@ In `<output_folder>/<base_name>/`:
 | `sweep_regions.csv` | One row per seed: `id`, `area`, `first_step` and `last_step` (the numbers of the step files), the settings that change between steps at those steps (for example `first_threshold`, `last_threshold`), and `began`, `ended`, `at_step` (below). |
 | `sweep_steps.csv` | One row per step, in the order of the combine: `step`, its settings, `regions` in it, `new_seeds` that started there, `seeds_after` it (before `top_n`), and how many of its new seeds are `in_final`. |
 | `sweep_metadata.json` | The direction, the steps, and all that is known about each seed. Ids inside a seed's entry, such as `parent_seed_id`, are `original_seed_id` values. |
-| `config_<time>.yaml` | The config of this run. |
+| `used_config.yaml` | Every parameter of the run, the defaults filled in, and the SPROUT version. It is also a config: `sprout --sweep_adaptive --config used_config.yaml` runs it again (relative paths are from the folder you run in). |
 | `steps/` | The mask of each step, for example `step_000_thre_230_None_ero_0.tif`. |
 | `intermediate/<direction>/after_step_NNN.tif` | With `save_every_iter: true`: the seeds after each step. |
 
@@ -126,4 +125,4 @@ The YAML has the parameters above and `csv_path`, a CSV file with one row per im
 
 Any other column of the CSV overrides the YAML for that row. A blank cell keeps the value of the YAML. A row that fails does not stop the batch.
 
-The report `<csv name>_running_results_<time>.csv` in `output_folder` has an `error` column, and a `final_output_path` column with the seeds of each row.
+The table `<output_folder>/<csv name>_results.csv` has one row per image, with an `error` column for a row that failed. Its `final_output_path` column has the seeds of each row.

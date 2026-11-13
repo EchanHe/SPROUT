@@ -37,7 +37,9 @@ def run_batch_nninteractive(file_path):
         
         # use filename as the outfolder's subfolder
         per_file_output_folder = os.path.join(config['output_folder'], Path(config['img_path']).stem)
-        os.makedirs(per_file_output_folder, exist_ok=True)
+        config_core.warn_earlier_results(per_file_output_folder)
+        config_core.save_used_config(per_file_output_folder, config_core.used_config(
+            {**config, **optional_params}, config_core.input_val_nninteractive_run), "--prompt --nninteractive")
 
         point_config = parse_point_config(optional_params)
         
@@ -83,7 +85,7 @@ def run_batch_nninteractive(file_path):
         
             df.loc[index,'error'] = str(e)
     
-    df.to_csv(csv_path + "_running_results.csv", index = False)
+    df.to_csv(config_core.batch_results_path(yaml_config['output_folder'], csv_path), index=False)
 
 if __name__ == "__main__":
     # Get the file path from the first command-line argument or use the default

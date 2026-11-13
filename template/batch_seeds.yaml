@@ -42,7 +42,7 @@ output_folder: "./result/batch_seeds"
 
 
 # How to erode your images, 
-# Default is None, when set as None, it will use preset footprints, which can be found in the script
+# Not set: four runs, one per footprint: ball, ball_XY, ball_YZ, ball_XZ (2D: disk, X, Y), each in its own folder
 # it can be either a string, 
 # or a list of string that matches the number of erosions
 # Current supports 

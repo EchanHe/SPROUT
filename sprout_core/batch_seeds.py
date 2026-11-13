@@ -10,7 +10,6 @@ import pandas as pd
 import sprout_core.sprout_core as sprout_core
 import sprout_core.config_core as config_core
 
-from datetime import datetime
 
 # def load_config_yaml(config, parent_key=''):
 #     for key, value in config.items():
@@ -65,9 +64,7 @@ def run_batch_seeds(file_path):
             
         df.loc[index,'output_folder'] = config['output_folder']
 
-    os.makedirs(config['output_folder'], exist_ok=True)
-    df.to_csv(os.path.join(config['output_folder'],
-                           os.path.basename(csv_path) + f"_running_results_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"), index = False)    
+    df.to_csv(config_core.batch_results_path(config['output_folder'], csv_path), index=False)
 
 
 def run_batch_adaptive_seed(file_path):
@@ -188,9 +185,7 @@ def run_batch_adaptive_seed(file_path):
             
         df.loc[index,'output_folder'] = config['output_folder']
 
-    os.makedirs(config['output_folder'], exist_ok=True)
-    df.to_csv(os.path.join(config['output_folder'],
-                           os.path.basename(csv_path) + f"_running_results_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"), index = False)    
+    df.to_csv(config_core.batch_results_path(config['output_folder'], csv_path), index=False)
 
 
 def run_batch_sweep_adaptive_seed(file_path):
@@ -226,9 +221,7 @@ def run_batch_sweep_adaptive_seed(file_path):
         df.loc[index, 'output_folder'] = row.get('output_folder', yaml_config.get('output_folder'))
 
     output_folder = yaml_config['output_folder']
-    os.makedirs(output_folder, exist_ok=True)
-    df.to_csv(os.path.join(output_folder,
-                           os.path.basename(csv_path) + f"_running_results_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"), index=False)
+    df.to_csv(config_core.batch_results_path(output_folder, csv_path), index=False)
 
 
 if __name__ == "__main__":

@@ -28,7 +28,7 @@ This configuration file defines the arguments used for seed generation in SPROUT
 | `boundary_path`     | ❌        | `str`              | Optional path to a binary boundary image. Used create extra backgrounds in binary to explicitly create separations |
 | `workspace`         | ❌        | `str`              | Root directory. If set, all relative paths will be joined with it. Default is empty string `""`. |
 | `base_name`                | ❌        | `str`           | Prefix name for sub-output folder. Defaults to base name of `img_path`.                                 |
-| `footprints`        | ❌        | `str` or `list`    | Shape of structuring element for erosion. Can be `"ball"`, `"cube"`, `"X"`, `"Y"`, `"Z"`, or plane-specific versions like `"ball_XY"`. Each erosion step removes one voxel layer: `"ball"` uses a 3×3×3 cross (6-neighbourhood), `"cube"` a full 3×3×3 cube (26-neighbourhood). SPROUT sizes are radii (size 1 = 3×3×3), unlike skimage's `cube(n)`, which takes the edge length. Note: before Oct 2026, `"cube"` did not erode at all (a bug). |
+| `footprints`        | ❌        | `str` or `list`    | Not set: four runs, one per footprint, `ball`, `ball_XY`, `ball_YZ` and `ball_XZ` (2D: `disk`, `X`, `Y`), each in its own folder. Shape of structuring element for erosion. Can be `"ball"`, `"cube"`, `"X"`, `"Y"`, `"Z"`, or plane-specific versions like `"ball_XY"`. Each erosion step removes one voxel layer: `"ball"` uses a 3×3×3 cross (6-neighbourhood), `"cube"` a full 3×3×3 cube (26-neighbourhood). SPROUT sizes are radii (size 1 = 3×3×3), unlike skimage's `cube(n)`, which takes the edge length. Note: before Oct 2026, `"cube"` did not erode at all (a bug). |
 
 
 
@@ -46,6 +46,19 @@ We are currently using napari to render our results, so if you only want to visu
 
 
 
+
+## Output
+
+In `<output_folder>/<base_name>/`:
+
+| File | Content |
+|---|---|
+| `<footprint>/seed_ero_<n>_thre<lower>_<upper>_segs_<segments>.tif` | The seeds of each threshold after `n` erosions (`n` from 0 to `erosion_steps`). The folder is the footprint, or `custom_footprints` for a list. Use one as `seg_path` of [growth](./config_grow.md). |
+| `<footprint>/seed_log.json` | Per threshold and erosion: the size of each region, and the time of the run. |
+| `.ply` files | With `is_make_meshes`: meshes of the seeds. |
+| `used_config.yaml` | Every parameter of the run, the defaults filled in, and the SPROUT version. It is also a config: `sprout --seeds --config used_config.yaml` runs it again (relative paths are from the folder you run in). |
+
+A run into a folder with earlier results overwrites files of the same name (a warning says so). To keep a result, use another `output_folder`.
 
 ## Seed Generation Config Parameters in batch (`--seeds`)
 
@@ -65,6 +78,8 @@ Templates of the configuration file and the csv file for seeds can be found at: 
 | `csv_path`      | ✅        | `str` | Path to a CSV file. Must contain at least the `img_path` column. |
 
 In addition, all **required seed parameters** (`thresholds`, `erosion_steps`, `segments`, etc.) must be either: Globally defined in the YAML file, **or** Provided per image in the CSV file
+
+The table `<output_folder>/<csv name>_results.csv` has one row per image, with an `error` column for a row that failed.
 
 
 ### Example

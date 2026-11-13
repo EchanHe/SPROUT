@@ -84,6 +84,32 @@ def test_an_old_key_name_gives_the_new_one(tmp_path, old, new):
         run(values)
 
 
+def test_connectivity_is_no_longer_a_key(tmp_path):
+    with pytest.raises(ValueError, match="'connectivity' is no longer used"):
+        run(config(tmp_path, connectivity=1))
+
+
+def corner_image(ndim):
+    """Two blocks that touch only at their corners: one region, as everywhere in SPROUT."""
+    img = np.zeros((6, 12, 12), np.uint8)
+    img[1:5, 2:6, 2:6] = 200
+    img[1:5, 6:10, 6:10] = 200
+    return img if ndim == 3 else img[2]
+
+
+@pytest.mark.parametrize("ndim", [3, 2])
+def test_blocks_touching_at_a_corner_are_one_seed_from_yaml_and_napari(tmp_path, ndim):
+    tifffile.imwrite(tmp_path / "img.tif", corner_image(ndim))
+    values = config(tmp_path, thresholds=[200, 150], segments=1)       # one region per step: id 1 only
+    for key in ("input_mode", "connectivity"):                         # not in the YAML: the defaults
+        values.pop(key, None)
+    from_yaml = result(run(values))
+    from_napari = next(iter(sweep.make_sweep_adaptive_seed(
+        img=corner_image(ndim), thresholds=[200, 150], erosion_steps=0, segments=1,
+        output_folder=str(tmp_path / "napari")).values()))
+    assert len(np.unique(from_yaml)) == len(np.unique(from_napari)) == 2       # background and one seed
+
+
 def boundary_file(folder):
     boundary = np.zeros(image().shape, np.uint8)
     boundary[:, 14, :] = 1
@@ -142,8 +168,9 @@ def test_both_gives_what_each_direction_gives(tmp_path):
 
 def test_the_output_folder(tmp_path):
     folder = run(config(tmp_path))
-    names = {path.name for path in folder.iterdir() if not path.name.startswith("config_")}
-    assert names == {"FINAL_sweep_seed.tif", "sweep_regions.csv", "sweep_steps.csv", "sweep_metadata.json", "steps"}
+    names = {path.name for path in folder.iterdir()}
+    assert names == {"FINAL_sweep_seed.tif", "sweep_regions.csv", "sweep_steps.csv", "sweep_metadata.json", "steps",
+                     "used_config.yaml"}
 
 
 def test_regions_say_what_the_image_holds(tmp_path):
@@ -338,8 +365,9 @@ def test_steps_from_disk_give_what_steps_in_memory_give(tmp_path, direction):
     (tmp_path / "b").mkdir()
     memory = run(config(tmp_path / "a", direction=direction, num_threads=2))
     disk = run(config(tmp_path / "b", direction=direction, num_threads=2, memory_limit_gb=0))
-    names = sorted(p.name for p in memory.iterdir() if not p.name.startswith("config_") and p.is_file())
-    assert names == sorted(p.name for p in disk.iterdir() if not p.name.startswith("config_") and p.is_file())
+    names = sorted(p.name for p in memory.iterdir() if p.is_file())        # used_config.yaml: each run's own
+    assert names == sorted(p.name for p in disk.iterdir() if p.is_file())
+    names.remove("used_config.yaml")
     for name in names:
         assert (memory / name).read_bytes() == (disk / name).read_bytes(), name
 
@@ -552,7 +580,7 @@ def test_a_failed_row_does_not_stop_the_batch(tmp_path):
     batch_seeds.run_batch_sweep_adaptive_seed(path)
     final = tmp_path / "out" / "other" / "FINAL_sweep_seed.tif"
     assert final.is_file()
-    report = pd.read_csv(next((tmp_path / "out").glob("*_running_results_*.csv")))
+    report = pd.read_csv(next((tmp_path / "out").glob("*_results.csv")))
     assert report["error"].notna().tolist() == [True, False]
     assert report["final_output_path"].iloc[1] == str(final)
 

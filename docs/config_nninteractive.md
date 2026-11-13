@@ -71,7 +71,7 @@ In `output_folder`:
 - `<image>_segmentation.tif`: all classes, one id per class.
 - `<image>_point_prompts.csv`: the points used (point prompts).
 - `segs/<image>_class_<id>.tif` with `return_per_class_masks`; `prob/<image>_class_<id>_prob.tif` with `save_prob_maps`.
-- `used_config.yaml`: the parameters of the run (not in batch mode).
+- `used_config.yaml`: every parameter of the run, the defaults filled in, and the SPROUT version. It is also a config for `sprout --prompt --nninteractive`. In batch mode: in the folder of each image.
 
 ## Batch (`--prompt --nninteractive --batch`)
 
@@ -79,6 +79,6 @@ In `output_folder`:
 sprout --prompt --nninteractive --batch --config path/to/batch_config.yaml
 ```
 
-The batch config is the config above with `csv_path` in place of `img_path` and `seg_path`. The CSV has the columns `img_path` and `seg_path`, one row per image, and may set other parameters per image (a parameter goes in the CSV or in the YAML, not both). Each image gets a subfolder of `output_folder`, named after the image.
+The batch config is the config above with `csv_path` in place of `img_path` and `seg_path`. The CSV has the columns `img_path` and `seg_path`, one row per image, and may set other parameters per image (a parameter goes in the CSV or in the YAML, not both). Each image gets a subfolder of `output_folder`, named after the image. The table `<output_folder>/<csv name>_results.csv` has one row per image, with an `error` column for a row that failed.
 
 A template: [`../template/batch_nninteractive.yaml`](../template/batch_nninteractive.yaml) with [`../template/nninteractive_input.csv`](../template/nninteractive_input.csv) (or `sprout --template nninteractive --batch`).

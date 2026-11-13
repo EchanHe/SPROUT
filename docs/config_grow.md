@@ -48,6 +48,21 @@ We are currently using napari to render our results, so if you only want to visu
 | `step_size`         | ❌        | `int`              | Step size for Marching Cubes. Higher values produce simpler meshes. Default is `1`. |
 
 
+## Output
+
+In `<output_folder>/<base_name>/`:
+
+| File | Content |
+|---|---|
+| `FINAL_GROW_<base_name>.tif` | The result, numbered by size with `is_sort`. In `final_grow_output_folder` if it is set. |
+| `INTER_<base_name>_<threshold>_<upper>_<n>.tif` | The result after `n` dilations: every `save_every_n_iters`, at the end of each threshold, and at an early stop. |
+| `grow_log_<base_name>.csv` | One row per `INTER_*.tif`: its size, the size the threshold allows, and its full path. |
+| `grow_log_<base_name>.png` | A plot of that table (needs matplotlib). |
+| `.ply` files | With `is_make_meshes`: meshes of the results. |
+| `used_config.yaml` | Every parameter of the run, the defaults filled in, and the SPROUT version. It is also a config: `sprout --grow --config used_config.yaml` runs it again (relative paths are from the folder you run in). |
+
+A run into a folder with earlier results overwrites files of the same name (a warning says so). To keep a result, use another `output_folder`.
+
 ## Grow Config Parameters in batch (`--grow --batch`)
 
 Batch mode allows you to grow segmentations for multiple images in a single run using a CSV file. Each row in the CSV corresponds to one image and one segmentation, and may optionally override additional parameters.
@@ -67,6 +82,8 @@ Templates of the configuration file and the csv file for grow can be found at: [
 
 
 In addition, all **required grow parameters** (`thresholds`, `dilation_steps`, `touch_rule`, etc.) must be either: : Globally defined in the YAML file, **or** Provided per image in the CSV file.
+
+The table `<output_folder>/<csv name>_results.csv` has one row per image, with an `error` column for a row that failed. Its `final_output_path` column has the result of each row.
 
 ### Example
 
