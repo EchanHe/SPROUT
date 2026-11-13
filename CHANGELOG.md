@@ -19,8 +19,13 @@
 - `sprout`: a missing config or option gives a short message and where to find templates and docs, not a traceback.
 - Templates: batch adaptive seed has the `min_size` and `min_split_ratio` of the single one (1 and 0, were 5 and 0.01); nnInteractive `default_method` is `random`, as in the docs and napari (was `grid`).
 
+- Every result folder has `used_config.yaml`: all parameters of the run, the defaults filled in, and the SPROUT version; it is also a config that runs it again. It replaces `config_<time>.yaml`.
+- Output files have fixed names: a run into a folder with results overwrites them (a warning says so) instead of adding files with a time in the name (`seed_log.json`; batch tables are `<output_folder>/<csv name>_results.csv`, also for SAM and nnInteractive, which wrote them next to the CSV). Adaptive seed no longer writes `output_dict_<time>.csv`: `adaptive_seed_regions.csv` and `adaptive_seed_steps.csv` hold the same.
+- Docs: the output files of seeds and growth; the four footprints that seeds use when `footprints` is not set.
+
 ### Fixed
 - The batch sweep template's CSV (`sweep_adaptive_seeds_input.csv`) was missing.
+- `sprout --grow` without matplotlib (`pip install sprout-seg`) failed after writing its results: the plot is now left out, with a note. The plot is `grow_log_<name>.png` (was `.csv.png`).
 
 ## 1.1.0 (2026-11-10)
 

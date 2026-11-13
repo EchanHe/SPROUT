@@ -4,7 +4,6 @@ import pandas as pd
 # from PIL import Image
 from tifffile import imread, imwrite
 import os,sys
-from datetime import datetime
 
 import time
 import yaml
@@ -235,6 +234,7 @@ def make_adaptive_seed_ero(
     Returns:
         tuple: Merged seeds, original combine ID map, and output dictionary.
     """
+    values = dict(locals())                       # the arguments, for used_config.yaml
     
     img = config_core.check_and_load_data(img, img_path, "img")
 
@@ -267,6 +267,7 @@ def make_adaptive_seed_ero(
     # else:
     #     output_folder = os.path.join(output_folder, sub_folder)
     output_folder = os.path.abspath(output_folder)
+    config_core.warn_earlier_results(output_folder)
     os.makedirs(output_folder,exist_ok=True)
 
 
@@ -514,13 +515,9 @@ def make_adaptive_seed_ero(
     
 
     history.save(output_folder, combine_seed, final_ids)
-    config_core.save_config_with_output({
-        "params": values_to_print},output_folder)
-        
-
-    pd.DataFrame(output_dict).to_csv(os.path.join(output_folder,
-                                                  f"output_dict_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"),
-                                     index=False)
+    config_core.save_used_config(output_folder, config_core.used_config(
+        values, config_core.input_val_make_adaptive_seed,
+        renames={"threshold": "thresholds", "upper_threshold": "upper_thresholds"}), "--adaptive_seed")
 
     return seeds_dict,ori_combine_ids_map, output_dict    
 
@@ -647,8 +644,7 @@ def make_adaptive_seed_thre(
     - A CSV file summarizing the split operations and parameters is also saved.
 
     """
-    
-    
+    values = dict(locals())                       # the arguments, for used_config.yaml
 
     img = config_core.check_and_load_data(img, img_path, "img")
     boundary = config_core.check_and_load_data(boundary, boundary_path, "boundary", must_exist=False)
@@ -678,6 +674,7 @@ def make_adaptive_seed_thre(
     root_output_folder = output_folder
     output_folder = os.path.join(output_folder , base_name)
     output_folder = os.path.abspath(output_folder)
+    config_core.warn_earlier_results(output_folder)
     os.makedirs(output_folder,exist_ok=True)
 
     footprint_list = config_core.check_and_assign_footprint(footprints, erosion_steps)
@@ -955,13 +952,8 @@ def make_adaptive_seed_thre(
                   return_for_napari=return_for_napari, seeds_dict=seeds_dict)
     
     history.save(output_folder, combine_seed, final_ids)
-    config_core.save_config_with_output({
-        "params": values_to_print},output_folder)
-        
-
-    pd.DataFrame(output_dict).to_csv(os.path.join(output_folder,
-                                                  f"output_dict_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"),
-                                     index=False)
+    config_core.save_used_config(output_folder, config_core.used_config(
+        values, config_core.input_val_make_adaptive_seed), "--adaptive_seed")
     
              
     return seeds_dict,ori_combine_ids_map, output_dict  

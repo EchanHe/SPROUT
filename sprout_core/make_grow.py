@@ -286,6 +286,7 @@ def grow_mp(**kwargs):
     # Stop / progress hooks (napari); popped so that the saved config stays as it was
     cancel = kwargs.pop('cancel', None)
     progress = kwargs.pop('progress', None)
+    values = dict(kwargs)
 
     # Extract configuration values from kwargs
     dilation_steps = kwargs.get('dilation_steps', None)
@@ -385,7 +386,7 @@ def grow_mp(**kwargs):
     boundary = config_core.check_and_cast_boundary(boundary)
     
     output_folder = os.path.join(output_folder, base_name)
-    
+    config_core.warn_earlier_results(output_folder)
     os.makedirs(output_folder , exist_ok=True)
     if final_grow_output_folder is not None:
         os.makedirs(final_grow_output_folder, exist_ok=True)
@@ -558,9 +559,8 @@ def grow_mp(**kwargs):
     log_path =  os.path.join(output_folder, f'grow_log_{base_name}.csv')   
     df_log.to_csv(log_path, index = False)
 
-    # Save the configuration parameters used for growing
-    config_core.save_config_with_output({
-        "params": kwargs},output_folder)
+    config_core.save_used_config(output_folder, config_core.used_config(values, config_core.input_val_make_grow),
+                                 "--grow")
 
     # Make meshes  
     if is_make_meshes:  
@@ -635,9 +635,10 @@ def run_make_grow(file_path):
               
         )
     
-    vis_lib.plot_grow(pd.read_csv(log_dict['log_path']),
-              log_dict['log_path'] +".png"
-              )
+    try:
+        vis_lib.plot_grow(pd.read_csv(log_dict['log_path']), os.path.splitext(log_dict['log_path'])[0] + ".png")
+    except ModuleNotFoundError:                   # matplotlib is not a dependency of sprout-seg
+        print("No plot of the grow log: it needs matplotlib (pip install matplotlib).")
 
 if __name__ == "__main__":
     

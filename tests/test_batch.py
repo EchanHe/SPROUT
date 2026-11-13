@@ -52,14 +52,12 @@ def batch_yaml(tmp_path, template, **changes):
 def test_the_error_of_a_row_is_written(tmp_path, monkeypatch, run, module, function, template, changes):
     monkeypatch.setattr(module, function, fail)
     run(batch_yaml(tmp_path, template, thresholds=[150, 100], **changes))
-    results = list((tmp_path / "out").glob("input.csv_running_results_*.csv"))
-    assert len(results) == 1
-    assert pd.read_csv(results[0])["error"].tolist() == ["this row fails"]
+    assert pd.read_csv(tmp_path / "out" / "input_results.csv")["error"].tolist() == ["this row fails"]
 
 
 def test_grow_without_save_every_n_iters(tmp_path):
     config = batch_yaml(tmp_path, "make_grow.yaml", thresholds=[150, 100], dilation_steps=[2, 2])
     assert "save_every_n_iters" not in yaml.safe_load(open(config, encoding="utf-8"))   # optional
     batch_grow.run_batch_grow(config)
-    results = pd.read_csv(next((tmp_path / "out").glob("input.csv_running_results_*.csv")))
+    results = pd.read_csv(tmp_path / "out" / "input_results.csv")
     assert "error" not in results and Path(results["final_output_path"][0]).is_file()

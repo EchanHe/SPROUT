@@ -76,7 +76,7 @@ def tifs(folder):
 
 
 def yaml_texts(folder):
-    return "".join(Path(p).read_text() for p in glob.glob(os.path.join(str(folder), "**", "config_*.yaml"),
+    return "".join(Path(p).read_text() for p in glob.glob(os.path.join(str(folder), "**", "used_config.yaml"),
                                                           recursive=True))
 
 
@@ -130,7 +130,8 @@ same = (ref is not None and got is not None and ref[0].keys() == got[0].keys()
         and all(np.array_equal(ref[0][k], got[0][k]) and ref[0][k].dtype == got[0][k].dtype for k in ref[0]))
 ok(same and [Path(p).name for p in tifs(TMP / "s_ref")] == [Path(p).name for p in tifs(TMP / "s_prog")],
    "make_seeds: same seeds and files with a progress hook")
-ok(e1 is None and "progress" not in yaml_texts(TMP / "s_prog") and "cancel" not in yaml_texts(TMP / "s_prog"),
+ok(e1 is None and "thresholds" in yaml_texts(TMP / "s_prog") and "progress" not in yaml_texts(TMP / "s_prog")
+   and "cancel" not in yaml_texts(TMP / "s_prog"),
    "make_seeds: the saved config has no progress / cancel key")
 ev = threading.Event()
 rec = Recorder(ev, stop_at=5)
@@ -181,7 +182,8 @@ ok(e1 is None and rec.total == 10 and rec.max_done() == 10,
    f"grow_mp: progress after every iteration, up to its total ({rec.calls[-1:] if rec.calls else e1!r})")
 ok(ref is not None and got is not None and ref[0].keys() == got[0].keys()
    and all(np.array_equal(ref[0][k], got[0][k]) for k in ref[0]), "grow_mp: same result with a progress hook")
-ok(e1 is None and "progress" not in yaml_texts(TMP / "g_prog") and "cancel" not in yaml_texts(TMP / "g_prog"),
+ok(e1 is None and "thresholds" in yaml_texts(TMP / "g_prog") and "progress" not in yaml_texts(TMP / "g_prog")
+   and "cancel" not in yaml_texts(TMP / "g_prog"),
    "grow_mp: the saved config has no progress / cancel key")
 ev = threading.Event()
 rec = Recorder(ev, stop_at=7)

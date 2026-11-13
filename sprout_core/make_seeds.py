@@ -31,6 +31,7 @@ pre_set_footprint_list = [
 ]
 
 pre_set_sub_folders = [footprint[0] for footprint in pre_set_footprint_list]
+SEED_LOG = "seed_log.json"
 
 pre_set_footprint_list_2d = [
     ["disk"],
@@ -60,8 +61,7 @@ def gen_seed_mp(volume, thre_fp_pairs, ero_iter , segments ,
         output_seed_folder =  threshold_ero_iter_pair[1][1]
         os.makedirs(output_seed_folder, exist_ok=True)
 
-        output_json_path = os.path.join(output_seed_folder,
-                                    f"seed_log_{datetime.now().strftime('%Y%m%d_%H%M')}.json")
+        output_json_path = os.path.join(output_seed_folder, SEED_LOG)
 
         if footprints == 'ball' or footprints == 'default':
             footprints = ['ball'] * ero_iter
@@ -227,6 +227,7 @@ def make_seeds(**kwargs):
     # Stop / progress hooks (napari); popped so that the saved config stays as it was
     cancel = kwargs.pop('cancel', None)
     progress = kwargs.pop('progress', None)
+    values = dict(kwargs)
 
     # Input and Output
     img = kwargs.get('img', None) 
@@ -314,6 +315,10 @@ def make_seeds(**kwargs):
     
     output_seed_sub_folders = [os.path.join(output_folder, base_name,
                                             output_seed_sub_folder) for output_seed_sub_folder in output_seed_sub_folders]
+    config_core.warn_earlier_results(os.path.join(output_folder, base_name))
+    for output_seed_sub_folder in output_seed_sub_folders:      # the threads append to the log of this run
+        if os.path.exists(os.path.join(output_seed_sub_folder, SEED_LOG)):
+            os.remove(os.path.join(output_seed_sub_folder, SEED_LOG))
     
     thre_fp_pairs = list(itertools.product(thresholds_pairs, zip(footprint_list,output_seed_sub_folders)))
     
@@ -362,8 +367,7 @@ def make_seeds(**kwargs):
 
     for output_seed_sub_folder in output_seed_sub_folders:
         log_dict["output_seed_sub_folders"].append(output_seed_sub_folder)
-        output_json_path = os.path.join(output_seed_sub_folder,
-                            f"seed_log_{datetime.now().strftime('%Y%m%d_%H%M')}.json")
+        output_json_path = os.path.join(output_seed_sub_folder, SEED_LOG)
         log_dict["output_log_files"].append(output_json_path)
 
         # # Make meshes  
@@ -383,9 +387,8 @@ def make_seeds(**kwargs):
                                     downsample_scale=downsample_scale,
                                     step_size=step_size)
     
-    config_core.save_config_with_output({
-        "output_dict": log_dict,
-        "params": kwargs},output_seed_sub_folder)
+    config_core.save_used_config(os.path.join(output_folder, base_name),
+                                 config_core.used_config(values, config_core.input_val_make_seeds), "--seeds")
         
     return seeds_dict , log_dict
  
