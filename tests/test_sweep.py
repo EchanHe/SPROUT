@@ -393,7 +393,7 @@ def test_steps_on_disk_take_less_memory(tmp_path):
         run(values)
         peaks[limit] = tracemalloc.get_traced_memory()[1]
         tracemalloc.stop()
-    steps = len(thresholds) * img.size * 2                      # all steps as uint16
+    steps = len(thresholds) * img.size                          # all steps in memory, in uint8
     assert peaks[0] < peaks[None] - steps / 2, (peaks, steps)
 
 

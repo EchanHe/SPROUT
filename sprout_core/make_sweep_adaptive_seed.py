@@ -199,7 +199,7 @@ def _save_result(combine_seed, seed_metadata, step_paths, output_folder, directi
 # Core pipeline (accepts config dict — used by both single and batch runs)
 # ---------------------------------------------------------------------------
 
-STEP_BYTES = 2      # per voxel of a saved step (uint16)
+STEP_BYTES = 2      # per voxel of a step in memory: uint8 when its ids fit, else uint16 (the plan takes the most)
 WORK_BYTES = 7      # per voxel of a step being computed: its int32 labels, the mask, the uint16 copy
 
 
