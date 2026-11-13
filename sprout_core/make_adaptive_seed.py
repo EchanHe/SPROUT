@@ -110,7 +110,7 @@ class _History:
     """
 
     def __init__(self, ids, setting):
-        self.seeds = {int(i): dict(first_step=0, **setting, began="first step") for i in ids}
+        self.seeds = {int(i): self._seed(0, setting, "first step") for i in ids}
         self.steps = [dict(step=0, **setting, regions=len(self.seeds), split=0,
                            new_seeds=len(self.seeds), pruned=0, seeds_after=len(self.seeds), note="")]
         self.setting = setting
@@ -121,6 +121,15 @@ class _History:
         self.steps.append(dict(step=step, **setting, regions=int(regions), split=0,
                                new_seeds=0, pruned=0, seeds_after=None, note=""))
 
+    @staticmethod
+    def _seed(step, setting, began):
+        return dict(first_step=step, first=setting, last_step=step, last=setting, began=began)
+
+    def seen(self, seed_id):
+        """The region of this seed still has a part that counts in this step."""
+        if int(seed_id) in self.seeds:
+            self.seeds[int(seed_id)].update(last_step=self.steps[-1]["step"], last=self.setting)
+
     def replaced(self, old_id, new_ids):
         """A region of the running seed was split into these parts (two or more) in this step."""
         row, n = self.steps[-1], len(new_ids)
@@ -128,7 +137,7 @@ class _History:
         row["split"] += 1
         row["new_seeds"] += n
         for k, new_id in enumerate(new_ids, start=1):
-            self.seeds[int(new_id)] = dict(first_step=row["step"], **self.setting, began=f"separated ({k} of {n})")
+            self.seeds[int(new_id)] = self._seed(row["step"], self.setting, f"separated ({k} of {n})")
 
     def renumbered(self, class_mapping):
         """The running seed was pruned and renumbered (prune_every_iter)."""
@@ -144,12 +153,30 @@ class _History:
             self.steps[-1]["seeds_after"] = len(self.seeds)
 
     def save(self, output_folder, final_seed, class_mapping):
-        """The two CSV files, for the final seed and its renumbering from the running seed."""
+        """The two CSV files, for the final seed and its renumbering from the running seed.
+
+        The regions file has the columns of sweep_regions.csv: of the settings, only those that
+        change from step to step. A seed whose region has no part left that counts has
+        `disappeared` (it keeps its shape); one that has a part again later has not.
+        """
         self._close()
         areas = sprout_core._bincount(final_seed, int(final_seed.max()) + 1)
-        rows = [dict(id=int(new), area=int(areas[int(new)]), **self.seeds[int(old)])
-                for old, new in class_mapping.items() if int(old) in self.seeds]
-        columns = ["id", "area", "first_step", *self.setting, "began"]
+        varying = [key for key in self.setting if len({str(step[key]) for step in self.steps}) > 1] or             list(self.setting)[:1]
+        end = self.steps[-1]["step"]
+        rows = []
+        for old, new in class_mapping.items():
+            seed = self.seeds.get(int(old))
+            if seed is None:
+                continue
+            row = dict(id=int(new), area=int(areas[int(new)]), first_step=seed["first_step"],
+                       last_step=seed["last_step"])
+            for key in varying:
+                row[f"first_{key}"], row[f"last_{key}"] = seed["first"][key], seed["last"][key]
+            gone = seed["last_step"] < end
+            rows.append(dict(row, began=seed["began"], ended="disappeared" if gone else "reached the end",
+                             at_step=seed["last_step"] + 1 if gone else ""))
+        columns = ["id", "area", "first_step", "last_step",
+                   *[f"{e}_{key}" for key in varying for e in ("first", "last")], "began", "ended", "at_step"]
         pd.DataFrame(sorted(rows, key=lambda row: row["id"]), columns=columns).to_csv(
             os.path.join(output_folder, "adaptive_seed_regions.csv"), index=False)
         pd.DataFrame(self.steps, columns=["step", *self.setting, "regions", "split", "new_seeds",
@@ -414,6 +441,8 @@ def make_adaptive_seed_ero(
             # The parts that count: at least min_size voxels and more than min_split_ratio of the region.
             # A region splits into two or more of them; else it stays as it is (specks do not split it).
             counted = (inter_log["inter_sizes"] >= (min_size or 0)) & (inter_log["inter_props"] > min_split_ratio)
+            if counted.any():
+                history.seen(combine_id)
             if np.count_nonzero(counted) > 1:
                 temp_inter_count = inter_log["inter_count"]
                 temp_inter_ids = inter_log["inter_ids"]
@@ -833,6 +862,8 @@ def make_adaptive_seed_thre(
             # The parts that count: at least min_size voxels and more than min_split_ratio of the region.
             # A region splits into two or more of them; else it stays as it is (specks do not split it).
             counted = (inter_log["inter_sizes"] >= (min_size or 0)) & (inter_log["inter_props"] > min_split_ratio)
+            if counted.any():
+                history.seen(combine_id)
             if np.count_nonzero(counted) > 1:
                 temp_inter_count = inter_log["inter_count"]
                 temp_inter_ids = inter_log["inter_ids"]
