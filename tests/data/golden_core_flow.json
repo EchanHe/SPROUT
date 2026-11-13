@@ -3,7 +3,7 @@
   "a1/ero/FINAL_adaptive_seed.tif": "90f1934211aab403db1f63f484d52cc530f63d6c uint16 (691, 161, 122) {'labels': 10, 'voxels': 13322}",
   "a1/ero/INTER_adaptive_thre_140_255_ero_1.tif": "8d9a92de3c5581410b929a00e3da71ae403255b5 uint16 (691, 161, 122) {'labels': 10, 'voxels': 62150}",
   "a1/ero/INTER_adaptive_thre_140_255_ero_2.tif": "4e7cf3cedf0054c7962d832d67a04f993127e0b1 uint16 (691, 161, 122) {'labels': 10, 'voxels': 20781}",
-  "a1/ero/INTER_thre_140_255_ero_0.tif": "8400157d22de25ea35afc56fcbdadc3bbd95e17c int32 (691, 161, 122) {'labels': 10, 'voxels': 184418}",
+  "a1/ero/INTER_thre_140_255_ero_0.tif": "da50b2330ec9856ddde92139087166e1f87f90c3 uint16 (691, 161, 122) {'labels': 10, 'voxels': 184418}",
   "a1/ero/INTER_thre_140_255_ero_1.tif": "25a62e185c7a122f0acc722c37c1c3fb09785690 uint16 (691, 161, 122) {'labels': 10, 'voxels': 54695}",
   "a1/ero/INTER_thre_140_255_ero_2.tif": "2c11f7852441d4cc605e43bee180efa01d58919e uint16 (691, 161, 122) {'labels': 10, 'voxels': 12634}",
   "a1/ero/INTER_thre_140_255_ero_3.tif": "937abe30d12dba5dd358cd7e7377333c72aeb437 uint16 (691, 161, 122) {'labels': 10, 'voxels': 2196}",
@@ -107,9 +107,9 @@
    "voxels": 13934
   },
   "adaptive_ero/INTER_thre_140_255_ero_0.tif": {
-   "dtype": "int32",
+   "dtype": "uint16",
    "labels": 10,
-   "sha1": "8400157d22de25ea35afc56fcbdadc3bbd95e17c",
+   "sha1": "da50b2330ec9856ddde92139087166e1f87f90c3",
    "sha1_as": {
     "int32": "8400157d22de25ea35afc56fcbdadc3bbd95e17c",
     "uint16": "da50b2330ec9856ddde92139087166e1f87f90c3",

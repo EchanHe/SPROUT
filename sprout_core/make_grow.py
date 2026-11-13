@@ -95,6 +95,16 @@ def _write_mask_stop(input_mask, label_id, bb, footprint, allowed=None):
     return dilated & ~taken_by_others
 
 
+def _grown_box(box, bb, write):
+    """`box` grown to hold the voxels set in `write`, a mask of `bb` (`box` one voxel wider).
+    A label grows by at most one voxel, so only the outer faces of `bb` can hold new voxels."""
+    grown = []
+    for axis, (old, outer) in enumerate(zip(box, bb)):
+        first, last = np.take(write, 0, axis=axis).any(), np.take(write, -1, axis=axis).any()
+        grown.append(slice(outer.start if first else old.start, outer.stop if last else old.stop))
+    return tuple(grown)
+
+
 def _compute_parallel_write_in_order(task, label_ids, num_threads, result, cancel=None):
     """Run task(label_id) -> (label_id, bb, write_mask) on a thread pool, but apply the
     writes to `result` strictly in the order of `label_ids`.
@@ -127,7 +137,8 @@ def dilation_one_iter_mp(input_mask, threshold_binary,
                              touch_rule = 'stop',
                              to_grow_ids = None,
                              boundary = None,
-                             cancel = None):
+                             cancel = None,
+                             boxes = None):
     """
     Perform one iteration of dilation by using grow_function(...) in multi-threading.
 
@@ -139,6 +150,10 @@ def dilation_one_iter_mp(input_mask, threshold_binary,
         to_grow_ids (list, optional): Specific IDs to grow. Defaults to None.
         boundary (np.ndarray, optional): Boundary mask to constrain growth. Defaults to None.
         cancel (threading.Event, optional): checked between labels; raises Cancelled.
+        boxes (list, optional): the bounding boxes of the labels, as ndi.find_objects gives them,
+            for the next iterations ('stop' only): filled on the first call, then grown by what each
+            label writes, so later iterations do not scan the volume. A box may be larger than its
+            label (voxels removed at the end of an iteration): the result is the same.
 
     Returns:
         np.ndarray: The updated mask after one dilation iteration.
@@ -150,7 +165,12 @@ def dilation_one_iter_mp(input_mask, threshold_binary,
 
     # One pass gives every label's bounding box (and which labels exist), instead of
     # np.unique plus three full-volume comparisons per label.
-    objects = ndi.find_objects(input_mask)
+    if boxes is not None and touch_rule == 'stop':
+        if not boxes:
+            boxes.extend(ndi.find_objects(input_mask))
+        objects = boxes
+    else:
+        objects = ndi.find_objects(input_mask)
     present = [i + 1 for i, s in enumerate(objects) if s is not None]
     if to_grow_ids is not None:
         label_id_list = np.intersect1d(present, to_grow_ids)
@@ -174,7 +194,10 @@ def dilation_one_iter_mp(input_mask, threshold_binary,
             allowed = np.asarray(threshold_binary[bb], bool)
             if boundary is not None:
                 allowed = allowed & np.logical_not(boundary[bb])
-            return label_id, bb, _write_mask_stop(input_mask, label_id, bb, footprint, allowed)
+            write = _write_mask_stop(input_mask, label_id, bb, footprint, allowed)
+            if boxes is not None:
+                boxes[int(label_id) - 1] = _grown_box(box, bb, write)     # only this task uses this box
+            return label_id, bb, write
 
         _compute_parallel_write_in_order(task, label_id_list, num_threads, result, cancel)
     else:
@@ -435,6 +458,7 @@ def grow_mp(**kwargs):
     result = sprout_core.cast_labels(seg, np.uint8)
     # Non-zero voxels of `result`, kept up to date: each iteration counts only its output
     result_size = np.count_nonzero(result)
+    boxes = [] if touch_rule == 'stop' else None      # the labels' bounding boxes, kept up to date
     steps = sprout_core.StepProgress(progress, sum(dilation_steps))
 
     # Iterate through and make growth results
@@ -465,7 +489,8 @@ def grow_mp(**kwargs):
                                             touch_rule = touch_rule,
                                             to_grow_ids=to_grow_ids,
                                             boundary=boundary,
-                                            cancel=cancel)
+                                            cancel=cancel,
+                                            boxes=boxes)
             steps.step(f"threshold {threshold}: iteration {i_dilate}/{dilate_iter}")
 
             ## Check if output size and input 's diff is bigger than min_growth_size

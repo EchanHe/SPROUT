@@ -606,18 +606,34 @@ def unique_labels(labels):
     return values
 
 
-def get_ccomps_with_size_order(volume, segments=None, min_vol = None):
+def _label_uint16(mask):
+    """measure.label of a bool mask, written straight into uint16: the same labels (measure.label
+    calls ndi.label with full connectivity for bool masks), half the memory of its int32.
+    None if there are more than 65535 components."""
+    try:
+        return ndi.label(mask, structure=ndi.generate_binary_structure(mask.ndim, mask.ndim), output=np.uint16)
+    except RuntimeError:                 # "insufficient bit-depth": more components than uint16 holds
+        return None
+
+
+def get_ccomps_with_size_order(volume, segments=None, min_vol = None, uint16=False):
     """Get the largest ccomp
 
     Args:
         label (_type_): _description_
         segments (_type_): _description_
+        uint16 (bool): label a bool `volume` into uint16 (int32 if it has more than 65535
+            components): the same labels, less memory.
 
     Returns:
         _type_: _description_
     """
-    labeled_image, n_labels = measure.label(volume, background=0,
-                                  return_num=True)
+    labeled = _label_uint16(volume) if uint16 and volume.dtype == bool else None
+    if labeled is not None:
+        labeled_image, n_labels = labeled
+    else:
+        labeled_image, n_labels = measure.label(volume, background=0,
+                                      return_num=True)
     component_sizes = _bincount(labeled_image, n_labels + 1)[1:]
 
 
@@ -982,7 +998,7 @@ def find_seed_by_ero_custom(volume_array, threshold , segments, ero_iter,
             check_cancel(cancel)
 
         # Connected components
-        seed, ccomp_sizes = get_ccomps_with_size_order(volume_label,segments)
+        seed, ccomp_sizes = get_ccomps_with_size_order(volume_label,segments, uint16=True)
         
         # Save seed from each threshold, ero combination
         seed_name = f"seed_ero_{i_iter}_thre{threshold}_{upper_threshold}_segs_{segments}.tif"
@@ -990,13 +1006,14 @@ def find_seed_by_ero_custom(volume_array, threshold , segments, ero_iter,
                     seed_name)
 
         # at least uint16 as before; wider only if there are more than 65535 seeds
-        tifffile.imwrite(seed_file, cast_labels(seed, np.uint16),
+        tifffile.imwrite(seed_file, cast_labels(seed, np.uint16, copy=False),
                          compression ='zlib')
         
         if is_return_seeds:
             # the same dtype as the file (at least uint16), not measure.label's int32
-            seeds_dict[os.path.basename(output_dir) + "_" +seed_name] = cast_labels(seed, np.uint16)
-        
+            seeds_dict[os.path.basename(output_dir) + "_" +seed_name] = cast_labels(seed, np.uint16, copy=False)
+        del seed                         # free these labels before the next step labels again
+
         args_dict = {
             # "start_time": start_time.strftime("%Y-%m-%d %H:%M:%S"),
             # "end_time": end_time.strftime("%Y-%m-%d %H:%M:%S"),
