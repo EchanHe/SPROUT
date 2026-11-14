@@ -106,6 +106,84 @@ def test_more_than_65535_components_are_labelled_in_int32():
     assert new.dtype == np.int32 and np.array_equal(new, old) and new.max() == 70000
 
 
+def noisy(shape=(32, 128, 256), every=(2, 2, 3)):
+    """Single voxels of 200 on 0, more than 65535 of them (88,064), as a noisy scan has at a low
+    threshold."""
+    img = np.zeros(shape, np.uint8)
+    img[::every[0], ::every[1], ::every[2]] = 200
+    return img
+
+
+# Before 1.1.1, more than 65535 components cost 7 bytes per voxel (scipy labelled again into int32,
+# 11 bytes in int64 above 2**31 voxels) and two more labellings in every step.
+def test_more_than_65535_components_cost_no_more_than_int32():
+    mask = noisy((96, 256, 512), (4, 4, 8)) > 100                 # 98,304 in 12.6 million voxels
+    peak = peak_per_voxel(lambda: sprout_core.get_ccomps_with_size_order(mask, 40, uint16=True), mask)
+    assert peak < 5.5, f"{peak:.1f} bytes per voxel"
+
+
+@pytest.fixture
+def uint16_tries(monkeypatch):
+    """How many labellings tried uint16 (scipy's own labelling, which ndi.label also calls)."""
+    from scipy.ndimage import _ni_label
+    tries, label = [], _ni_label._label
+
+    def counted(mask, structure, out):
+        tries.append(out.dtype == np.uint16)
+        return label(mask, structure, out)
+    monkeypatch.setattr(_ni_label, "_label", counted)
+    return tries
+
+
+def test_after_one_mask_does_not_fit_in_uint16_the_run_labels_in_int32_at_once(uint16_tries):
+    mask = noisy() > 100
+    old, old_sizes = sprout_core.get_ccomps_with_size_order(mask, 40)
+    uint16_tries.clear()
+    run = sprout_core.Uint16Labels()
+    for _ in range(3):
+        new, new_sizes = sprout_core.get_ccomps_with_size_order(mask, 40, uint16=run)
+        assert new.dtype == np.int32 and np.array_equal(new, old) and np.array_equal(new_sizes, old_sizes)
+    assert uint16_tries == [True, False, False, False]           # one try, then one labelling each
+    small = blobs()[0] > 140
+    assert sprout_core.get_ccomps_with_size_order(small, 40, uint16=sprout_core.Uint16Labels())[0].dtype == np.uint16
+    assert sprout_core.get_ccomps_with_size_order(small, 40, uint16=True)[0].dtype == np.uint16
+
+
+@pytest.mark.parametrize("method", ["seeds", "sweep thresholds", "sweep erosion", "adaptive erosion",
+                                    "adaptive thresholds"])
+def test_a_run_tries_uint16_once_on_each_thread_at_most(tmp_path, uint16_tries, method):
+    img = noisy()
+    common = dict(img=img, segments=40, output_folder=str(tmp_path), base_name="n")
+    run = {
+        "seeds": lambda: make_seeds.make_seeds(thresholds=[100], erosion_steps=2, num_threads=2, **common),
+        "sweep thresholds": lambda: seed_sweep.seed_sweep_threshold(img, str(tmp_path), [100, 150, 190], segments=40,
+                                                                    num_threads=2),
+        "sweep erosion": lambda: seed_sweep.seed_sweep_erosion(img, str(tmp_path), 100, erosion_steps=2, segments=40),
+        "adaptive erosion": lambda: make_adaptive_seed.make_adaptive_seed_ero(
+            threshold=100, erosion_steps=2, num_threads=1, save_every_iter=False, **common),
+        "adaptive thresholds": lambda: make_adaptive_seed.make_adaptive_seed_thre(
+            thresholds=[100, 150, 190], erosion_steps=0, num_threads=1, save_every_iter=False, **common),
+    }[method]
+    threads = 2 if method in ("seeds", "sweep thresholds") else 1      # their first steps start together
+    with contextlib.redirect_stdout(io.StringIO()):
+        run()
+        first = sum(uint16_tries)
+        assert 1 <= first <= threads, f"{first} tries of uint16"
+        run()                                                    # a new run tries again
+    assert first < sum(uint16_tries) <= 2 * threads
+
+
+def test_without_scipys_own_labelling_ndi_label_does_it(monkeypatch):
+    monkeypatch.setattr(sprout_core, "_ni_label", None)
+    for mask, dtype in ((noisy() > 100, np.int32), (blobs()[0] > 140, np.uint16)):
+        old, old_sizes = sprout_core.get_ccomps_with_size_order(mask, 40)
+        run = sprout_core.Uint16Labels()
+        for _ in range(2):
+            new, new_sizes = sprout_core.get_ccomps_with_size_order(mask, 40, uint16=run)
+            assert new.dtype == dtype and np.array_equal(new, old) and np.array_equal(new_sizes, old_sizes)
+        assert run.too_many == (dtype == np.int32)
+
+
 def test_sweep_keeps_its_steps_in_uint8_and_writes_them_in_uint16(tmp_path):
     img, t = blobs()
     steps = []
