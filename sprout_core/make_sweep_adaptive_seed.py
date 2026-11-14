@@ -180,11 +180,13 @@ def _steps_table(seed_metadata, step_paths, step_log):
 
 
 def _save_result(combine_seed, seed_metadata, step_paths, output_folder, direction, step_log=None, suffix=""):
-    """Write the result of one direction; `step_paths` and `step_log` are in the order of its combine."""
+    """Write the result of one direction; `step_paths` and `step_log` are in the order of its combine.
+
+    The seeds are uint16 when their ids fit (as the napari layer), not the combine's uint32."""
     output_folder = Path(output_folder)
     output_folder.mkdir(parents=True, exist_ok=True)
     label_path = output_folder / f"FINAL_sweep_seed{suffix}.tif"
-    tifffile.imwrite(str(label_path), combine_seed, compression="zlib")
+    tifffile.imwrite(str(label_path), sprout_core.cast_labels(combine_seed, np.uint16, copy=False), compression="zlib")
     metadata = {"direction": direction, "steps": [Path(path).name for path in step_paths], "seeds": seed_metadata}
     (output_folder / f"sweep_metadata{suffix}.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
     _regions_table(seed_metadata, step_paths).to_csv(output_folder / f"sweep_regions{suffix}.csv", index=False)
