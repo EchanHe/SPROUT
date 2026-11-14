@@ -495,7 +495,10 @@ class SeedGenerationWidget(QWidget):
         """Grey what the method does not use."""
         self.advanced_params_box.set_method(method)
         self.save_every_iter_checkbox.setEnabled(method not in SWEEP_METHODS)
-        self.main_param_widget.thread_spin.setEnabled(method != SWEEP_EROSION)     # an erosion sweep is sequential
+        # an erosion sweep is sequential; the adaptive seed runs on one thread since 1.1.0 (faster than on many before)
+        adaptive = method.startswith("Adaptive")
+        self.main_param_widget.thread_spin.setEnabled(method != SWEEP_EROSION and not adaptive)
+        self.main_param_widget.thread_spin.setToolTip("Not used since 1.1.0" if adaptive else "")
         self.main_param_widget.segments_spin.setToolTip(
             "Number of largest connected components to keep in each step; the result can have more seeds"
             if method in SWEEP_METHODS else "Number of largest connected components to keep in each seed")

@@ -114,7 +114,6 @@ def run_batch_adaptive_seed(file_path):
                                     erosion_steps=config['erosion_steps'], 
                                     segments= config['segments'],
                                     
-                                    num_threads = config['num_threads'],
                                     
                                     img_path = config['img_path'],
                                     boundary_path = optional_params['boundary_path'],    
@@ -152,7 +151,6 @@ def run_batch_adaptive_seed(file_path):
                                     output_folder=config['output_folder'],
                                     erosion_steps=config['erosion_steps'], 
                                     segments= config['segments'],
-                                    num_threads = config['num_threads'],
                                     
                                     img_path = config['img_path'],
                                     boundary_path = optional_params['boundary_path'],                                            

@@ -503,13 +503,14 @@ def _plain(value):
 
 
 def used_config(values, rules, renames=None):
-    """The parameters of a run as a config: every key of `rules`, from `values` or its default.
+    """The parameters of a run as a config: every key of `rules` (not the unused ones), from `values` or its default.
 
     An input given as an array (napari) has no path: its *_path key is null.
     `renames` maps a function's argument names to YAML keys (threshold -> thresholds).
     """
     values = {(renames or {}).get(k, k): v for k, v in values.items()}
-    return {k: _plain(values[k]) if k in values else rule.get("default") for k, rule in rules.items()}
+    return {k: _plain(values[k]) if k in values else rule.get("default") for k, rule in rules.items()
+            if not rule.get("unused")}
 
 
 def save_used_config(folder, config, command=None):
@@ -565,10 +566,14 @@ def validate_input_yaml(config, rules):
             errors.append(f"'{key}' is now '{RENAMED[key]}'.")
         elif key in REMOVED and key not in rules:
             errors.append(f"'{key}' is no longer used: {REMOVED[key]}.")
+        elif rules.get(key, {}).get("unused"):
+            print(f"[NOTE] '{key}' is not used: {rules[key]['unused']}.")
         elif key not in rules:
             errors.append(f"Unsupported parameter '{key}' in input config.")
 
     for param, rule in rules.items():
+        if rule.get("unused"):                  # accepted from an older config, not checked or passed on
+            continue
         # Check if required parameters are present
         if rule.get("required", False) and param not in config:
             errors.append(f"Missing required parameter: '{param}' ({rule['description']})")
@@ -965,10 +970,10 @@ input_val_make_adaptive_seed = {
     },
     "num_threads": {
         "type": int,
-        "min": 1,
-        "max": psutil.cpu_count(),
-        "required": True,
-        "description": "num of threads"
+        "required": False,
+        "default": None,
+        "unused": "the adaptive seed runs on one thread since 1.1.0, faster than it was on many",
+        "description": "Not used since 1.1.0; an older config may still have it."
     },
     "thresholds": {
         "type": (int, float, list),
