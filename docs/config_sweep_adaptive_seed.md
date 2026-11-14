@@ -37,7 +37,7 @@ napari runs `strict_to_loose` and adds one layer, `<image>_FINAL_sweep_seed`, wh
 
 ### Large images
 
-By default all steps stay in memory: about 1 byte per voxel per step (2 if a step keeps more than 255 regions), plus up to 7 bytes per voxel per thread. If a run warns or runs out of memory, set `memory_limit_gb`. Steps that do not fit are then read back from disk, and fewer threads run at once: slower, same result.
+By default all steps stay in memory: about 1 byte per voxel per step (2 if a step keeps more than 255 regions), plus up to 7 bytes per voxel per thread. If a run warns or runs out of memory, set `memory_limit_gb`. Steps that do not fit are then read back from disk, and fewer threads run at once: slower, same result. The least that works is about 7 bytes per voxel (one thread, and the combine): 7 GB for a scan of 1,000 million voxels.
 
 ## Required Parameters
 

@@ -200,7 +200,8 @@ def _save_result(combine_seed, seed_metadata, step_paths, output_folder, directi
 # ---------------------------------------------------------------------------
 
 STEP_BYTES = 2      # per voxel of a step in memory: uint8 when its ids fit, else uint16 (the plan takes the most)
-WORK_BYTES = 7      # per voxel of a step being computed: its int32 labels, the mask, the uint16 copy
+WORK_BYTES = 7      # per voxel of a step being computed: its int32 labels, the mask, the uint16 copy;
+                    # the combine needs about as much (its uint32 seeds and the step it reads)
 
 
 OUT_OF_MEMORY_HINT = ("[sweep_adaptive] Out of memory: set memory_limit_gb in the config to keep the steps "
@@ -234,7 +235,8 @@ def _memory_plan(voxels, n_steps, num_threads, memory_limit_gb, verbose):
         if threads < num_threads:
             print(f"[sweep_adaptive] num_threads {num_threads} -> {threads} to stay under the memory limit")
         if work > limit:
-            print("[sweep_adaptive] [WARNING] one step alone needs more than the memory limit")
+            print(f"[sweep_adaptive] [WARNING] one step, and the combine, need about {work / 2 ** 30:.1f} GB: "
+                  f"more than the memory limit")
     return in_memory, threads
 
 
@@ -402,6 +404,7 @@ def _run_from_dict(config):
             img, sweep_folder, thresholds, upper_thresholds, erosion_steps, segments_count, boundary,
             footprints, num_threads, verbose, seeds,
         )
+        img = boundary = None            # the combine does not need them
         if not in_memory:
             seeds = StepFiles(ordered_paths)
 

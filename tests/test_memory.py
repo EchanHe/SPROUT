@@ -18,7 +18,8 @@ from scipy import ndimage as ndi
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from sprout_core import make_adaptive_seed, make_grow, make_seeds, make_sweep_adaptive_seed, seed_sweep  # noqa: E402
+from sprout_core import (adaptive_seed_combine, make_adaptive_seed, make_grow, make_seeds,  # noqa: E402
+                         make_sweep_adaptive_seed, seed_sweep)
 import sprout_core.sprout_core as sprout_core  # noqa: E402
 
 pytestmark = pytest.mark.core
@@ -155,3 +156,37 @@ def test_grow_finds_the_boxes_once_and_gives_the_same_result(tmp_path, monkeypat
     assert all(np.array_equal(new[k], old[k]) for k in new)
     final = next(v for k, v in new.items() if k.startswith("FINAL"))
     assert np.count_nonzero(final) > 3 * np.count_nonzero(seg) and not final[boundary].any()   # it grew, not past the wall
+
+
+# The combine of steps on disk (memory_limit_gb): one step in memory at a time and the ids renumbered in
+# place. Before: 10.6 (loose to strict) and 11.0 (strict to loose) bytes per voxel; now its uint32 seeds and
+# the step it reads, about 7.
+def sparse_steps(folder):
+    """Steps of a few % of the voxels, as bone in a scan."""
+    g = ndi.gaussian_filter(np.random.default_rng(0).random((96, 96, 96)), 2)
+    img = ((g - g.min()) / (g.max() - g.min()) * 255).astype(np.uint8)
+    thresholds = [int(np.percentile(img, q)) for q in (99, 98, 97, 96)]
+    with contextlib.redirect_stdout(io.StringIO()):
+        paths, _ = seed_sweep.seed_sweep_threshold(img, str(folder), thresholds, segments=50, verbose=False)
+    return img, paths
+
+
+@pytest.mark.parametrize("direction", ["strict_to_loose", "loose_to_strict"])
+def test_the_combine_of_steps_on_disk_keeps_one_step(tmp_path, monkeypatch, direction):
+    img, paths = sparse_steps(tmp_path)
+    monkeypatch.setattr(sprout_core, "_CHUNK", 1 << 14)            # chunks much smaller than the image, as in a scan
+    combine, steps = {"strict_to_loose": (adaptive_seed_combine.adaptive_seed_s2l_from_seeds, paths),
+                      "loose_to_strict": (adaptive_seed_combine.adaptive_seed_l2s_from_seeds, paths[::-1])}[direction]
+    peak = peak_per_voxel(lambda: combine(seed_sweep.StepFiles(steps), min_area=1, input_mode="label", verbose=False),
+                          img)
+    assert peak < 8.5, f"{peak:.1f} bytes per voxel"
+
+
+def test_the_ids_are_renumbered_in_place():
+    rng = np.random.default_rng(3)
+    combine_seed = rng.integers(0, 30, (20, 20, 20)).astype(np.uint32)
+    metadata = {sid: {"status": "active"} for sid in range(1, 30)}
+    expected, expected_metadata = adaptive_seed_combine._apply_top_n(combine_seed.copy(), dict(metadata), 10)
+    renumbered, new_metadata = adaptive_seed_combine._apply_top_n(combine_seed, dict(metadata), 10)
+    assert renumbered is combine_seed and np.array_equal(renumbered, expected) and new_metadata == expected_metadata
+    assert renumbered.max() == 10

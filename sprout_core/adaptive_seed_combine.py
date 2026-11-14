@@ -213,7 +213,8 @@ def _apply_top_n(combine_seed, metadata_by_seed_id, top_n):
     """Number the seeds by size, largest first, and keep the top_n largest (all if None).
 
     Each seed keeps its id of the combine as original_seed_id; ids inside the metadata
-    (parent_seed_id, merged_with, ...) are original ids.
+    (parent_seed_id, merged_with, ...) are original ids. `combine_seed` (the combine's own array,
+    not used after this) is renumbered in place: no second copy at the peak of the run.
     """
     seed_ids = sorted(metadata_by_seed_id)
     length = max([int(combine_seed.max())] + seed_ids) + 1
@@ -227,7 +228,7 @@ def _apply_top_n(combine_seed, metadata_by_seed_id, top_n):
         item["original_seed_id"] = int(old_seed_id)
         item["area"] = area
         new_metadata[next_id] = item
-    return _apply_lut(lut, combine_seed), new_metadata
+    return _apply_lut(lut, combine_seed, out=combine_seed), new_metadata
 
 
 def _save_intermediate_seed(combine_seed, intermediate_folder, prefix, step_index, numbers=None):
@@ -508,7 +509,8 @@ def adaptive_seed_s2l_from_seeds(
         _save_intermediate_seed(combine_seed, intermediate_folder, intermediate_prefix, 0, intermediate_numbers)
 
     del first_seed
-    for seed_index, seed in enumerate(array_seeds[1:], start=1):
+    for seed_index in range(1, len(array_seeds)):    # not enumerate: it keeps a step while the next is read
+        seed = array_seeds[seed_index]
         step_start = time.perf_counter()
 
         check_cancel(cancel)
@@ -617,6 +619,10 @@ def adaptive_seed_s2l_from_seeds(
                 f"step={time.perf_counter() - step_start:.2f}s, "
                 f"total={time.perf_counter() - start_time:.2f}s"
             )
+        seed = regions = new_labeled = None      # free this step before the next one is read
+
+    # the voxels of the seeds are not needed for the final ids
+    region = overlap_values = seed_voxels = None
 
     if mask_by_last_seed:
         # Restrict the result to the loosest seed's footprint (last input seed);
@@ -733,7 +739,8 @@ def adaptive_seed_l2s_from_seeds(
 
     del first_seed
     removed_count = 0                            # disappeared seeds that are not kept
-    for seed_index, seed in enumerate(array_seeds[1:], start=1):
+    for seed_index in range(1, len(array_seeds)):    # not enumerate: it keeps a step while the next is read
+        seed = array_seeds[seed_index]
         step_start = time.perf_counter()
         old_seed_ids = np.flatnonzero(_bincount(combine_seed, next_seed_id))
         old_seed_ids = [int(sid) for sid in old_seed_ids if sid != 0]
@@ -864,6 +871,10 @@ def adaptive_seed_l2s_from_seeds(
                 f"seeds={next_seed_id - 1}, step={time.perf_counter() - step_start:.2f}s, "
                 f"total={time.perf_counter() - start_time:.2f}s"
             )
+        seed = regions = old_to_regions = None   # free this step before the next one is read
+
+    # the voxels of the seeds are not needed for the final ids
+    region = first_region = seed_voxels = None
 
     final_areas = _bincount(combine_seed, next_seed_id)
     for seed_id, item in metadata_by_seed_id.items():
