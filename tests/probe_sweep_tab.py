@@ -177,17 +177,19 @@ def each_method_greys_what_it_does_not_use(viewer):
 
     def on():
         return dict(no_split=box.no_split_spin.isEnabled(), min_size=box.min_size_spin.isEnabled(),
-                    mid_results=tab.save_every_iter_checkbox.isEnabled(), threads=params.thread_spin.isEnabled())
+                    mid_results=tab.save_every_iter_checkbox.isEnabled(), threads=params.thread_spin.isEnabled(),
+                    threads_tip=params.thread_spin.toolTip())
 
     seen = {}
     for method in ("Sweep (Thresholds)", "Sweep (Erosion)", "Adaptive (Thresholds)", "Adaptive (Erosion)", "Original"):
         combo.setCurrentText(method)
         C.pump(5)
         seen[method] = on()
-    every = dict(no_split=True, min_size=True, mid_results=True, threads=True)
+    every = dict(no_split=True, min_size=True, mid_results=True, threads=True, threads_tip="")
+    adaptive = dict(every, threads=False, threads_tip="Not used since 1.1.0")      # one thread since 1.1.0
     expected = {"Sweep (Thresholds)": dict(every, no_split=False, mid_results=False),
                 "Sweep (Erosion)": dict(every, no_split=False, mid_results=False, threads=False),
-                "Adaptive (Thresholds)": every, "Adaptive (Erosion)": every, "Original": every}
+                "Adaptive (Thresholds)": adaptive, "Adaptive (Erosion)": adaptive, "Original": every}
     items = [combo.itemText(i) for i in range(combo.count())]
     result(seen == expected and items == ["Original", "Adaptive (Erosion)", "Adaptive (Thresholds)", "Sweep (Erosion)",
                                           "Sweep (Thresholds)"], f"{items}: {seen}")

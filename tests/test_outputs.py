@@ -50,11 +50,11 @@ STEPS = {
               dict(img_path="img.tif", thresholds=[100], erosion_steps=1, segments=5, num_threads=1,
                    output_folder="out"), "out/img"),
     "adaptive_ero": (make_adaptive_seed.run_make_adaptive_seed, config_core.input_val_make_adaptive_seed,
-                     dict(img_path="img.tif", thresholds=[100], erosion_steps=2, segments=5, num_threads=1,
-                          output_folder="out"), "out/img"),
+                     dict(img_path="img.tif", thresholds=[100], erosion_steps=2, segments=5, output_folder="out"),
+                     "out/img"),
     "adaptive_thre": (make_adaptive_seed.run_make_adaptive_seed, config_core.input_val_make_adaptive_seed,
-                      dict(img_path="img.tif", thresholds=[100, 180], erosion_steps=0, segments=5, num_threads=1,
-                           output_folder="out"), "out/img"),
+                      dict(img_path="img.tif", thresholds=[100, 180], erosion_steps=0, segments=5, output_folder="out"),
+                      "out/img"),
     "sweep": (make_sweep_adaptive_seed.run_sweep_adaptive_seed, config_core.input_val_sweep_adaptive_seed,
               dict(img_path="img.tif", thresholds=[180, 100], erosion_steps=0, segments=5, num_threads=1,
                    output_folder="out", verbose=False), "out/img"),
@@ -98,7 +98,7 @@ def test_used_config_is_a_config_of_every_parameter(here, step):
     used = here / result / "used_config.yaml"
     assert used.read_text(encoding="utf-8").startswith(f"# SPROUT {sprout_core.__version__}, ")
     config = load(used)
-    assert list(config) == list(rules)
+    assert list(config) == [k for k, rule in rules.items() if not rule.get("unused")]
     assert all(config[k] == v for k, v in values.items() if k != "thresholds") and \
         np.ravel(config["thresholds"]).tolist() == values["thresholds"]
     config_core.validate_input_yaml(dict(config), rules)

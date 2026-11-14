@@ -4,9 +4,6 @@ img_path: "./demo_data/foram_img.tif"
 # uncomment for dog
 # img_path: "./demo_data/dog_img.tif"
 
-# num of threads, it would be best to match the length of target_thresholds
-num_threads: 4
-
 # Thresholds for seed generation
 # If the value is just one number, or a list of one element, seeds will merged on erosions (from no-erosion to set erosion)
 # If the value is a list, seeds will be merged on thresholds (from low to high)

@@ -21,7 +21,6 @@ This is the method of the paper. For many seeds fast, see [sweep adaptive seed](
 | `erosion_steps`   | ✅        | `int`              | Number of erosion iterations. Seeds will be saved after each step up to this number. |
 | `segments`        | ✅        | `int`              | The number of largest connected components to retain during segmentation. |
 | `output_folder`   | ✅        | `str`              |  Root directory for saving seeds and metadata. The final output will be saved in a subfolder named after `base_name`. If `base_name` is not set, the base name will default to the input image filename (without extension). |
-| `num_threads`     | ✅        | `int`              | Number of threads to use during seed generation. Recommended to match the number of thresholds. |
 
 
 ## Optional Parameters
@@ -43,6 +42,7 @@ This is the method of the paper. For many seeds fast, see [sweep adaptive seed](
 | `save_every_iter`         | ❌        | `bool`          | Whether to save segmentation results at every iteration. Default: `True`.                 |
 | `prune_every_iter`        | ❌        | `bool`          | After every intermediate step, remove regions smaller than `min_size`, keep the top-N and renumber the running seed. This changes the final result. If unset, it follows `save_every_iter`, which reproduces earlier versions (where saving implied pruning). Set it explicitly to make saving independent of the result. |
 | `base_name`               | ❌        | `str`           | Name of the subfolder in `output_folder/` to save results. Defaults to image file name.   |
+| `num_threads`             | ❌        | `int`           | Not used. Since 1.1.0 the adaptive seed runs on one thread: it is faster now than it was on many. An older config that has it still runs (with a note). |
                     |
 
 

@@ -13,8 +13,6 @@ from scipy.spatial import ConvexHull, QhullError
 import sprout_core.sprout_core as sprout_core
 import sprout_core.config_core as config_core
 from sprout_core.sprout_core import reorder_segmentation
-from multiprocessing import cpu_count
-max_threads = cpu_count()
 
 
 def describe_boundary(boundary, boundary_path):
@@ -233,7 +231,8 @@ def make_adaptive_seed_ero(
         erosion_steps (int): Number of erosion iterations.
         segments (int): Number of segments to extract.
         boundary (np.ndarray, optional): Boundary mask. Defaults to None.
-        num_threads (int, optional): Number of threads to use. Defaults to 1.
+        num_threads (int, optional): Not used: the adaptive seed runs on one thread since 1.1.0, faster than
+            it was on many. Kept so that older code still runs.
         background (int, optional): Background value. Defaults to 0.
         sort (bool, optional): Whether to sort output segment IDs. Defaults to True.
         no_split_max_iter (int, optional): Early Stop Check: Limit for consecutive no-split iterations. Defaults to 3.
@@ -272,11 +271,6 @@ def make_adaptive_seed_ero(
     min_split_ratio = min_split_ratio*100
     min_split_total_ratio = min_split_total_ratio*100
 
-    if num_threads is None:
-        num_threads = max(1, max_threads // 2)
-
-    if num_threads>=max_threads:
-        num_threads = max(1,max_threads-1)
 
 
 
@@ -317,7 +311,6 @@ def make_adaptive_seed_ero(
         "Segments for the final result": last_segments,
         "boundary_path": boundary_path,
         "Boundary": describe_boundary(boundary, boundary_path),
-        "Number of Threads": num_threads,
         "Sort": sort,
         "Background Value": background,
         "Save Every Iteration": save_every_iter,
@@ -618,8 +611,9 @@ def make_adaptive_seed_thre(
         Binary mask to explicitly specify boundaries to exclude from processing.
     boundary_path : str, optional
         Path to the boundary mask file. Used if `boundary` is not provided.
-    num_threads : int, default=1
-        Number of threads to use for parallel processing during intersection checks.
+    num_threads : int, optional
+        Not used: the adaptive seed runs on one thread since 1.1.0, faster than it was on many. Kept so
+        that older code still runs.
     background : int, default=0
         Value representing the background in the segmentation.
     sort : bool, default=True
@@ -680,11 +674,6 @@ def make_adaptive_seed_thre(
     boundary = config_core.check_and_load_data(boundary, boundary_path, "boundary", must_exist=False)
     config_core.valid_input_data(img, boundary=boundary)   
 
-    if num_threads is None:
-        num_threads = max(1, max_threads // 2)
-
-    if num_threads>=max_threads:
-        num_threads = max(1,max_threads-1)
 
     min_split_ratio = min_split_ratio*100
     min_split_total_ratio = min_split_total_ratio*100
@@ -729,7 +718,6 @@ def make_adaptive_seed_thre(
         "Segments for the final result": last_segments,
         "boundary_path": boundary_path,
         "Boundary": describe_boundary(boundary, boundary_path),
-        "Number of Threads": num_threads,
         "Sort": sort,
         "Background Value": background,
         "Save Every Iteration": save_every_iter,
@@ -1034,7 +1022,6 @@ def run_make_adaptive_seed(file_path):
                                     output_folder=config['output_folder'],
                                     erosion_steps=config['erosion_steps'], 
                                     segments= config['segments'],
-                                    num_threads = config['num_threads'],
                                     
                                     img_path = config['img_path'],
                                     boundary_path = optional_params['boundary_path'],                                            
@@ -1079,7 +1066,6 @@ def run_make_adaptive_seed(file_path):
                                     erosion_steps=config['erosion_steps'], 
                                     segments= config['segments'],
                                     
-                                    num_threads = config['num_threads'],
                                     
                                     img_path = config['img_path'],
                                     boundary_path = optional_params['boundary_path'],    
