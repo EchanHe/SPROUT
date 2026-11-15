@@ -26,6 +26,7 @@ Click [here](https://www.youtube.com/watch?v=4DHI1gs1lzc&list=PL8tsvVKJ9n6FjYYpl
 
 - [Introduction](#introduction)
 - [Install](#install)
+   - [Computer requirements](#computer-requirements)
 - [Usage](#usage)
    - [Terms](#terms)
    - [Input data](#input-data)
@@ -69,6 +70,18 @@ Other ways:
 | To change the code | `git clone https://github.com/EchanHe/SPROUT.git`, `cd SPROUT`, `pip install -e . -e ./napari-sprout` |
 
 The paper's results were made with Python 3.10, numpy 1.26.4, pandas 2.2.1, scikit-image 0.22.0, scipy 1.15.3, tifffile 2024.2.12, napari 0.6.1. The tests run on these versions and on the newest ones.
+
+### Computer requirements
+
+RAM (not GPU memory) and time per step, measured on an Intel Xeon W-2295 (18 cores), 128 GB RAM, Windows 11:
+
+| Scan | Voxels | RAM | Time per step |
+|---|---|---|---|
+| 512 × 512 × 512 | 130 million | 8 GB | seconds to 1 min |
+| 1,024 × 1,024 × 1,024 | 1,000 million | 32 GB (16 GB with fewer threads) | 1–10 min |
+| 2,000 × 1,300 × 1,300 | 3,900 million | 64 GB | about 10 min |
+
+16-bit and noisy scans need up to twice as much; details in [Memory and speed](docs/performance.md). For nnInteractive or SAM (GPU), see their docs: [nnInteractive](https://github.com/MIC-DKFZ/nnInteractive), [SAM](https://github.com/facebookresearch/segment-anything), [SAM2](https://github.com/facebookresearch/sam2).
 
 
 ## Usage
@@ -144,7 +157,7 @@ To launch **napari-sprout**:
 From here, you can use a set of tools to load, view, and edit your data.  
 
 -   **SPROUT**: tabs for the whole pipeline. Parameters match the YAML configs (Import / Export YAML).
-    -   **1. Seeds**: seed and adaptive seed generation.
+    -   **1. Seeds**: seed generation, adaptive seed and sweep adaptive seed ([in napari](./docs/config_sweep_adaptive_seed.md#in-napari)).
     -   **2. Grow**: grow seeds into a segmentation.
     -   **3. Prompt (AI)**: seeds as prompts for nnInteractive ([install](#install)).
     -   **ROI & Boundary**: run a tab inside a region of interest; make a boundary mask (top-hat).
