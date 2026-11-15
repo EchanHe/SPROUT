@@ -274,6 +274,22 @@ def test_an_array_gives_what_a_yaml_gives(tmp_path):
     assert (tmp_path / "array" / "img" / "sweep_regions.csv").is_file()
 
 
+@pytest.mark.parametrize("direction", ["strict_to_loose", "loose_to_strict", "both"])
+def test_the_seeds_are_written_in_uint16_as_napari_has_them(tmp_path, direction):
+    """Not the combine's uint32: a scan of 3,900 million voxels took 16 GB to read back, not 8."""
+    folder = run(config(tmp_path, direction=direction, save_every_iter=True))
+    written = sorted(folder.glob("FINAL_sweep_seed*.tif")) + sorted((folder / "intermediate").rglob("after_step_*.tif"))
+    assert len(written) == (8 if direction == "both" else 4)
+    assert {tifffile.imread(path).dtype for path in written} == {np.dtype(np.uint16)}
+
+
+def test_more_than_65535_seeds_are_written_in_uint32(tmp_path):
+    seeds = np.zeros((2, 300, 300), np.uint32)
+    seeds.reshape(-1)[::2] = np.arange(1, seeds.size // 2 + 1)            # 90,000 one-voxel seeds
+    path = sweep._save_result(seeds, [], [], tmp_path, "strict_to_loose")
+    assert tifffile.imread(path).dtype == np.uint32 and np.array_equal(tifffile.imread(path), seeds)
+
+
 @pytest.mark.parametrize("changes", [dict(thresholds=THRESHOLDS[::-1]), dict(thresholds=[100], erosion_steps=2),
                                      dict(upper_thresholds=[255, 255, 255])],
                          ids=["ascending", "erosion", "upper"])

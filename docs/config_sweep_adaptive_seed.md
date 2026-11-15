@@ -91,7 +91,7 @@ In `<output_folder>/<base_name>/`:
 
 | File | Content |
 |---|---|
-| `FINAL_sweep_seed.tif` | The seeds, numbered by size (1 is the largest). Use it as `seg_path` of [growth](./config_grow.md). |
+| `FINAL_sweep_seed.tif` | The seeds, numbered by size (1 is the largest); uint16 (uint32 above 65,535 seeds). Use it as `seg_path` of [growth](./config_grow.md). |
 | `sweep_regions.csv` | One row per seed: `id`, `area`, `first_step` and `last_step` (the numbers of the step files), the settings that change between steps at those steps (for example `first_threshold`, `last_threshold`), and `began`, `ended`, `at_step` (below). |
 | `sweep_steps.csv` | One row per step, in the order of the combine: `step`, its settings, `regions` in it, `new_seeds` that started there, `seeds_after` it (before `top_n`), and how many of its new seeds are `in_final`. |
 | `sweep_metadata.json` | The direction, the steps, and all that is known about each seed. Ids inside a seed's entry, such as `parent_seed_id`, are `original_seed_id` values. |

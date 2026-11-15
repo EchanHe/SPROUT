@@ -41,7 +41,7 @@ import numpy as np
 import tifffile
 from skimage import measure
 
-from sprout_core.sprout_core import _apply_lut, _bincount, check_cancel
+from sprout_core.sprout_core import _apply_lut, _bincount, cast_labels, check_cancel
 
 
 # ---------------------------------------------------------------------------
@@ -232,12 +232,13 @@ def _apply_top_n(combine_seed, metadata_by_seed_id, top_n):
 
 
 def _save_intermediate_seed(combine_seed, intermediate_folder, prefix, step_index, numbers=None):
-    """<prefix>_<number>.tif; numbers maps the combine order to a step number (default: the order)."""
+    """<prefix>_<number>.tif, uint16 when the ids fit; numbers maps the combine order to a step number
+    (default: the order)."""
     intermediate_folder = Path(intermediate_folder)
     intermediate_folder.mkdir(parents=True, exist_ok=True)
     number = numbers[step_index] if numbers is not None else step_index
     output_path = intermediate_folder / f"{prefix}_{number:03d}.tif"
-    tifffile.imwrite(output_path, combine_seed, compression="zlib")
+    tifffile.imwrite(output_path, cast_labels(combine_seed, np.uint16, copy=False), compression="zlib")
     return output_path
 
 
