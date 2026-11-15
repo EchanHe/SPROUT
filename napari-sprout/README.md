@@ -2,7 +2,7 @@
 
 The napari plugin of [SPROUT](https://github.com/EchanHe/SPROUT): multi-part segmentation of 2D and 3D greyscale images (e.g. CT, MRI) without training data.
 
-- **Seeds**: thresholds and erosion split an image into parts; adaptive and sweep modes combine several settings.
+- **Seeds**: thresholds and erosion split an image into parts; adaptive seed and sweep adaptive seed combine several settings ([which one?](https://github.com/EchanHe/SPROUT/blob/main/docs/config_sweep_adaptive_seed.md#which-adaptive-seed-should-i-use)).
 - **Grow**: seeds grow back to the full shape of each part.
 - **Edit**: split, merge, relabel and clean regions.
 - **Prompt (AI)**: seeds as prompts for nnInteractive.
