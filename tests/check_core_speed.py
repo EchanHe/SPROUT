@@ -242,7 +242,8 @@ m3 = dog > 140
 edge3 = {"dog>140": m3, "dog>140 uint8": m3.astype(np.uint8), "values {0,2} (== True is empty)": m3 * np.uint8(2),
          "empty": np.zeros((5, 6, 7), bool), "corner voxel": np.pad(np.ones((1, 1, 1), bool), ((0, 4), (4, 0), (0, 0))),
          "full": np.ones((4, 5, 6), bool), "synthetic": syn_bin}
-edge2 = {"2d": m3[100], "2d empty": np.zeros((5, 6), bool), "2d uint8": m3[100].astype(np.uint8)}
+# 2d empty: the base raised in erosion / dilation / closing on sub (3d empty gave an empty mask); now empty as 3d
+edge2 = {"2d": m3[100], "2d empty (base raises)": np.zeros((5, 6), bool), "2d uint8": m3[100].astype(np.uint8)}
 bad = []
 for name, m in {**edge3, **edge2}.items():
     for margin in (0, 1, 3):
@@ -268,7 +269,9 @@ for name, m in {**edge3, **edge2}.items():
                 continue
             a = outcome(fn, m.copy(), sc, **kw)
             b = outcome(fn, m.copy(), base_sc, **kw)
-            if not (same(a, b) or (a[0] == b[0] == "err" and a[1:] == b[1:])):
+            fixed = "base raises" in name and b[0] == "err" and a[0] == "ok" and a[1].shape == m.shape \
+                and not a[1].any()
+            if not (same(a, b) or (a[0] == b[0] == "err" and a[1:] == b[1:]) or fixed):
                 bad.append(f"{name} {kw}: {a[0]} vs {b[0]}")
 ok(not bad, f"get_sub_binary_image_by_pos (box, ids, types, errors) and erosion / dilation / closing on sub: "
             f"identical on {len(edge3) + len(edge2)} masks {bad}")
