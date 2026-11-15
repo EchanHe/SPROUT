@@ -345,8 +345,9 @@ def make_adaptive_seed_ero(
 
 
     steps = sprout_core.StepProgress(progress, erosion_steps + 1)
+    uint16_labels = sprout_core.Uint16Labels()       # one for all the steps
     sprout_core.check_cancel(cancel)
-    init_seed, _ = sprout_core.get_ccomps_with_size_order(img,segments_list[0], uint16=True)
+    init_seed, _ = sprout_core.get_ccomps_with_size_order(img,segments_list[0], uint16=uint16_labels)
     steps.step("initial seed")
     
     seeds_dict = {}
@@ -400,7 +401,7 @@ def make_adaptive_seed_ero(
         img = sprout_core.erosion_binary_img_on_sub(img, kernal_size = 1,footprint=footprint_list[ero_iter-1])
         sprout_core.check_cancel(cancel)
         seed = None                      # free the previous step's seed before labelling again
-        seed, _ = sprout_core.get_ccomps_with_size_order(img, segments_list[ero_iter], uint16=True)
+        seed, _ = sprout_core.get_ccomps_with_size_order(img, segments_list[ero_iter], uint16=uint16_labels)
         seed = sprout_core.cast_labels(seed, np.uint16, copy=False)
         history.start_step(ero_iter, {"erosion": ero_iter}, seed.max())
         
@@ -750,12 +751,13 @@ def make_adaptive_seed_thre(
         mask[boundary] = False
 
     steps = sprout_core.StepProgress(progress, len(thresholds))
+    uint16_labels = sprout_core.Uint16Labels()       # one for all the steps
     for ero_iter in range(1, erosion_steps+1):
         sprout_core.check_cancel(cancel)
         mask = sprout_core.erosion_binary_img_on_sub(mask, kernal_size = 1,
                                                      footprint=footprint_list[ero_iter-1])
     sprout_core.check_cancel(cancel)
-    init_seed, _ = sprout_core.get_ccomps_with_size_order(mask,segments_list[0], uint16=True)
+    init_seed, _ = sprout_core.get_ccomps_with_size_order(mask,segments_list[0], uint16=uint16_labels)
     steps.step(f"threshold {thresholds[0]}")
     
     seeds_dict = {}
@@ -815,7 +817,7 @@ def make_adaptive_seed_thre(
             mask = sprout_core.erosion_binary_img_on_sub(mask, kernal_size = 1,
                                                          footprint=footprint_list[ero_iter-1])
         sprout_core.check_cancel(cancel)
-        seed, _ = sprout_core.get_ccomps_with_size_order(mask,segments_list[idx_threshold+1], uint16=True)
+        seed, _ = sprout_core.get_ccomps_with_size_order(mask,segments_list[idx_threshold+1], uint16=uint16_labels)
         seed = sprout_core.cast_labels(seed, np.uint16, copy=False)
         history.start_step(idx_threshold + 1, {"threshold": threshold, "upper": upper_threshold}, seed.max())
         

@@ -606,13 +606,39 @@ def unique_labels(labels):
     return values
 
 
-def _label_uint16(mask):
+# ndi.label's own labelling, which stops when the output is too small. ndi.label then labels again
+# into int32 (int64 above 2**31 voxels) and compares: 7 to 11 bytes per voxel and a labelling
+# lost. Not public: without it, ndi.label does all of this.
+try:
+    from scipy.ndimage import _ni_label
+    _NeedMoreBits = _ni_label.NeedMoreBits
+except (ImportError, AttributeError):
+    _ni_label, _NeedMoreBits = None, RuntimeError
+
+
+class Uint16Labels:
+    """uint16 labels in one run (a seed, adaptive seed or sweep): once a mask of the run has more
+    than 65535 components, the next masks go to int32 at once (as a noisy scan has in every step)."""
+
+    def __init__(self):
+        self.too_many = False
+
+
+def _label_uint16(mask, run=None):
     """measure.label of a bool mask, written straight into uint16: the same labels (measure.label
     calls ndi.label with full connectivity for bool masks), half the memory of its int32.
-    None if there are more than 65535 components."""
+    None if there are more than 65535 components, or a mask of `run` (a Uint16Labels) had."""
+    if run is not None and run.too_many:
+        return None
+    structure = ndi.generate_binary_structure(mask.ndim, mask.ndim)
     try:
-        return ndi.label(mask, structure=ndi.generate_binary_structure(mask.ndim, mask.ndim), output=np.uint16)
-    except RuntimeError:                 # "insufficient bit-depth": more components than uint16 holds
+        if _ni_label is None or mask.size == 0:
+            return ndi.label(mask, structure=structure, output=np.uint16)
+        out = np.empty(mask.shape, np.uint16)
+        return out, _ni_label._label(mask, structure, out)
+    except (_NeedMoreBits, RuntimeError):     # more components than uint16 holds ("insufficient bit-depth")
+        if run is not None:
+            run.too_many = True
         return None
 
 
@@ -622,15 +648,20 @@ def get_ccomps_with_size_order(volume, segments=None, min_vol = None, uint16=Fal
     Args:
         label (_type_): _description_
         segments (_type_): _description_
-        uint16 (bool): label a bool `volume` into uint16 (int32 if it has more than 65535
-            components): the same labels, less memory.
+        uint16 (bool or Uint16Labels): label a bool `volume` into uint16 (int32 if it has more
+            than 65535 components): the same labels, less memory. A Uint16Labels shared by the
+            masks of a run does not try uint16 again after one did not fit.
 
     Returns:
         _type_: _description_
     """
-    labeled = _label_uint16(volume) if uint16 and volume.dtype == bool else None
+    run = uint16 if isinstance(uint16, Uint16Labels) else None
+    labeled = _label_uint16(volume, run) if uint16 and volume.dtype == bool else None
     if labeled is not None:
         labeled_image, n_labels = labeled
+    elif uint16 and volume.dtype == bool:    # int32 at once: measure.label would be int64 above 2**31 voxels
+        labeled_image, n_labels = ndi.label(volume, structure=ndi.generate_binary_structure(volume.ndim, volume.ndim),
+                                            output=np.int32)
     else:
         labeled_image, n_labels = measure.label(volume, background=0,
                                       return_num=True)
@@ -958,11 +989,14 @@ def find_seed_by_ero_custom(volume_array, threshold , segments, ero_iter,
                     boundary = None ,
                     is_return_seeds = False,
                     cancel = None,
-                    step = None):
+                    step = None,
+                    uint16_labels = None):
     """cancel: threading.Event (or None), checked before every erosion step; raises Cancelled.
-    step: callable(text) called after every seed written (one progress step), or None."""
+    step: callable(text) called after every seed written (one progress step), or None.
+    uint16_labels: a Uint16Labels shared by the run (None: one for this call)."""
      # Capture the start time
     start_time = datetime.now()
+    uint16_labels = uint16_labels or Uint16Labels()
 
     seeds_dict = {}
     
@@ -998,7 +1032,7 @@ def find_seed_by_ero_custom(volume_array, threshold , segments, ero_iter,
             check_cancel(cancel)
 
         # Connected components
-        seed, ccomp_sizes = get_ccomps_with_size_order(volume_label,segments, uint16=True)
+        seed, ccomp_sizes = get_ccomps_with_size_order(volume_label,segments, uint16=uint16_labels)
         
         # Save seed from each threshold, ero combination
         seed_name = f"seed_ero_{i_iter}_thre{threshold}_{upper_threshold}_segs_{segments}.tif"

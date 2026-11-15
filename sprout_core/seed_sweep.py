@@ -73,13 +73,13 @@ def _resolve_segments_list(segments, n_steps):
 
 
 def _generate_one_threshold_step(img, lower, upper, footprint_list, erosion_steps,
-                                  segments, step_index, output_folder, boundary=None):
+                                  segments, step_index, output_folder, boundary=None, uint16_labels=True):
     """Generate and save one seed for a single threshold (threshold mode)."""
     mask = _apply_threshold(img, lower, upper)
     if boundary is not None:
         mask[boundary] = False
     mask = _apply_erosions(mask, footprint_list, erosion_steps)
-    seed, _ = sprout_core.get_ccomps_with_size_order(mask, segments, uint16=True)
+    seed, _ = sprout_core.get_ccomps_with_size_order(mask, segments, uint16=uint16_labels)
     seed = sprout_core.cast_labels(seed, np.uint16, copy=False)
     path = _save_step(seed, output_folder, step_index, lower, upper, erosion_steps)
     return step_index, path, _in_memory(seed)
@@ -238,13 +238,14 @@ def seed_sweep_threshold(
     ordered_paths = [None] * len(thresholds)
     if seeds_out is not None:
         seeds_out[:] = [None] * len(thresholds)
+    uint16_labels = sprout_core.Uint16Labels()       # one for all the steps
 
     def _worker(args):
         idx, lower, upper = args
         sprout_core.check_cancel(cancel)
         done = _generate_one_threshold_step(
             img, lower, upper, footprint_list, erosion_steps,
-            segments_list[idx], idx, output_folder, boundary
+            segments_list[idx], idx, output_folder, boundary, uint16_labels
         )
         if seeds_out is None:
             done = done[:2] + (None,)       # a future keeps its result: do not keep the step alive in it
@@ -315,9 +316,10 @@ def seed_sweep_erosion(
         mask[boundary] = False
 
     ordered_paths = []
+    uint16_labels = sprout_core.Uint16Labels()       # one for all the steps
 
     # Step 0: no erosion
-    seed, _ = sprout_core.get_ccomps_with_size_order(mask, segments_list[0], uint16=True)
+    seed, _ = sprout_core.get_ccomps_with_size_order(mask, segments_list[0], uint16=uint16_labels)
     seed = sprout_core.cast_labels(seed, np.uint16, copy=False)
     path = _save_step(seed, output_folder, 0, threshold, upper_threshold, 0)
     ordered_paths.append(path)
@@ -334,7 +336,7 @@ def seed_sweep_erosion(
         mask = sprout_core.erosion_binary_img_on_sub(
             mask, kernal_size=1, footprint=footprint_list[ero_iter - 1]
         )
-        seed, _ = sprout_core.get_ccomps_with_size_order(mask, segments_list[ero_iter], uint16=True)
+        seed, _ = sprout_core.get_ccomps_with_size_order(mask, segments_list[ero_iter], uint16=uint16_labels)
         seed = sprout_core.cast_labels(seed, np.uint16, copy=False)
         path = _save_step(seed, output_folder, ero_iter, threshold, upper_threshold, ero_iter)
         ordered_paths.append(path)

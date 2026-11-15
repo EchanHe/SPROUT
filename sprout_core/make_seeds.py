@@ -46,8 +46,8 @@ pre_set_sub_folders_2d = [footprint[0] for footprint in pre_set_footprint_list_2
 
 def gen_seed_mp(volume, thre_fp_pairs, ero_iter , segments , 
                         boundary = None ,result_dict = None, return_for_napari = False,
-                        cancel = None, step = None):
-    """cancel / step: see sprout_core.find_seed_by_ero_custom."""
+                        cancel = None, step = None, uint16_labels = None):
+    """cancel / step / uint16_labels: see sprout_core.find_seed_by_ero_custom."""
     
     for threshold_ero_iter_pair in thre_fp_pairs:
         sprout_core.check_cancel(cancel)
@@ -76,7 +76,8 @@ def gen_seed_mp(volume, thre_fp_pairs, ero_iter , segments ,
                                           upper_threshold = upper_threshold,
                                           boundary = boundary,
                                           is_return_seeds = return_for_napari,
-                                          cancel = cancel, step = step)
+                                          cancel = cancel, step = step,
+                                          uint16_labels = uint16_labels)
         
 
         # log_dict['input_file'] = file_path
@@ -349,11 +350,12 @@ def make_seeds(**kwargs):
 
     seeds_dict = {}
     steps = sprout_core.StepProgress(progress, len(thre_fp_pairs) * (erosion_steps + 1))
+    uint16_labels = sprout_core.Uint16Labels()       # one for all the threads of this run
     # Start a new thread for each sublist and wait for all of them;
     # an exception in a thread is re-raised here (not only printed)
     sprout_core.run_threads(gen_seed_mp, [(img,sublist, erosion_steps, segments,
                                            boundary, seeds_dict, return_for_napari,
-                                           cancel, steps.step)
+                                           cancel, steps.step, uint16_labels)
                                           for sublist in sublists])
 
     # print(f"All threads have completed. Log is saved at {output_json_path},seeds are saved at {output_seed_folder}")
