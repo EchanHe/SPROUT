@@ -216,7 +216,17 @@ def dilation_one_iter_mp(input_mask, threshold_binary,
 
     return result
 
-        
+
+def labels_at_reach(labels, reach, value):
+    """The grown labels as they were at reach value `value` (a row of reach_steps_<base_name>.csv).
+
+    labels: the final grow result. reach: its reach map (REACH_<base_name>.tif).
+    With touch_rule='stop' this is exactly the result after that iteration, so the last threshold
+    can be changed without growing again. With 'overwrite' a voxel keeps its final label.
+    """
+    return np.where((reach > 0) & (reach <= value), labels, 0).astype(labels.dtype)
+
+
 def grow_mp(**kwargs):
     """
     Perform multi-step, multi-threaded seed growth for image segmentation.
@@ -270,6 +280,10 @@ def grow_mp(**kwargs):
         Minimum increase in size to consider a growth step meaningful.
     no_growth_max_iter : int, default=3
         Stop early if no meaningful growth occurs for this many iterations.
+    save_reach_map : bool, default=False
+        If True, also save REACH_<base_name>.tif (0 = not labelled, 1 = seed, k + 1 = labelled in
+        growth iteration k, counted over all thresholds) and reach_steps_<base_name>.csv (the
+        threshold and iteration of every reach value). See labels_at_reach.
     return_for_napari : bool, default=False
         If True, return result as a dictionary of arrays for napari visualization.
     use_simple_naming : bool, default=True
@@ -297,6 +311,7 @@ def grow_mp(**kwargs):
             - "final_output_path": path to the final grown .tif file
             - "log_path": CSV file recording growth steps and sizes
             - "output_folder": directory containing all output files
+            - "reach_map_path", "reach_steps_path": only with `save_reach_map=True`
 
     Notes
     -----
@@ -341,8 +356,9 @@ def grow_mp(**kwargs):
     to_grow_ids = kwargs.get('to_grow_ids', None) 
     is_sort = kwargs.get('is_sort', False) 
     min_growth_size = kwargs.get('min_growth_size', 50) 
-    no_growth_max_iter = kwargs.get('no_growth_max_iter', 3) 
-    
+    no_growth_max_iter = kwargs.get('no_growth_max_iter', 3)
+    save_reach_map = kwargs.get('save_reach_map', False)
+
     # For mesh making
     is_make_meshes = kwargs.get('is_make_meshes', False) 
     downsample_scale = kwargs.get('downsample_scale', 10) 
@@ -461,6 +477,11 @@ def grow_mp(**kwargs):
     boxes = [] if touch_rule == 'stop' else None      # the labels' bounding boxes, kept up to date
     steps = sprout_core.StepProgress(progress, sum(dilation_steps))
 
+    # Reach map: 0 = not labelled, 1 = seed, k + 1 = labelled in growth iteration k (over all thresholds)
+    reach = (result != 0).astype(np.uint16) if save_reach_map else None
+    reach_steps = [{'reach_value': 1, 'threshold': None, 'upper_threshold': None, 'dilate_iter': 0,
+                    'labelled_voxels': result_size}]
+
     # Iterate through and make growth results
     for i, (threshold ,upper_threshold,dilate_iter) in enumerate(zip(thresholds , upper_thresholds,dilation_steps)):
         # Set the count for check diff for each growing threshold
@@ -497,6 +518,14 @@ def grow_mp(**kwargs):
 
             # Get the output size for the log
             output_size = result_size = np.count_nonzero(result)
+            if reach is not None:
+                labelled = result != 0
+                reach[labelled & (reach == 0)] = len(reach_steps) + 1
+                if len(reach_steps) == 1 and boundary is not None:
+                    reach[~labelled] = 0                      # seed voxels on the boundary are cleared
+                reach_steps.append({'reach_value': len(reach_steps) + 1, 'threshold': threshold,
+                                    'upper_threshold': upper_threshold, 'dilate_iter': i_dilate,
+                                    'labelled_voxels': output_size})
             if output_size - input_size < min_growth_size:
                 count_below_threshold += 1
             else:
@@ -604,13 +633,19 @@ def grow_mp(**kwargs):
                                 downsample_scale=downsample_scale,
                                 step_size=step_size)
 
-    # Return a dict 
+    # Return a dict
     log_dict = {
         "final_output_path": final_output_path,
         "log_path":log_path,
         "output_folder": output_folder
     }
-    
+    if reach is not None:
+        log_dict["reach_map_path"] = os.path.join(output_folder, f"REACH_{base_name}.tif")
+        log_dict["reach_steps_path"] = os.path.join(output_folder, f"reach_steps_{base_name}.csv")
+        tifffile.imwrite(log_dict["reach_map_path"], reach, compression='zlib')
+        pd.DataFrame(reach_steps).to_csv(log_dict["reach_steps_path"], index=False)
+        print(f"Reach map has been saved {log_dict['reach_map_path']}")
+
     return grows_dict ,log_dict
 
 
@@ -652,7 +687,8 @@ def run_make_grow(file_path):
         is_sort = optional_params['is_sort'],
         min_growth_size = optional_params['min_growth_size'],
         no_growth_max_iter = optional_params['no_growth_max_iter'],
-        
+        save_reach_map = optional_params['save_reach_map'],
+
         # For mesh making
         is_make_meshes = optional_params['is_make_meshes'],
         downsample_scale = optional_params['downsample_scale'],

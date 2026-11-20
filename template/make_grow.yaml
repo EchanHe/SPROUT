@@ -102,6 +102,10 @@ no_growth_max_iter: 3
 # Default is 50
 min_growth_size: 50
 
+# Save the reach map (REACH_<base_name>.tif): the growth iteration in which every voxel was labelled.
+# With it the last threshold can be changed afterwards without growing again. Default is False
+# save_reach_map: False
+
 ## Optional parameters: saving mesh ##
 # Is saving meshes, default is False
 # is_make_meshes: False

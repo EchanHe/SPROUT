@@ -36,6 +36,7 @@ This configuration file defines the arguments used for growing labeled seeds in 
 | `is_sort`                  | ❌        | `bool`          | Whether to sort grown segments by size.                                   |
 | `no_growth_max_iter`       | ❌        | `int`           |Early stopping: Maximum number of consecutive dilation steps with no growth. Default is `3`. |
 | `min_growth_size`          | ❌        | `int`           |Early stopping: Minimum number of new pixels for a step to count as “growth”. Default is `50`.                     |
+| `save_reach_map`           | ❌        | `bool`          |Also save `REACH_<base_name>.tif` (0 = not labelled, 1 = seed, k + 1 = labelled in growth iteration k) and `reach_steps_<base_name>.csv` (the threshold of every value). `sprout_core.make_grow.labels_at_reach(labels, reach, value)` gives the result at an earlier iteration or threshold without growing again. Default is `False`. |
 
 ### Optional Mesh Parameters
 

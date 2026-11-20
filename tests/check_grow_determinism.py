@@ -17,6 +17,7 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import tifffile
 from skimage.morphology import ball, binary_dilation, disk
 
@@ -147,6 +148,80 @@ try:
        f"early stop after 1 step: {int((on > 0).sum())})")
 except TypeError as e:
     ok(False, f"no_growth_max_iter=None raised TypeError: {e}")
+
+# ---- reach map: every saved intermediate result can be rebuilt from the final result
+def grow_reach(save_reach_map, boundary=None):
+    with contextlib.redirect_stdout(io.StringIO()):
+        return make_grow.grow_mp(img=dog, seg=ds, boundary=boundary, thresholds=[180, 150, 120],
+                                 upper_thresholds=[255, 255, 255], dilation_steps=[4, 4, 4], save_every_n_iters=2,
+                                 output_folder=tempfile.mkdtemp(), num_threads=4, return_for_napari=True,
+                                 is_sort=False, save_reach_map=save_reach_map)
+
+
+plain, plain_log = grow_reach(False)
+for name, bnd in (("no boundary", None), ("boundary through the seeds", np.indices(dog.shape)[0] == dog.shape[0] // 2)):
+    out, log = grow_reach(True, bnd)
+    final = [v for k, v in out.items() if "FINAL" in k][0]
+    reach = tifffile.imread(log["reach_map_path"])
+    rows = pd.read_csv(log["reach_steps_path"])
+    if bnd is None:
+        ok("reach_map_path" not in plain_log and all(np.array_equal(out[k], plain[k]) for k in plain),
+           "save_reach_map does not change the grow outputs; off by default")
+    ok(np.array_equal(reach > 0, final > 0) and np.array_equal(reach == 1, (ds > 0) & (final > 0)),
+       f"reach map, {name}: labelled exactly where the result is, 1 exactly on the kept seed voxels")
+    inter = {k: v for k, v in out.items() if k.startswith("INTER")}
+    same = 0
+    for k, v in inter.items():
+        thr, it = float(k.split("_")[-3]), int(k.split("_")[-1])
+        value = int(rows[(rows.threshold == thr) & (rows.dilate_iter == it)].reach_value.iloc[0])
+        same += np.array_equal(make_grow.labels_at_reach(final, reach, value), v)
+    ok(same == len(inter) == 6, f"reach map, {name}: labels_at_reach rebuilds {same}/{len(inter)} intermediate results")
+
+
+def grow_reach_small(img, seg, **kw):
+    """(arrays by name, final labels, reach map, reach steps) of a small grow with the reach map on."""
+    with contextlib.redirect_stdout(io.StringIO()):
+        out, log = make_grow.grow_mp(img=img, seg=seg, output_folder=tempfile.mkdtemp(), num_threads=4,
+                                     return_for_napari=True, is_sort=False, save_reach_map=True, **kw)
+    final = [v for k, v in out.items() if "FINAL" in k][0]
+    return out, final, tifffile.imread(log["reach_map_path"]), pd.read_csv(log["reach_steps_path"])
+
+
+def rebuilt(out, final, reach, rows):
+    """How many of the saved intermediate results labels_at_reach rebuilds, and how many there are."""
+    inter = {k: v for k, v in out.items() if k.startswith("INTER")}
+    same = 0
+    for k, v in inter.items():
+        thr, it = float(k.split("_")[-3]), int(k.split("_")[-1])
+        value = int(rows[(rows.threshold == thr) & (rows.dilate_iter == it)].reach_value.iloc[0])
+        same += np.array_equal(make_grow.labels_at_reach(final, reach, value), v)
+    return same, len(inter)
+
+
+# 2D
+img2, seg2 = dog[dog.shape[0] // 2], ds[ds.shape[0] // 2]
+out, final, reach, rows = grow_reach_small(img2, seg2, thresholds=[180, 150, 120], upper_thresholds=[255] * 3,
+                                           dilation_steps=[4, 4, 4], save_every_n_iters=2)
+same, n = rebuilt(out, final, reach, rows)
+ok(reach.shape == img2.shape and np.array_equal(reach > 0, final > 0) and same == n == 6,
+   f"reach map, 2D: labelled where the result is, labels_at_reach rebuilds {same}/{n} intermediate results")
+
+# early stop in the middle of a threshold: the reach values stay consecutive, one per iteration that ran
+out, final, reach, rows = grow_reach_small(dog, ds, thresholds=[180, 150], upper_thresholds=[255] * 2,
+                                           dilation_steps=[40, 40], min_growth_size=3000, no_growth_max_iter=1)
+same, n = rebuilt(out, final, reach, rows)
+ran = len(rows) - 1
+ok(ran < 80 and list(rows.reach_value) == list(range(1, ran + 2)) and int(reach.max()) <= ran + 1
+   and int(rows.labelled_voxels.iloc[-1]) == int((final > 0).sum()) and same == n,
+   f"reach map, early stop: {ran} iterations ran of 80, values consecutive, {same}/{n} intermediate results rebuilt")
+
+# touch_rule='overwrite': a voxel keeps the iteration in which it was first labelled; its label may change later
+out, final, reach, rows = grow_reach_small(dog, ds, thresholds=[180, 150], upper_thresholds=[255] * 2,
+                                           dilation_steps=[4, 4], touch_rule="overwrite")
+labelled_ok = all(int((make_grow.labels_at_reach(final, reach, int(r.reach_value)) > 0).sum()) == int(r.labelled_voxels)
+                  for r in rows.itertuples())
+ok(np.array_equal(reach > 0, final > 0) and labelled_ok,
+   "reach map, overwrite: the labelled voxels of every iteration are rebuilt (the labels are the final ones)")
 
 print(f"\n{'ALL PASSED' if not FAILED else f'{len(FAILED)} FAILED'}")
 sys.exit(1 if FAILED else 0)

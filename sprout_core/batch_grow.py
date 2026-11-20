@@ -62,6 +62,7 @@ def run_batch_grow(file_path):
                 is_sort = optional_params['is_sort'],
                 min_growth_size = optional_params['min_growth_size'],
                 no_growth_max_iter = optional_params['no_growth_max_iter'],
+                save_reach_map = optional_params['save_reach_map'],
 
    
                 # For mesh making

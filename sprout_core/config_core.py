@@ -931,8 +931,14 @@ input_val_make_grow = {
         "required": False,
         'default': 50,
         "description": "The minimum difference to consider there is a growth in a dilation iteration"
-    },    
-    
+    },
+    "save_reach_map": {
+        "type": bool,
+        "required": False,
+        'default': False,
+        "description": "Save the reach map: the growth iteration in which every voxel was labelled"
+    },
+
     "is_make_meshes": {
         "type": bool,
         "required": False,
